@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -40,6 +41,8 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   final _scroll = ScrollController();
   NavNode? _selected;
   final Map<DbConnection, ConnectionStatus> _lastStatus = {};
+  NavNode? _lastTapNode;
+  DateTime? _lastTapAt;
 
   @override
   void dispose() {
@@ -66,40 +69,59 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     }
   }
 
+  /// Expands at once when the children are cached; otherwise the chevron
+  /// becomes a spinner while connecting and loading, and the node ignores
+  /// further toggles until it is done.
   Future<void> _expand(NavNode n) async {
-    if (!n.expandable) return;
-    if (n is ConnectionNode && !n.dc.isConnected) {
-      final ok = await ensureConnected(context, n.dc);
-      if (!ok) return;
+    if (!n.expandable || _busy(n)) return;
+    if (n.children != null && (n is! ConnectionNode || n.dc.isConnected)) {
+      setState(() => n.expanded = true);
+      return;
     }
-    if (n.children == null) {
-      setState(() {
-        n.loading = true;
-        n.error = null;
-        n.expanded = true;
-      });
-      try {
-        final ch = await n.load();
-        n.children = ch;
-      } catch (e) {
-        n.error = e.toString();
-        n.children = null;
-      } finally {
-        n.loading = false;
-      }
+    setState(() {
+      n.loading = true;
+      n.error = null;
+    });
+    try {
+      if (n is ConnectionNode && !n.dc.isConnected && !await ensureConnected(context, n.dc)) return;
+      n.children = await n.load();
+      n.expanded = true;
+    } catch (e) {
+      n.error = e.toString();
+      n.children = null;
+    } finally {
+      n.loading = false;
+      if (mounted) setState(() {});
     }
-    if (mounted) setState(() => n.expanded = true);
   }
 
-  void _toggle(NavNode n) {
-    if (n.expanded) {
-      setState(() => n.expanded = false);
-    } else {
-      _expand(n);
-    }
+  /// Loading its children, or a connection still connecting.
+  bool _busy(NavNode n) => n.loading || (n is ConnectionNode && n.dc.status == ConnectionStatus.connecting);
+
+  void _collapse(NavNode n) {
+    if (_busy(n)) return;
+    setState(() => n.expanded = false);
+  }
+
+  void _toggle(NavNode n) => n.expanded ? _collapse(n) : _expand(n);
+
+  /// Selects at once; a second click on the same row within the double-tap
+  /// timeout opens it. `onDoubleTap` would instead hold every click on the
+  /// row, chevron included, for 300ms waiting for a second one.
+  void _onRowTap(NavNode n) {
+    final now = DateTime.now();
+    final last = _lastTapAt;
+    final isDouble = n == _lastTapNode && last != null && now.difference(last) <= kDoubleTapTimeout;
+    _lastTapNode = isDouble ? null : n;
+    _lastTapAt = now;
+    _focus.requestFocus();
+    setState(() => _selected = n);
+    if (n.connection != null) AppScope.read(context).select(n.connection);
+    if (isDouble) _open(n);
   }
 
   Future<void> _refresh(NavNode n) async {
+    if (_busy(n)) return;
     final c = n.connection;
     if (c != null && c.metadata != null) {
       // Coarse but safe: drop all cached metadata of the connection.
@@ -151,10 +173,6 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         app.openTable(t.connection!, t.table);
       case ProcedureNode p:
         app.openProcedure(p.connection!, p.procedure);
-      case ConnectionNode c when c.dc.isConnected:
-        _toggle(n);
-      case ConnectionNode c:
-        ensureConnected(context, c.dc);
       default:
         _toggle(n);
     }
@@ -241,7 +259,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       case LogicalKeyboardKey.arrowRight:
         if (_selected != null) _expand(_selected!);
       case LogicalKeyboardKey.arrowLeft:
-        if (_selected != null) setState(() => _selected!.expanded = false);
+        if (_selected != null) _collapse(_selected!);
       case LogicalKeyboardKey.enter:
         if (_selected != null) _open(_selected!);
       case LogicalKeyboardKey.f5:
@@ -303,12 +321,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         setState(() => _selected = n);
         _contextMenu(context, n, d.globalPosition);
       },
-      onDoubleTap: () => _open(n),
-      onTap: () {
-        _focus.requestFocus();
-        setState(() => _selected = n);
-        if (n.connection != null) AppScope.read(context).select(n.connection);
-      },
+      onTap: () => _onRowTap(n),
       child: Tooltip(
         message: n.error ?? (dc?.config.subtitle ?? n.label),
         waitDuration: const Duration(milliseconds: 1000),
@@ -324,7 +337,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               SizedBox(
                 width: 18,
                 child: n.expandable && !(n is TableNode && AppScope.read(context).settings.simpleMode)
-                    ? n.loading
+                    ? _busy(n)
                           ? const Padding(
                               padding: EdgeInsets.all(4),
                               child: CircularProgressIndicator(strokeWidth: 1.5),
