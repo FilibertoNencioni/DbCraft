@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../theme/app_theme.dart';
 
@@ -170,5 +171,46 @@ class _SplitViewState extends State<SplitView> with SingleTickerProviderStateMix
         ),
       ),
     );
+  }
+}
+
+/// Keeps laying out [child] at the constraints it last had while [hold] was
+/// false. Wrap the hidden children of an [IndexedStack] in it: the stack lays
+/// out every child, so without it each sidebar slide frame would reflow every
+/// open tab instead of only the visible one.
+class HoldLayout extends SingleChildRenderObjectWidget {
+  const HoldLayout({super.key, required this.hold, super.child});
+
+  final bool hold;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderHoldLayout(hold);
+
+  @override
+  void updateRenderObject(BuildContext context, RenderObject renderObject) => (renderObject as _RenderHoldLayout).hold = hold;
+}
+
+class _RenderHoldLayout extends RenderProxyBox {
+  _RenderHoldLayout(this._hold);
+
+  bool _hold;
+  set hold(bool value) {
+    if (value == _hold) return;
+    _hold = value;
+    markNeedsLayout();
+  }
+
+  BoxConstraints? _held;
+
+  @override
+  void performLayout() {
+    if (!_hold || _held == null) _held = constraints;
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    child.layout(_held!, parentUsesSize: true);
+    size = constraints.constrain(child.size);
   }
 }

@@ -1,6 +1,7 @@
 import 'package:dbcraft/ui/theme/app_theme.dart';
 import 'package:dbcraft/ui/widgets/split_view.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _Counter extends StatefulWidget {
@@ -81,4 +82,46 @@ void main() {
     await t.pumpWidget(_host(collapsedFirst: true));
     expect(_firstWidth(t), 0);
   });
+
+  testWidgets('a sidebar slide reflows only the visible tab', (t) async {
+    await t.binding.setSurfaceSize(const Size(1001, 600));
+    final layouts = List.filled(4, 0);
+    Widget host(bool collapsed) => MaterialApp(
+          theme: buildTheme(Brightness.light),
+          home: Scaffold(
+            body: SplitView(
+              collapsedFirst: collapsed,
+              collapseDuration: const Duration(milliseconds: 200),
+              first: const SizedBox(),
+              second: IndexedStack(index: 1, children: [
+                for (var i = 0; i < 4; i++) HoldLayout(hold: i != 1, child: _LayoutProbe(() => layouts[i]++)),
+              ]),
+            ),
+          ),
+        );
+    await t.pumpWidget(host(false));
+    layouts.fillRange(0, 4, 0);
+
+    await t.pumpWidget(host(true));
+    await t.pumpAndSettle();
+    expect(layouts[1], greaterThan(1));
+    expect([layouts[0], layouts[2], layouts[3]], [0, 0, 0]);
+  });
+}
+
+class _LayoutProbe extends SingleChildRenderObjectWidget {
+  const _LayoutProbe(this.onLayout);
+  final VoidCallback onLayout;
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderLayoutProbe(onLayout);
+}
+
+class _RenderLayoutProbe extends RenderProxyBox {
+  _RenderLayoutProbe(this.onLayout);
+  final VoidCallback onLayout;
+  @override
+  void performLayout() {
+    onLayout();
+    size = constraints.biggest;
+  }
 }

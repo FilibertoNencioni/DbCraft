@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show kDoubleTapSlop, kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -416,6 +417,7 @@ class _HomePageState extends State<HomePage> {
   Widget _editorArea(AppState app) {
     final c = DbColors.of(context);
     if (app.tabs.isEmpty) return _Welcome(onOpenScript: () => openScriptFile(context));
+    final active = app.activeTab.clamp(0, app.tabs.length - 1);
     return Column(children: [
       Container(
         height: 34,
@@ -455,8 +457,11 @@ class _HomePageState extends State<HomePage> {
       ),
       Expanded(
         child: IndexedStack(
-          index: app.activeTab.clamp(0, app.tabs.length - 1),
-          children: [for (final t in app.tabs) KeyedSubtree(key: ValueKey(t.id), child: _editorFor(t))],
+          index: active,
+          children: [
+            for (final (i, t) in app.tabs.indexed)
+              KeyedSubtree(key: ValueKey(t.id), child: HoldLayout(hold: i != active, child: _editorFor(t))),
+          ],
         ),
       ),
     ]);
@@ -621,6 +626,44 @@ class _MenuProvided extends _MenuEntry {
 // Unified toolbar (lives in the title bar on macOS)
 // ---------------------------------------------------------------------------
 
+/// Title-bar gestures: dragging moves the window, double-clicking zooms it.
+///
+/// The double click is detected by timing plain taps rather than with
+/// `onDoubleTap`, whose recognizer holds every click for 300ms waiting for a
+/// second one, delaying every toolbar button. Taps on buttons never reach here.
+class _TitleBarGestures extends StatefulWidget {
+  const _TitleBarGestures({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_TitleBarGestures> createState() => _TitleBarGesturesState();
+}
+
+class _TitleBarGesturesState extends State<_TitleBarGestures> {
+  DateTime? _lastTap;
+  Offset? _lastPos;
+
+  void _onTapUp(TapUpDetails d) {
+    final now = DateTime.now();
+    final last = _lastTap;
+    final isDouble = last != null &&
+        now.difference(last) <= kDoubleTapTimeout &&
+        (d.globalPosition - _lastPos!).distance <= kDoubleTapSlop;
+    _lastTap = isDouble ? null : now;
+    _lastPos = d.globalPosition;
+    if (isDouble) WindowBridge.instance.titleBarDoubleClick();
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onPanStart: (_) => WindowBridge.instance.startDrag(),
+        onTapUp: _onTapUp,
+        child: widget.child,
+      );
+}
+
 class _AppToolbar extends StatelessWidget {
   const _AppToolbar({required this.showSidebar, required this.onToggleSidebar, required this.onToggleAutoCommit});
 
@@ -637,10 +680,7 @@ class _AppToolbar extends StatelessWidget {
     final mac = Platform.isMacOS;
     return ValueListenableBuilder<bool>(
       valueListenable: WindowBridge.instance.fullScreen,
-      builder: (context, fullScreen, _) => GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onPanStart: (_) => WindowBridge.instance.startDrag(),
-        onDoubleTap: WindowBridge.instance.titleBarDoubleClick,
+      builder: (context, fullScreen, _) => _TitleBarGestures(
         child: Container(
           height: mac ? kUnifiedToolbarHeight : 44,
           padding: EdgeInsets.only(left: trafficLightInset(fullScreen) + Gap.sm, right: Gap.md),
