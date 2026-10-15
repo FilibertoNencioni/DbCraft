@@ -125,6 +125,7 @@ const int SQL_CATALOG_USAGE = 92;
 const int SQL_PROCEDURES = 21;
 const int SQL_CATALOG_NAME = 10003;
 const int SQL_MAX_IDENTIFIER_LEN = 10005;
+const int SQL_MAX_CONCURRENT_ACTIVITIES = 1;
 
 // SQLColAttribute
 const int SQL_DESC_AUTO_UNIQUE_VALUE = 11;

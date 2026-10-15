@@ -71,7 +71,7 @@ class ConnectionNode extends NavNode {
     if (md.supportsCatalogs) {
       final cats = await md.catalogs();
       if (cats.isNotEmpty) {
-        return [for (final c in cats) CatalogNode(dc, c, current: c == md.currentCatalog)];
+        return [for (final c in cats) CatalogNode(dc, c, current: c == (dc.defaultCatalog ?? md.currentCatalog))];
       }
     }
     if (md.supportsSchemas) {

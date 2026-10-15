@@ -45,9 +45,12 @@ class SqlPrompt extends CodePrompt {
 /// Autocompletion: keywords, functions, tables of the connection and
 /// columns of the tables referenced in the script (also via aliases).
 class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
-  SqlPromptsBuilder(this.connection, this.textProvider, {required this.enabled});
+  SqlPromptsBuilder(this.connection, this.textProvider, {required this.enabled, this.catalog});
 
   final DbConnection? Function() connection;
+
+  /// Database of the editor (tables to preload); defaults to the current one.
+  final String? Function()? catalog;
   final String Function() textProvider;
   final bool Function() enabled;
 
@@ -133,13 +136,13 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
   static String _unquote(String s) => s.replaceAll(RegExp(r'^["\[`]|["\]`]$'), '');
 
   void _preloadTables(DbConnection dc) {
-    final key = 'tables:${dc.config.id}';
+    final cat = catalog?.call() ?? dc.metadata!.currentCatalog;
+    final key = 'tables:${dc.config.id}:$cat';
     if (_loading.contains(key)) return;
     _loading.add(key);
     final md = dc.metadata!;
     () async {
       try {
-        final cat = md.currentCatalog;
         if (md.supportsSchemas) {
           final schemas = await md.schemas(md.supportsCatalogs ? cat : null);
           for (final s in schemas.take(20)) {

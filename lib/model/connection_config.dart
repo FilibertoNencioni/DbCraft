@@ -350,7 +350,9 @@ class DriverTemplate {
       pattern: r'sql server|msodbcsql',
       portInServer: true,
       defaultPort: '1433',
-      defaults: {'TrustServerCertificate': 'yes'},
+      // MARS: several result sets open at once on the same connection (SQL
+      // editors share it), otherwise "Connection is busy with results…".
+      defaults: {'TrustServerCertificate': 'yes', 'MARS_Connection': 'yes'},
       icon: Icons.dns,
       color: Color(0xFFC62828),
     ),

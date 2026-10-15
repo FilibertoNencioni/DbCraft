@@ -282,7 +282,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<SqlEditorTab> openSqlEditor(DbConnection? c, {String initialSql = '', File? file}) async {
+  Future<SqlEditorTab> openSqlEditor(DbConnection? c, {String initialSql = '', File? file, String? catalog}) async {
     final f = file ?? await workspace.newScriptFile();
     var text = initialSql;
     if (file != null && await file.exists()) text = await file.readAsString();
@@ -290,6 +290,7 @@ class AppState extends ChangeNotifier {
     final tab = SqlEditorTab(
       settings: settings,
       connection: c,
+      catalog: catalog,
       file: f,
       initialText: text,
       onHistory: addHistory,

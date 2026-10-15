@@ -141,6 +141,10 @@ class OdbcConnectionCore {
   final Map<int, _Cursor> _cursors = {};
   int _nextCursorId = 1;
 
+  /// SQL_MAX_CONCURRENT_ACTIVITIES: 1 = a single active statement per
+  /// connection (SQL Server without MARS, Sybase, FreeTDS…), 0 = no limit.
+  int? _maxActive;
+
   bool get isConnected => _connected;
 
   // -------------------------------------------------------------------------
@@ -234,7 +238,9 @@ class OdbcConnectionCore {
     _check(rc, commit ? 'COMMIT' : 'ROLLBACK', SQL_HANDLE_DBC, _dbc);
   }
 
-  void setCurrentCatalog(String catalog) {
+  void setCurrentCatalog(String catalog) => _whenFree(() => _setCurrentCatalog(catalog));
+
+  void _setCurrentCatalog(String catalog) {
     using((arena) {
       final p = api.toWide(catalog, arena);
       final rc = api.SQLSetConnectAttr(
@@ -334,6 +340,36 @@ class OdbcConnectionCore {
     api.SQLFreeHandle(SQL_HANDLE_STMT, stmt);
   }
 
+  /// Drivers allowing a single active statement refuse any command while a
+  /// result set is still open ("Connection is busy with results for another
+  /// command"). The open cursors are closed first — the grids keep the rows
+  /// already fetched — and the command is retried once if the driver still
+  /// reports the connection busy.
+  T _whenFree<T>(T Function() run) {
+    if (_cursors.isNotEmpty) {
+      _maxActive ??= using((arena) {
+        final buf = arena<Uint16>();
+        final rc = api.SQLGetInfo(_dbc, SQL_MAX_CONCURRENT_ACTIVITIES, buf.cast(), 2, nullptr);
+        return sqlSucceeded(rc) ? buf.value : 0;
+      });
+      if (_maxActive == 1) _closeAllCursors();
+    }
+    try {
+      return run();
+    } on OdbcException catch (e) {
+      if (_cursors.isEmpty || !e.message.toLowerCase().contains('busy')) rethrow;
+      _closeAllCursors();
+      return run();
+    }
+  }
+
+  void _closeAllCursors() {
+    for (final c in _cursors.values) {
+      _freeStmt(c.stmt);
+    }
+    _cursors.clear();
+  }
+
   /// Executes [sql]. When [params] is not empty the statement is prepared and
   /// the values are bound positionally (`?`).
   ResultPage execute(
@@ -341,6 +377,15 @@ class OdbcConnectionCore {
     List<Object?> params = const [],
     int fetchSize = 200,
     int queryTimeoutSec = 0,
+  }) => _whenFree(
+    () => _execute(sql, params: params, fetchSize: fetchSize, queryTimeoutSec: queryTimeoutSec),
+  );
+
+  ResultPage _execute(
+    String sql, {
+    required List<Object?> params,
+    required int fetchSize,
+    required int queryTimeoutSec,
   }) {
     final sw = Stopwatch()..start();
     final stmt = _allocStmt();
@@ -727,7 +772,9 @@ class OdbcConnectionCore {
   // -------------------------------------------------------------------------
 
   /// Runs an ODBC catalog function and returns the full result.
-  ResultPage catalog(String function, List<Object?> args) {
+  ResultPage catalog(String function, List<Object?> args) => _whenFree(() => _catalog(function, args));
+
+  ResultPage _catalog(String function, List<Object?> args) {
     final sw = Stopwatch()..start();
     final stmt = _allocStmt();
     try {

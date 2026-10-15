@@ -3,6 +3,9 @@ import 'package:dbcraft/services/data_transfer.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
 import 'package:dbcraft/services/sql_formatter.dart';
 import 'package:dbcraft/services/sql_splitter.dart';
+import 'package:dbcraft/services/storage.dart';
+import 'package:dbcraft/state/editor_tabs.dart';
+import 'package:re_editor/re_editor.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -54,6 +57,30 @@ void main() {
     expect(f, 'SELECT\n    a,\n    b\nFROM t\nJOIN u ON t.id = u.id\nWHERE x = \'y\'\nORDER BY a');
   });
 
+  group('SQL editor statements to run', () {
+    SqlEditorTab editor(String text) => SqlEditorTab(settings: AppSettings(), initialText: text);
+
+    test('without a selection the whole script runs, not the line at the caret', () {
+      final t = editor('SELECT 1;\nSELECT 2;\nSELECT 3;');
+      t.controller.selection = const CodeLineSelection.collapsed(index: 2, offset: 9);
+      expect(t.statementsToRun(), ['SELECT 1', 'SELECT 2', 'SELECT 3']);
+      expect(t.currentStatement()!.text, 'SELECT 3');
+    });
+
+    test('a selection runs only the selected statements', () {
+      final t = editor('SELECT 1;\nSELECT 2;\nSELECT 3;');
+      t.controller.selection = const CodeLineSelection(baseIndex: 0, baseOffset: 0, extentIndex: 1, extentOffset: 9);
+      expect(t.statementsToRun(), ['SELECT 1', 'SELECT 2']);
+    });
+
+    test('the editor database defaults to the connection and resets with it', () {
+      final t = editor('')..catalog = 'sales';
+      expect(t.catalog, 'sales');
+      t.catalog = null;
+      expect(t.catalog, isNull);
+    });
+  });
+
   group('dialect', () {
     test('quoting', () {
       final d = SqlDialect(dbmsName: 'PostgreSQL');
@@ -80,7 +107,7 @@ void main() {
     );
     expect(
       c.buildConnectionString(),
-      'DRIVER={ODBC Driver 18 for SQL Server};SERVER=h,1433;DATABASE=d;UID=u;PWD={p;w};TrustServerCertificate=yes',
+      'DRIVER={ODBC Driver 18 for SQL Server};SERVER=h,1433;DATABASE=d;UID=u;PWD={p;w};TrustServerCertificate=yes;MARS_Connection=yes',
     );
     expect(c.maskedConnectionString.contains('p;w'), false);
     final pg = ConnectionConfig(

@@ -10,6 +10,7 @@ import '../../features/ai/ai.dart';
 import '../../features/performance/visual_plan.dart';
 import '../../features/query_builder/query_builder_tab.dart';
 import '../../model/connection_config.dart';
+import '../../services/metadata_service.dart';
 import '../../services/sql_formatter.dart';
 import '../../services/sql_splitter.dart';
 import '../../state/app_state.dart';
@@ -24,6 +25,7 @@ import 'sql_code_editor.dart';
 /// Commands that the native / window menu can send to a SQL editor.
 enum SqlCommand {
   execute,
+  executeCurrent,
   executeNewTab,
   executeScript,
   explain,
@@ -60,12 +62,15 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       () => tab.connection,
       () => tab.controller.text,
       enabled: () => AppScope.read(context).settings.autoComplete,
+      catalog: () => tab.catalog,
     ),
   );
   final _editorFocus = FocusNode(debugLabel: 'sql-editor');
   bool _showResults = true;
   int _bottomTab = 0; // index in results, or -1 = output, -2 = log
   Timer? _ticker;
+  MetadataService? _catalogsOf;
+  Future<List<String>>? _catalogs;
 
   SqlEditorTab get tab => widget.tab;
 
@@ -101,22 +106,23 @@ class _SqlEditorViewState extends State<SqlEditorView> {
 
   ExecutionUi get _ui => DialogExecutionUi(context);
 
+  /// Runs the selection or, without one, the whole script.
   Future<void> _execute({bool newTab = false}) async {
     if (!await _checkConnection()) return;
     setState(() {
       _showResults = true;
       _bottomTab = 0;
     });
-    await tab.executeCurrent(_ui, newTab: newTab);
+    await tab.execute(_ui, newTab: newTab);
   }
 
-  Future<void> _executeScript() async {
+  Future<void> _executeCurrent() async {
     if (!await _checkConnection()) return;
     setState(() {
       _showResults = true;
       _bottomTab = 0;
     });
-    await tab.executeScript(_ui);
+    await tab.executeCurrent(_ui);
   }
 
   Future<void> _explain() async {
@@ -203,12 +209,12 @@ class _SqlEditorViewState extends State<SqlEditorView> {
 
   void _run(SqlCommand cmd) {
     switch (cmd) {
-      case SqlCommand.execute:
+      case SqlCommand.execute || SqlCommand.executeScript:
         if (!tab.running) _execute();
+      case SqlCommand.executeCurrent:
+        if (!tab.running) _executeCurrent();
       case SqlCommand.executeNewTab:
         if (!tab.running) _execute(newTab: true);
-      case SqlCommand.executeScript:
-        if (!tab.running) _executeScript();
       case SqlCommand.explain:
         if (!tab.running) _explain();
       case SqlCommand.format:
@@ -307,8 +313,10 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     return {
       a(LogicalKeyboardKey.enter): _execute,
       a(LogicalKeyboardKey.numpadEnter): _execute,
+      a(LogicalKeyboardKey.enter, shift: true): _executeCurrent,
+      a(LogicalKeyboardKey.numpadEnter, shift: true): _executeCurrent,
       a(LogicalKeyboardKey.backslash): () => _execute(newTab: true),
-      const SingleActivator(LogicalKeyboardKey.keyX, alt: true): _executeScript,
+      const SingleActivator(LogicalKeyboardKey.keyX, alt: true): _execute,
       a(LogicalKeyboardKey.keyE, shift: true): _explain,
       a(LogicalKeyboardKey.keyE, alt: true): _visualPlan,
       a(LogicalKeyboardKey.keyF, shift: true): _format,
@@ -319,7 +327,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         if (tab.running) tab.cancel();
       },
       a(LogicalKeyboardKey.keyR, shift: true): () => setState(() => _showResults = !_showResults),
-      const SingleActivator(LogicalKeyboardKey.f5): _executeScript,
+      const SingleActivator(LogicalKeyboardKey.f5): _execute,
     };
   }
 
@@ -380,15 +388,15 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           PrimaryButton(
             label: 'Esegui',
             icon: Icons.play_arrow_rounded,
-            tooltip: 'Esegui l\'istruzione sotto il cursore o la selezione (${mod}Invio)',
+            tooltip: 'Esegui la selezione o, senza selezione, tutto lo script (${mod}Invio)',
             onPressed: _execute,
           ),
         const SizedBox(width: Gap.xs),
         ToolButton(
-          icon: Icons.playlist_play_rounded,
+          icon: Icons.short_text_rounded,
           size: 19,
-          tooltip: 'Esegui tutto lo script (⌥X)',
-          onPressed: tab.running ? null : _executeScript,
+          tooltip: 'Esegui solo l\'istruzione sotto il cursore ($mod⇧Invio)',
+          onPressed: tab.running ? null : _executeCurrent,
         ),
         ToolButton(
           icon: Icons.add_to_photos_outlined,
@@ -445,6 +453,10 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           Text(_elapsed, style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular)),
         ],
         const Spacer(),
+        if (conn != null && conn.isConnected && (conn.metadata?.supportsCatalogs ?? false)) ...[
+          _catalogButton(conn),
+          const SizedBox(width: Gap.xs),
+        ],
         _connectionButton(app, conn),
         if (conn != null && !conn.isConnected)
           TextButton(onPressed: () => ensureConnected(context, conn), child: const Text('Connetti')),
@@ -484,6 +496,65 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           child: const Text('Chat con l\'assistente'),
         ),
       ],
+    );
+  }
+
+  /// Database used by this editor (a `USE xxx` in the script overrides it).
+  Widget _catalogButton(DbConnection conn) {
+    final c = DbColors.of(context);
+    final md = conn.metadata!;
+    final current = tab.catalog;
+    if (_catalogsOf != md) {
+      _catalogsOf = md;
+      _catalogs = md.catalogs();
+    }
+    return FutureBuilder<List<String>>(
+      future: _catalogs,
+      builder: (context, snap) {
+        final cats = snap.data ?? [?current];
+        return PopupMenuButton<String>(
+          tooltip: '${md.catalogTerm} di questo editor',
+          position: PopupMenuPosition.under,
+          enabled: !tab.running && cats.isNotEmpty,
+          onSelected: (v) => tab.catalog = v,
+          itemBuilder: (_) => [
+            for (final x in cats)
+              PopupMenuItem(
+                value: x,
+                height: 28,
+                child: Row(children: [
+                  SizedBox(
+                    width: 18,
+                    child: x == current ? Icon(Icons.check_rounded, size: 14, color: c.accent) : null,
+                  ),
+                  Expanded(child: Text(x, overflow: TextOverflow.ellipsis)),
+                ]),
+              ),
+          ],
+          child: Container(
+            height: 26,
+            constraints: const BoxConstraints(maxWidth: 220),
+            padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Radii.control),
+              border: Border.all(color: c.separator),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.storage_rounded, size: 13, color: c.textSecondary),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  current ?? md.catalogTerm,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: TypeSize.small + 0.5, color: current == null ? c.textSecondary : c.text),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.expand_more_rounded, size: 14, color: c.textTertiary),
+            ]),
+          ),
+        );
+      },
     );
   }
 
@@ -546,7 +617,8 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           : EmptyState(
               icon: Icons.play_circle_outline_rounded,
               title: 'Nessun risultato',
-              message: 'Premi Esegui o $mod per eseguire l\'istruzione sotto il cursore; ⌥X esegue l\'intero script.',
+              message: 'Premi Esegui o $mod per eseguire la selezione o tutto lo script; '
+                  '${Platform.isMacOS ? '⌘⇧Invio' : 'Ctrl+Shift+Invio'} esegue solo l\'istruzione sotto il cursore.',
             );
     } else {
       final r = results[sel.clamp(0, results.length - 1)];

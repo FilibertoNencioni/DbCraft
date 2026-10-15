@@ -28,6 +28,13 @@ class DbConnection extends ChangeNotifier {
 
   bool autoCommit = true;
 
+  /// Database (catalog) used by SQL editors that did not choose one.
+  String? defaultCatalog;
+
+  /// Database the [main] session is currently set to: SQL editors share it,
+  /// so each one switches it to its own before running (see [useCatalog]).
+  String? mainCatalog;
+
   /// Statements executed in manual commit mode since the last commit.
   int pendingStatements = 0;
 
@@ -82,6 +89,7 @@ class DbConnection extends ChangeNotifier {
       meta = md;
       info = inf;
       metadata = MetadataService(md, inf);
+      defaultCatalog = mainCatalog = inf['currentCatalog'] as String?;
       autoCommit = config.autoCommit;
       pendingStatements = 0;
       status = ConnectionStatus.connected;
@@ -102,6 +110,7 @@ class DbConnection extends ChangeNotifier {
     main = null;
     meta = null;
     metadata = null;
+    defaultCatalog = mainCatalog = null;
     status = ConnectionStatus.disconnected;
     pendingStatements = 0;
     connectedAt = null;
@@ -112,6 +121,27 @@ class DbConnection extends ChangeNotifier {
   Future<void> reconnect({String? libPath}) async {
     await disconnect();
     await connect(libPath: libPath);
+  }
+
+  /// Switches the main session to [catalog] if it is not already there.
+  Future<void> useCatalog(String? catalog) async {
+    final m = main;
+    if (m == null || catalog == null || catalog.isEmpty || catalog == mainCatalog) return;
+    await m.setCurrentCatalog(catalog);
+    mainCatalog = catalog;
+  }
+
+  /// Re-reads the main session catalog (after a `USE xxx` in a script).
+  Future<String?> syncMainCatalog() async {
+    final m = main;
+    if (m == null) return mainCatalog;
+    try {
+      final cur = await m.currentCatalog();
+      if (cur != null && cur.isNotEmpty) mainCatalog = cur;
+    } catch (_) {
+      // Not supported by the driver: keep the last known value.
+    }
+    return mainCatalog;
   }
 
   Future<void> setAutoCommit(bool value) async {

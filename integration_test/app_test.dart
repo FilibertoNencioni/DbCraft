@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 
 import 'package:dbcraft/main.dart';
 import 'package:dbcraft/odbc/odbc_session.dart';
+import 'package:dbcraft/services/sql_splitter.dart';
 import 'package:dbcraft/state/app_state.dart';
 import 'package:dbcraft/state/editor_tabs.dart';
 import 'package:dbcraft/ui/dialogs/app_dialogs.dart';
@@ -175,6 +176,8 @@ void main() {
         'ORDER BY media DESC;\n\n'
         'SELECT * FROM dipendenti WHERE stipendio > :minimo;\n';
     await settle(tester);
+    // Without a selection Esegui runs the whole script: select the first query.
+    tab.highlight(SqlSplitter().split(tab.controller.text).first);
     await tester.tap(find.text('Esegui'));
     await waitFor(tester, find.text('Ricerca e Sviluppo'));
     await settle(tester);
@@ -202,7 +205,7 @@ void main() {
         'SELECT * FROM tabella_inesistente;\n'
         'SELECT codice, titolo, budget FROM progetti;\n';
     await settle(tester, 300);
-    await tester.tap(find.byTooltip('Esegui tutto lo script (⌥X)'));
+    await tester.tap(find.text('Esegui'));
     await waitFor(tester, find.text('Errore nello script'));
     await shot(tester, '09_script_error_prompt');
     await tester.tap(find.text('Continua'));

@@ -76,10 +76,12 @@ class SqlEditorTab extends EditorTab {
   SqlEditorTab({
     required this.settings,
     DbConnection? connection,
+    String? catalog,
     this.file,
     String initialText = '',
     this.onHistory,
   }) : _connection = connection, // ignore: prefer_initializing_formals
+       _catalog = catalog, // ignore: prefer_initializing_formals
        controller = CodeLineEditingController.fromText(initialText) {
     _savedText = initialText;
     controller.addListener(_onChanged);
@@ -87,6 +89,7 @@ class SqlEditorTab extends EditorTab {
 
   final AppSettings settings;
   DbConnection? _connection;
+  String? _catalog;
   File? file;
   final CodeLineEditingController controller;
   final void Function(HistoryEntry e)? onHistory;
@@ -108,7 +111,17 @@ class SqlEditorTab extends EditorTab {
   DbConnection? get connection => _connection;
 
   set connection(DbConnection? c) {
+    if (c != _connection) _catalog = null;
     _connection = c;
+    notifyListeners();
+  }
+
+  /// Database chosen for this editor; null = the connection default.
+  /// A `USE xxx` run in the editor updates it.
+  String? get catalog => _catalog ?? _connection?.defaultCatalog;
+
+  set catalog(String? v) {
+    _catalog = v;
     notifyListeners();
   }
 
@@ -183,14 +196,22 @@ class SqlEditorTab extends EditorTab {
     return off + sel.extentOffset;
   }
 
-  /// Statement to run: the selection or the statement under the caret.
+  SqlSplitter get _splitter => SqlSplitter(blankLineDelimiter: settings.blankLineDelimiter);
+
+  /// Statement under the caret, or the selection.
   SqlStatement? currentStatement() {
     final sel = controller.selectedText;
     if (sel.trim().isNotEmpty) {
       return SqlStatement(sel.trim(), 0, sel.length);
     }
-    return SqlSplitter(blankLineDelimiter: settings.blankLineDelimiter)
-        .statementAt(controller.text, caretOffset);
+    return _splitter.statementAt(controller.text, caretOffset);
+  }
+
+  /// Statements to run: those of the selection, or of the whole editor.
+  List<String> statementsToRun() {
+    final sel = controller.selectedText;
+    final src = sel.trim().isNotEmpty ? sel : controller.text;
+    return _splitter.split(src).map((e) => e.text).toList();
   }
 
   /// Selects the given statement in the editor (visual feedback).
@@ -246,19 +267,19 @@ class SqlEditorTab extends EditorTab {
     notifyListeners();
   }
 
+  /// Runs the selection or, without one, the whole editor.
+  Future<void> execute(ExecutionUi ui, {bool newTab = false}) async {
+    final stmts = statementsToRun();
+    if (stmts.isEmpty) return;
+    await _run(ui, stmts, script: stmts.length > 1, newTab: newTab);
+  }
+
+  /// Runs only the statement under the caret.
   Future<void> executeCurrent(ExecutionUi ui, {bool newTab = false}) async {
     final s = currentStatement();
     if (s == null) return;
     if (controller.selectedText.trim().isEmpty) highlight(s);
     await _run(ui, [s.text], script: false, newTab: newTab);
-  }
-
-  Future<void> executeScript(ExecutionUi ui) async {
-    final sel = controller.selectedText;
-    final src = sel.trim().isNotEmpty ? sel : controller.text;
-    final stmts = SqlSplitter().split(src).map((e) => e.text).toList();
-    if (stmts.isEmpty) return;
-    await _run(ui, stmts, script: true, newTab: true);
   }
 
   Future<void> explain(ExecutionUi ui) async {
@@ -308,8 +329,24 @@ class SqlEditorTab extends EditorTab {
     running = true;
     _cancelRequested = false;
     runningSince = DateTime.now();
-    if (!newTab || script) await _clearResults();
+    if (!newTab) await _clearResults();
     notifyListeners();
+
+    // The main session is shared by the editors of the connection: move it
+    // to the database of this editor first.
+    final cat = catalog;
+    try {
+      await c.useCatalog(cat);
+    } catch (e) {
+      final msg = 'Impossibile usare il database "$cat": ${e is OdbcException ? e.message : e}';
+      addLog(LogLevel.error, msg);
+      results.add(ResultTab(title: 'Errore', error: msg));
+      selectedResult = results.length - 1;
+      running = false;
+      runningSince = null;
+      notifyListeners();
+      return;
+    }
 
     final sw = Stopwatch()..start();
     var executed = 0, updated = 0, fetched = 0, errors = 0;
@@ -437,6 +474,9 @@ class SqlEditorTab extends EditorTab {
         selectedResult = results.length - 1;
       }
     } finally {
+      // Follow a `USE xxx` run by the script.
+      final now = await c.syncMainCatalog();
+      if (now != null && now != cat) _catalog = now;
       running = false;
       runningSql = null;
       runningSince = null;

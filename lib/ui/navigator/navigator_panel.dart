@@ -477,11 +477,13 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           _item(
             'Nuovo editor SQL',
             Icons.note_add_outlined,
-            () => app.openSqlEditor(dc, initialSql: _useStatement(dc!, c.catalog)),
+            () => app.openSqlEditor(dc, catalog: c.catalog),
           ),
           _item('Imposta come predefinito', Icons.check, () async {
             await guarded(context, () async {
-              await dc!.main?.setCurrentCatalog(c.catalog);
+              await dc!.useCatalog(c.catalog);
+              dc.defaultCatalog = c.catalog;
+              dc.touch();
               if (mounted) showToast(this.context, 'Catalogo attivo: ${c.catalog}');
             });
           }),
@@ -503,7 +505,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         ]);
       case SchemaNode s:
         items.addAll([
-          _item('Nuovo editor SQL', Icons.note_add_outlined, () => app.openSqlEditor(dc)),
+          _item('Nuovo editor SQL', Icons.note_add_outlined, () => app.openSqlEditor(dc, catalog: s.catalog)),
           _item('Diagramma ER', Icons.account_tree_outlined, () => app.openErDiagram(dc!, s.catalog, s.schema)),
           if (dc!.dialect.isSql)
             _item(
@@ -636,11 +638,6 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       items: items,
     );
     action?.call();
-  }
-
-  String _useStatement(DbConnection dc, String catalog) {
-    final q = dc.dialect.quoteIdent(catalog);
-    return 'USE $q;\n\n';
   }
 
   Future<void> _countRows(DbConnection dc, DbTable t) async {
