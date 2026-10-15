@@ -234,7 +234,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
                     controller: _scroll,
                     padding: const EdgeInsets.only(bottom: Gap.md),
                     itemCount: visible.length,
-                    itemExtent: 26,
+                    itemExtent: kSidebarRowHeight,
                     itemBuilder: (context, i) => _row(context, visible[i]),
                   ),
                 ),
@@ -274,7 +274,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     icon: Icons.storage_rounded,
     title: 'Nessuna connessione',
     message: 'Aggiungi un database tramite driver ODBC, DSN o stringa di connessione.',
-    action: FilledButton(onPressed: () => newConnection(context), child: const Text('Nuova connessione')),
+    action: PrimaryButton(label: 'Nuova connessione', onPressed: () => newConnection(context)),
   );
 
   Color _iconColor(NavNode n, DbColors c) => switch (n) {
@@ -293,7 +293,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     final dc = n is ConnectionNode ? n.dc : null;
     final fg = strong ? Colors.white : c.text;
     final fgSecondary = strong ? Colors.white.withValues(alpha: 0.8) : c.textTertiary;
-    Widget leading = Icon(n.icon, size: 15, color: strong ? Colors.white : _iconColor(n, c));
+    Widget leading = Icon(n.icon, size: 16, color: strong ? Colors.white : _iconColor(n, c));
     if (dc != null && (dc.isConnected || dc.status == ConnectionStatus.error)) {
       leading = Stack(
         clipBehavior: Clip.none,

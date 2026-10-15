@@ -28,7 +28,8 @@ Elevation is either a hairline or a shadow, never both, except on sheets and men
 - System font (SF on macOS) at 13pt body, 12 small, 11 caption, 15 titles, 17 sheet titles, 26 display (welcome only).
 - `SF Mono` (falling back to Menlo/Consolas) for SQL, connection strings, error messages and data cells in value views.
 - Tabular figures (`kTabular`) on every number: grid, counts, timings.
-- Labels use sentence case. There are no eyebrows and no uppercase section headers; `SectionLabel` is 11pt semibold tertiary.
+- Labels use sentence case. There are no eyebrows and no uppercase section headers; `SectionLabel` is 11pt semibold secondary.
+- `textTertiary` (`#8A8A8E` light, `#7C7C82` dark) is for placeholders, dates and counts only, never for labels a user must read to orient.
 - Shortcut glyphs: use ⌘ ⇧ ⌥ together with the word "Invio". Avoid ↩, which falls back to an emoji.
 
 ## Shape and spacing
@@ -36,12 +37,15 @@ Elevation is either a hairline or a shadow, never both, except on sheets and men
 - 4pt grid (`Gap`).
 - Radii (`Radii`): 6 for controls, 8 for panels and form groups, 12 for sheets.
 - Control height is 28 (buttons, fields, segmented controls). Toolbars are 52 (unified, macOS) or 44 (other platforms) for the app toolbar, 40 for the editor toolbar, 34 for the tab strip and 24 for status bars.
-- Grid rows are 26 and the grid header is 30. Navigator rows are 26.
+- Icon glyphs: 17 in controls (`ToolButton` default), 19–21 on 32pt buttons in the unified toolbar, 16–17 in source-list rows. Material glyphs draw smaller than SF Symbols, so never go below 16.
+- Grid rows are 26 and the grid header is 30. Source-list rows (navigator, scripts) are 28 (`kSidebarRowHeight`).
 
 ## Components (`lib/ui/widgets/common.dart`)
 
-- `ToolButton`: icon button with a hover tint and no ripple. Pass `label:` only when the text adds meaning (Commit).
-- `PrimaryButton`: the single filled action of a surface. It scales to 0.97 on press over 120ms with ease-out.
+- `ToolButton`: icon button with a hover tint and no ripple. `extent` is 28 for controls and 32 in the unified toolbar. Pass `label:` only when the text adds meaning (Commit).
+- `SidebarTabs`: the navigator switcher at the top of the sidebar (Xcode style). Plain icons, the selected one in the accent, a hairline below. Never a segmented pill.
+- `SidebarRow`: a single-line source-list row (icon, title, right-aligned tertiary detail such as a date). The hover/selection tint is the row itself. Row actions open from right click or from a "…" button that replaces the detail on hover; no permanent per-row buttons and no two-line rows in the sidebar.
+- `PrimaryButton`: the single filled action of a surface, including empty-state actions. Flat accent fill with no colored glow. It scales to 0.97 on press over 120ms with ease-out.
 - `Segmented`: macOS segmented control. Use it for mode switches (Griglia/Record, Auto/Manuale, object editor pages, dialog pages). An optional `dot:` adds a colored dot before a label, as in the environment picker (test and production only). Never stack two segmented controls as page tabs and a sub-mode.
 - `SelectField`: macOS pop-up button for a fixed list of choices, with the ⌃⌄ glyph. Use it instead of the Material `DropdownButton`. Fields that also accept free text (driver, DSN) stay as text fields with a ⌃⌄ menu suffix.
 - `SearchField`: filled, borderless and rounded. It shows a clear button while it has text.

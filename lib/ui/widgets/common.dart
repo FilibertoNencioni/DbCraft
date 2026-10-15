@@ -27,7 +27,8 @@ class ToolButton extends StatefulWidget {
     this.onPressed,
     this.color,
     this.active = false,
-    this.size = 16,
+    this.size = 17,
+    this.extent = 28,
     this.label,
   });
 
@@ -37,6 +38,10 @@ class ToolButton extends StatefulWidget {
   final Color? color;
   final bool active;
   final double size;
+
+  /// Height and minimum width of the hit area: 28 for controls, 32 for the
+  /// unified window toolbar.
+  final double extent;
 
   /// Optional text shown next to the icon.
   final String? label;
@@ -95,9 +100,9 @@ class _ToolButtonState extends State<ToolButton> {
             enabled: enabled,
             label: widget.tooltip,
             child: Container(
-              height: 28,
-              constraints: const BoxConstraints(minWidth: 28),
-              padding: EdgeInsets.symmetric(horizontal: widget.label == null ? 6 : 8),
+              height: widget.extent,
+              constraints: BoxConstraints(minWidth: widget.extent),
+              padding: EdgeInsets.symmetric(horizontal: widget.label == null ? 4 : 8),
               alignment: Alignment.center,
               decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.control)),
               child: child,
@@ -157,9 +162,6 @@ class _PrimaryButtonState extends State<PrimaryButton> {
           decoration: BoxDecoration(
             color: enabled ? color : c.pressed,
             borderRadius: BorderRadius.circular(Radii.control),
-            boxShadow: enabled
-                ? [BoxShadow(color: color.withValues(alpha: 0.28), blurRadius: 3, offset: const Offset(0, 1))]
-                : null,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -202,7 +204,7 @@ class SectionLabel extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(fontSize: TypeSize.caption, fontWeight: FontWeight.w600, color: c.textTertiary),
+              style: TextStyle(fontSize: TypeSize.caption, fontWeight: FontWeight.w600, color: c.textSecondary),
             ),
           ),
           ?trailing,
@@ -225,6 +227,148 @@ class PanelHeader extends StatelessWidget {
     padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
     trailing: Row(mainAxisSize: MainAxisSize.min, children: actions),
   );
+}
+
+/// Height of a source-list row (macOS medium sidebar size).
+const double kSidebarRowHeight = 28;
+
+/// Source-list row: icon, single-line title, optional trailing detail.
+///
+/// The hover and selection tint is the row itself, so it always covers exactly
+/// what the row shows. Row actions live in [onMenu] (right click, or the "…"
+/// button that appears on hover), never in permanent per-row buttons.
+class SidebarRow extends StatefulWidget {
+  const SidebarRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.iconColor,
+    this.detail,
+    this.selected = false,
+    this.onTap,
+    this.onMenu,
+    this.tooltip,
+  });
+
+  final IconData icon;
+  final Color? iconColor;
+  final String title;
+
+  /// Short secondary text right-aligned in the row (date, count).
+  final String? detail;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  /// Opens the row's context menu at a global position.
+  final void Function(Offset globalPosition)? onMenu;
+  final String? tooltip;
+
+  @override
+  State<SidebarRow> createState() => _SidebarRowState();
+}
+
+class _SidebarRowState extends State<SidebarRow> {
+  bool _hover = false;
+  final _menuKey = GlobalKey();
+
+  void _openMenuFromButton() {
+    final box = _menuKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    widget.onMenu!(box.localToGlobal(Offset(0, box.size.height + 2)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    final showMenuButton = widget.onMenu != null && _hover;
+    final row = Container(
+      height: kSidebarRowHeight,
+      padding: const EdgeInsets.only(left: Gap.sm, right: Gap.xs),
+      decoration: BoxDecoration(
+        color: widget.selected ? c.selectionMuted : (_hover ? c.hover : Colors.transparent),
+        borderRadius: BorderRadius.circular(Radii.control),
+      ),
+      child: Row(
+        children: [
+          Icon(widget.icon, size: 17, color: widget.iconColor ?? c.textSecondary),
+          const SizedBox(width: Gap.sm),
+          Expanded(
+            child: Text(
+              widget.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: TypeSize.body, color: c.text),
+            ),
+          ),
+          if (showMenuButton)
+            SizedBox(
+              key: _menuKey,
+              child: ToolButton(
+                icon: Icons.more_horiz_rounded,
+                tooltip: 'Azioni',
+                extent: 22,
+                size: 16,
+                onPressed: _openMenuFromButton,
+              ),
+            )
+          else if (widget.detail != null)
+            Padding(
+              padding: const EdgeInsets.only(left: Gap.sm, right: Gap.xs),
+              child: Text(
+                widget.detail!,
+                style: TextStyle(fontSize: TypeSize.small, color: c.textTertiary, fontFeatures: kTabular),
+              ),
+            ),
+        ],
+      ),
+    );
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onSecondaryTapDown: widget.onMenu == null ? null : (d) => widget.onMenu!(d.globalPosition),
+        child: widget.tooltip == null
+            ? row
+            : Tooltip(message: widget.tooltip!, waitDuration: const Duration(milliseconds: 1000), child: row),
+      ),
+    );
+  }
+}
+
+/// Navigator selector at the top of the sidebar (Xcode style): plain icons,
+/// the selected one tinted with the accent. No pill, no background.
+class SidebarTabs<T> extends StatelessWidget {
+  const SidebarTabs({super.key, required this.value, required this.items, required this.onChanged});
+
+  final T value;
+  final List<(T, String, IconData)> items;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.separator))),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          for (final (v, label, icon) in items)
+            ToolButton(
+              icon: icon,
+              tooltip: label,
+              size: 18,
+              extent: 30,
+              color: v == value ? c.accent : c.textSecondary,
+              onPressed: () => onChanged(v),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Rounded, filled search field (NSSearchField look).

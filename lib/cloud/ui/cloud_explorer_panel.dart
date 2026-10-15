@@ -328,7 +328,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
                   message:
                       'Aggiungi un account AWS, Azure o Google Cloud per sfogliare bucket e container come '
                       'cartelle, caricare e scaricare file.',
-                  action: FilledButton(onPressed: _newAccount, child: const Text('Nuovo account…')),
+                  action: PrimaryButton(label: 'Nuovo account…', onPressed: _newAccount),
                 )
               : Focus(
                   focusNode: _focus,

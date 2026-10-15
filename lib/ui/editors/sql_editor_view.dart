@@ -465,7 +465,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     return PopupMenuButton<VoidCallback>(
       tooltip: 'Assistente AI',
       position: PopupMenuPosition.under,
-      icon: Icon(Icons.auto_awesome_outlined, size: 16, color: c.accent),
+      icon: Icon(Icons.auto_awesome_outlined, size: 17, color: c.textSecondary),
       onSelected: (f) => f(),
       itemBuilder: (_) => [
         PopupMenuItem(value: _aiExplain, height: 28, child: const Text('Spiega la query')),

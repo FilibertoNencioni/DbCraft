@@ -362,20 +362,15 @@ class _HomePageState extends State<HomePage> {
     return Material(
       color: c.sidebar,
       child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.sm, Gap.sm, Gap.sm, 2),
-          child: Segmented<int>(
-            value: _leftTab,
-            expand: true,
-            iconOnly: true,
-            items: const [
-              (0, 'Database', Icons.storage_rounded),
-              (1, 'Script', Icons.description_outlined),
-              (2, 'Cloud', Icons.cloud_outlined),
-              (3, 'Git', Icons.cloud_sync_outlined),
-            ],
-            onChanged: (v) => setState(() => _leftTab = v),
-          ),
+        SidebarTabs<int>(
+          value: _leftTab,
+          items: const [
+            (0, 'Database', Icons.storage_rounded),
+            (1, 'Script', Icons.description_outlined),
+            (2, 'Cloud', Icons.cloud_outlined),
+            (3, 'Git', Icons.cloud_sync_outlined),
+          ],
+          onChanged: (v) => setState(() => _leftTab = v),
         ),
         Expanded(
           child: IndexedStack(index: _leftTab, children: [
@@ -689,20 +684,23 @@ class _AppToolbar extends StatelessWidget {
             ToolButton(
               icon: Icons.view_sidebar_outlined,
               tooltip: '${showSidebar ? 'Nascondi' : 'Mostra'} barra laterale (${mac ? '⌘0' : 'Ctrl+0'})',
-              size: 17,
+              size: 19,
+              extent: 32,
               onPressed: onToggleSidebar,
             ),
             const SizedBox(width: Gap.md),
             ToolButton(
               icon: Icons.add_link_rounded,
               tooltip: 'Nuova connessione (${mac ? '⌘⇧N' : 'Ctrl+Shift+N'})',
-              size: 17,
+              size: 19,
+              extent: 32,
               onPressed: () => newConnection(context),
             ),
             ToolButton(
               icon: Icons.edit_note_rounded,
               tooltip: 'Nuovo editor SQL (${mac ? '⌘N' : 'Ctrl+N'})',
-              size: 19,
+              size: 21,
+              extent: 32,
               onPressed: () => openSqlEditor(context),
             ),
             const Spacer(),
@@ -713,7 +711,8 @@ class _AppToolbar extends StatelessWidget {
                 icon: connected ? Icons.power_settings_new_rounded : Icons.power_rounded,
                 tooltip: connected ? 'Disconnetti' : 'Connetti',
                 color: connected ? c.success : null,
-                size: 17,
+                size: 19,
+                extent: 32,
                 onPressed: () => connected ? disconnectWithCheck(context, dc) : ensureConnected(context, dc),
               ),
             const Spacer(),
@@ -722,14 +721,16 @@ class _AppToolbar extends StatelessWidget {
             ToolButton(
               icon: Icons.history_rounded,
               tooltip: 'Query Manager (${mac ? '⌘⇧H' : 'Ctrl+Shift+H'})',
-              size: 17,
+              size: 19,
+              extent: 32,
               onPressed: () => showHistoryDialog(context),
             ),
             if (!mac)
               ToolButton(
                 icon: Icons.settings_outlined,
                 tooltip: 'Preferenze',
-                size: 17,
+                size: 19,
+                extent: 32,
                 onPressed: () => showSettingsDialog(context),
               ),
           ]),
@@ -1031,7 +1032,7 @@ class _AppMark extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.accent,
         borderRadius: BorderRadius.circular(size * 0.23),
-        boxShadow: [BoxShadow(color: c.accent.withValues(alpha: 0.35), blurRadius: size * 0.25, offset: Offset(0, size * 0.08))],
+        boxShadow: [BoxShadow(color: const Color(0x29000000), blurRadius: size * 0.08, offset: Offset(0, size * 0.03))],
       ),
       child: Icon(Icons.storage_rounded, color: Colors.white, size: size * 0.52),
     );
@@ -1063,7 +1064,7 @@ class _Welcome extends StatelessWidget {
                     const SizedBox(height: Gap.lg),
                     Text('DbCraft', style: Theme.of(context).textTheme.displaySmall),
                     const SizedBox(height: 2),
-                    Text('Client per qualsiasi database con driver ODBC',
+                    Text('Scegli da cosa partire',
                         style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary)),
                     const SizedBox(height: Gap.xl),
                     _WelcomeAction(
@@ -1150,7 +1151,7 @@ class _WelcomeActionState extends State<_WelcomeAction> {
               width: 32,
               height: 32,
               decoration: BoxDecoration(color: c.chrome, borderRadius: BorderRadius.circular(Radii.panel)),
-              child: Icon(widget.icon, size: 18, color: c.accent),
+              child: Icon(widget.icon, size: 18, color: c.textSecondary),
             ),
             const SizedBox(width: Gap.md),
             Expanded(
@@ -1255,6 +1256,40 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
     return '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')}/${t.year}';
   }
 
+  Future<void> _menu(File f, Offset pos) async {
+    final app = AppScope.read(context);
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final v = await showMenu<int>(
+      context: context,
+      position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & overlay.size),
+      items: const [
+        PopupMenuItem(value: 0, height: 28, child: Text('Rinomina…')),
+        PopupMenuItem(value: 1, height: 28, child: Text('Elimina')),
+      ],
+    );
+    if (v == null || !mounted) return;
+    if (v == 0) {
+      final name = await promptText(context, 'Rinomina script', initial: p.basenameWithoutExtension(f.path));
+      if (name == null || name.trim().isEmpty) return;
+      final renamed = await f.rename(p.join(f.parent.path, '${name.trim()}.sql'));
+      for (final t in app.tabs) {
+        if (t is SqlEditorTab && t.file?.path == f.path) {
+          t.file = renamed;
+          t.refresh();
+        }
+      }
+    } else {
+      final ok = await confirmDialog(context, 'Elimina script', 'Eliminare ${p.basename(f.path)}?',
+          ok: 'Elimina', destructive: true);
+      if (!ok) return;
+      for (final t in List.of(app.tabs)) {
+        if (t is SqlEditorTab && t.file?.path == f.path) app.closeTab(t);
+      }
+      if (await f.exists()) await f.delete();
+    }
+    _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppScope.read(context);
@@ -1285,59 +1320,33 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
                 message: 'Gli editor SQL vengono salvati qui automaticamente.',
               );
             }
+            final current = app.currentTab is SqlEditorTab ? (app.currentTab as SqlEditorTab).file?.path : null;
             return ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+              padding: const EdgeInsets.fromLTRB(Gap.sm, 0, Gap.sm, Gap.md),
               itemCount: files.length,
-              itemExtent: 40,
+              itemExtent: kSidebarRowHeight + 2,
               itemBuilder: (context, i) {
                 final f = files[i];
                 final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
-                return ListTile(
-                  leading: Icon(Icons.description_outlined, size: 16, color: open ? c.accent : c.textSecondary),
-                  minLeadingWidth: 16,
-                  horizontalTitleGap: Gap.sm,
-                  title: Text(p.basenameWithoutExtension(f.path), overflow: TextOverflow.ellipsis),
-                  subtitle: Text(_ago(f.lastModifiedSync()), style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary)),
-                  onTap: () {
-                    for (final t in app.tabs) {
-                      if (t is SqlEditorTab && t.file?.path == f.path) {
-                        app.activate(t);
-                        return;
-                      }
-                    }
-                    app.openSqlEditor(app.activeConnection, file: f);
-                  },
-                  trailing: PopupMenuButton<int>(
-                    iconSize: 16,
-                    tooltip: 'Azioni',
-                    icon: Icon(Icons.more_horiz_rounded, size: 16, color: c.textTertiary),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 0, height: 28, child: Text('Rinomina…')),
-                      PopupMenuItem(value: 1, height: 28, child: Text('Elimina')),
-                    ],
-                    onSelected: (v) async {
-                      if (v == 0) {
-                        final name = await promptText(context, 'Rinomina script', initial: p.basenameWithoutExtension(f.path));
-                        if (name == null || name.trim().isEmpty) return;
-                        final renamed = await f.rename(p.join(f.parent.path, '${name.trim()}.sql'));
-                        for (final t in app.tabs) {
-                          if (t is SqlEditorTab && t.file?.path == f.path) {
-                            t.file = renamed;
-                            t.refresh();
-                          }
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: SidebarRow(
+                    icon: Icons.description_outlined,
+                    iconColor: open ? c.accent : null,
+                    title: p.basenameWithoutExtension(f.path),
+                    detail: _ago(f.lastModifiedSync()),
+                    selected: f.path == current,
+                    tooltip: f.path,
+                    onTap: () {
+                      for (final t in app.tabs) {
+                        if (t is SqlEditorTab && t.file?.path == f.path) {
+                          app.activate(t);
+                          return;
                         }
-                      } else {
-                        if (!context.mounted) return;
-                        final ok = await confirmDialog(context, 'Elimina script', 'Eliminare ${p.basename(f.path)}?',
-                            ok: 'Elimina', destructive: true);
-                        if (!ok) return;
-                        for (final t in List.of(app.tabs)) {
-                          if (t is SqlEditorTab && t.file?.path == f.path) app.closeTab(t);
-                        }
-                        if (await f.exists()) await f.delete();
                       }
-                      _reload();
+                      app.openSqlEditor(app.activeConnection, file: f);
                     },
+                    onMenu: (pos) => _menu(f, pos),
                   ),
                 );
               },
