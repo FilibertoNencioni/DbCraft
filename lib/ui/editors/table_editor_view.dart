@@ -32,17 +32,13 @@ class TableEditorView extends StatefulWidget {
   State<TableEditorView> createState() => _TableEditorViewState();
 }
 
-class _TableEditorViewState extends State<TableEditorView> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(
-    length: 7,
-    vsync: this,
-    initialIndex: _effectivePage(widget.tab.initialPage),
-  );
+class _TableEditorViewState extends State<TableEditorView> {
+  late int _page = _effectivePage(widget.tab.initialPage);
   Future<TableDetails>? _details;
   late final _where = TextEditingController(text: tab.dataFilter);
   late final _order = TextEditingController(text: tab.dataOrder);
   bool _loadingData = false;
-  String? _dataError;
+  Object? _dataError;
   int? _rowCount;
   int _lastInitialPage = -1;
 
@@ -70,17 +66,19 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
     super.initState();
     _lastInitialPage = tab.initialPage;
     tab.addListener(_onTab);
-    _tabs.addListener(() {
-      if (_tabs.index == _pageData && tab.data == null && !_loadingData) _loadData();
-      setState(() {});
-    });
     _init();
+  }
+
+  void _setPage(int page) {
+    if (page == _page) return;
+    setState(() => _page = page);
+    if (page == _pageData && tab.data == null && !_loadingData) _loadData();
   }
 
   void _onTab() {
     if (tab.initialPage != _lastInitialPage) {
       _lastInitialPage = tab.initialPage;
-      _tabs.animateTo(_effectivePage(tab.initialPage));
+      _setPage(_effectivePage(tab.initialPage));
     }
   }
 
@@ -92,13 +90,12 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
     _details!.then((d) {
       if (mounted) setState(() => _columnsMeta = d.columns);
     }, onError: (_) {});
-    if (_tabs.index == _pageData) _loadData();
+    if (_page == _pageData) _loadData();
   }
 
   @override
   void dispose() {
     tab.removeListener(_onTab);
-    _tabs.dispose();
     _where.dispose();
     _order.dispose();
     super.dispose();
@@ -141,7 +138,7 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
       await m.detectEditTarget();
       if (table.isView) m.keyColumns = [];
     } catch (e) {
-      _dataError = e is OdbcException ? e.message : e.toString();
+      _dataError = e;
     } finally {
       if (mounted) setState(() => _loadingData = false);
     }
@@ -177,33 +174,30 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final app = AppScope.of(context);
     return Column(
       children: [
         _header(app),
         Expanded(
           child: _details == null
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(child: Spinner(size: Spinner.large))
               : FutureBuilder<TableDetails>(
                   future: _details,
                   builder: (context, snap) {
                     if (snap.hasError) {
-                      return Center(
-                        child: SelectableText('${snap.error}', style: TextStyle(color: theme.colorScheme.error)),
-                      );
+                      return EmptyState.error(snap.error!, title: 'Impossibile leggere la struttura della tabella');
                     }
                     final d = snap.data;
                     return IndexedStack(
-                      index: _tabs.index,
+                      index: _page,
                       children: [
-                        d == null ? const Center(child: CircularProgressIndicator()) : _properties(d, theme),
-                        _dataPage(theme),
+                        d == null ? const Center(child: Spinner(size: Spinner.large)) : _properties(d),
+                        _dataPage(),
                         d == null ? const SizedBox() : _columns(d),
-                        d == null ? const SizedBox() : _constraints(d, theme),
+                        d == null ? const SizedBox() : _constraints(d),
                         d == null ? const SizedBox() : _indexes(d),
-                        d == null ? const SizedBox() : _ddl(d, theme),
-                        d == null || _tabs.index != 6
+                        d == null ? const SizedBox() : _ddl(d),
+                        d == null || _page != 6
                             ? const SizedBox()
                             : ErDiagramView(
                                 connection: tab.connection,
@@ -223,93 +217,92 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
 
   Widget _header(AppState app) {
     final c = DbColors.of(context);
-    final crumbs = [tab.connection.config.name, ?table.catalog, ?table.schema];
     return Container(
-      padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.md, Gap.sm, Gap.sm),
-      decoration: BoxDecoration(
-        color: c.content,
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
+      color: c.content,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: c.accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(Radii.control + 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.md, Gap.sm, Gap.md),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: c.accent.withValues(alpha: Tint.regular),
+                    borderRadius: BorderRadius.circular(Radii.menu),
+                  ),
+                  child: Icon(tab.icon, size: 16, color: c.accent),
                 ),
-                child: Icon(tab.icon, size: 17, color: c.accent),
-              ),
-              const SizedBox(width: Gap.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            table.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium,
+                const SizedBox(width: Gap.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              table.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: Gap.sm),
-                        Badge2(table.isView ? 'vista' : table.type.toLowerCase()),
-                      ],
-                    ),
-                    Text(
-                      crumbs.join('  ›  '),
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-                    ),
-                  ],
+                          const SizedBox(width: Gap.sm),
+                          Tag(table.isView ? 'vista' : table.type.toLowerCase()),
+                        ],
+                      ),
+                      PathBar(
+                        segments: [
+                          PathSegment(tab.connection.config.name, icon: AppIcons.server),
+                          if (table.catalog != null) PathSegment(table.catalog!, icon: AppIcons.database),
+                          if (table.schema != null) PathSegment(table.schema!, icon: AppIcons.schema),
+                          PathSegment(table.name, icon: tab.icon),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (!app.settings.simpleMode)
+                if (!app.settings.simpleMode)
+                  ToolButton(
+                    icon: AppIcons.script,
+                    tooltip: 'Apri in un editor SQL',
+                    onPressed: () =>
+                        app.sqlEditorWith(tab.connection, 'SELECT * FROM ${tab.connection.dialect.tableName(table)}'),
+                  ),
                 ToolButton(
-                  icon: AppIcons.script,
-                  size: 18,
-                  tooltip: 'Apri in un editor SQL',
-                  onPressed: () =>
-                      app.sqlEditorWith(tab.connection, 'SELECT * FROM ${tab.connection.dialect.tableName(table)}'),
+                  icon: AppIcons.share,
+                  tooltip: 'Esporta dati…',
+                  onPressed: () => showTableExportDialog(context, tab.connection, table),
                 ),
-              ToolButton(
-                icon: AppIcons.share,
-                tooltip: 'Esporta dati…',
-                onPressed: () => showTableExportDialog(context, tab.connection, table),
-              ),
-              if (!table.isView)
+                if (!table.isView)
+                  ToolButton(
+                    icon: AppIcons.download,
+                    tooltip: 'Importa dati da CSV…',
+                    onPressed: tab.connection.config.readOnly
+                        ? null
+                        : () => showImportDialog(context, tab.connection, table),
+                  ),
                 ToolButton(
-                  icon: AppIcons.download,
-                  tooltip: 'Importa dati da CSV…',
-                  onPressed: tab.connection.config.readOnly
-                      ? null
-                      : () => showImportDialog(context, tab.connection, table),
+                  icon: AppIcons.refresh,
+                  tooltip: 'Ricarica metadati',
+                  onPressed: () {
+                    tab.connection.metadata?.clearCache();
+                    setState(() {
+                      _details = tab.connection.metadata?.tableDetails(table);
+                    });
+                  },
                 ),
-              ToolButton(
-                icon: AppIcons.refresh,
-                tooltip: 'Ricarica metadati',
-                onPressed: () {
-                  tab.connection.metadata?.clearCache();
-                  setState(() {
-                    _details = tab.connection.metadata?.tableDetails(table);
-                  });
-                },
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: Gap.md),
           app.settings.simpleMode
               ? _simplePages()
-              : Segmented<int>(
-                  value: _tabs.index,
+              : PageSwitcher<int>(
+                  value: _page,
                   items: [for (final (i, n) in _pageNames.indexed) (i, n, null)],
-                  onChanged: (i) => _tabs.index = i,
+                  onChanged: _setPage,
                 ),
         ],
       ),
@@ -317,35 +310,43 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
   }
 
   /// Simplified analyst view: "Dati" first, developer pages under a
-  /// "Dettagli" menu (DDL hidden).
+  /// "Dettagli" pull-down (DDL hidden). Laid out like [PageSwitcher], on the
+  /// hairline under the header.
   Widget _simplePages() {
-    final cur = _tabs.index;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Segmented<int>(
-          value: cur,
-          items: [(_pageData, 'Dati', AppIcons.rows), if (cur != _pageData) (cur, _pageNames[cur], null)],
-          onChanged: (i) => _tabs.index = i,
-        ),
-        const SizedBox(width: Gap.sm),
-        PopupMenuButton<int>(
-          tooltip: 'Dettagli della tabella',
-          position: PopupMenuPosition.under,
-          onSelected: (i) => _tabs.index = i,
-          itemBuilder: (ctx) => [
-            for (final i in const [0, 2, 3, 4, 6]) PopupMenuItem<int>(height: 28, value: i, child: Text(_pageNames[i])),
-          ],
-          child: IgnorePointer(
-            child: ToolButton(
-              icon: AppIcons.info,
-              tooltip: 'Dettagli',
-              label: 'Dettagli',
-              onPressed: () {},
+    final c = DbColors.of(context);
+    final cur = _page;
+    return SizedBox(
+      height: ControlSize.regular,
+      width: double.infinity,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(left: 0, right: 0, child: Container(height: 0.5, color: c.separator)),
+          DecoratedBox(
+            decoration: BoxDecoration(color: c.content, borderRadius: BorderRadius.circular(Radii.control)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Segmented<int>(
+                  value: cur,
+                  items: [(_pageData, 'Dati', AppIcons.rows), if (cur != _pageData) (cur, _pageNames[cur], null)],
+                  onChanged: _setPage,
+                ),
+                const SizedBox(width: Gap.sm),
+                PulldownButton(
+                  icon: AppIcons.info,
+                  label: 'Dettagli',
+                  tooltip: 'Dettagli della tabella',
+                  entries: () => [
+                    for (final i in const [0, 2, 3, 4, 6])
+                      MenuEntry<Object?>(_pageNames[i], checked: cur == i, onSelected: () => _setPage(i)),
+                  ],
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -391,7 +392,7 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
     setState(() => ui.visual = v);
   }
 
-  Widget _properties(TableDetails d, ThemeData theme) => SingleChildScrollView(
+  Widget _properties(TableDetails d) => SingleChildScrollView(
     padding: const EdgeInsets.all(16),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -416,26 +417,12 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
           ],
         ),
         const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: _countRows,
-          icon: const Icon(AppIcons.number, size: 16),
-          label: const Text('Calcola numero righe'),
-        ),
+        PushButton(label: 'Calcola numero righe', icon: AppIcons.number, onPressed: _countRows),
       ],
     ),
   );
 
-  Widget _dataPage(ThemeData theme) {
-    final c = DbColors.of(context);
-    InputDecoration deco(String hint, String prefix) => InputDecoration(
-      hintText: hint,
-      prefixIcon: Padding(
-        padding: const EdgeInsets.only(left: Gap.sm, right: 6),
-        child: Text(prefix, style: monoStyle(context, size: 11.5, color: c.accent)),
-      ),
-      prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
-    );
+  Widget _dataPage() {
     final Widget filter = _visualActive
         ? VisualFilterBar(
             filter: _ui.filter,
@@ -451,61 +438,55 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
               ToolButton(icon: AppIcons.refresh, tooltip: 'Ricarica i dati', onPressed: _loadData),
             ],
           )
-        : Container(
-            padding: const EdgeInsets.fromLTRB(Gap.sm, 6, Gap.sm, 6),
-            decoration: BoxDecoration(
-              color: c.chrome,
-              border: Border(bottom: BorderSide(color: c.separator)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: SizedBox(
-                    height: 28,
-                    child: TextField(
-                      controller: _where,
-                      style: monoStyle(context, size: 12.5),
-                      decoration: deco("id > 10 AND nome LIKE 'A%'", 'WHERE'),
-                      onSubmitted: (_) => _loadData(),
-                    ),
-                  ),
+        : PaneBar(
+            children: [
+              Expanded(
+                flex: 3,
+                child: MacTextField(
+                  controller: _where,
+                  small: true,
+                  mono: true,
+                  token: 'WHERE',
+                  hint: "id > 10 AND nome LIKE 'A%'",
+                  onSubmitted: (_) => _loadData(),
                 ),
-                const SizedBox(width: Gap.sm),
-                Expanded(
-                  child: SizedBox(
-                    height: 28,
-                    child: TextField(
-                      controller: _order,
-                      style: monoStyle(context, size: 12.5),
-                      decoration: deco('colonna DESC', 'ORDER BY'),
-                      onSubmitted: (_) => _loadData(),
-                    ),
-                  ),
+              ),
+              const SizedBox(width: Gap.sm),
+              Expanded(
+                child: MacTextField(
+                  controller: _order,
+                  small: true,
+                  mono: true,
+                  token: 'ORDER BY',
+                  hint: 'colonna DESC',
+                  onSubmitted: (_) => _loadData(),
                 ),
-                const SizedBox(width: Gap.sm),
-                OutlinedButton(onPressed: _loadData, child: const Text('Applica')),
-                ToolButton(icon: AppIcons.tune, tooltip: 'Filtro visuale', onPressed: () => _setVisual(true)),
-                ToolButton(
-                  icon: AppIcons.filterOff,
-                  tooltip: 'Rimuovi filtro',
-                  onPressed: _where.text.isEmpty && _order.text.isEmpty
-                      ? null
-                      : () {
-                          _where.clear();
-                          _order.clear();
-                          _loadData();
-                        },
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: Gap.sm),
+              PushButton(label: 'Applica', size: ControlScale.small, onPressed: _loadData),
+              const SizedBox(width: Gap.xs),
+              ToolButton(icon: AppIcons.tune, tooltip: 'Filtro visuale', onPressed: () => _setVisual(true)),
+              ToolButton(
+                icon: AppIcons.filterOff,
+                tooltip: 'Rimuovi filtro',
+                onPressed: _where.text.isEmpty && _order.text.isEmpty
+                    ? null
+                    : () {
+                        _where.clear();
+                        _order.clear();
+                        _loadData();
+                      },
+              ),
+            ],
           );
     final m = tab.data;
     if (_loadingData && m == null) {
       return Column(
         children: [
           filter,
-          const Expanded(child: Center(child: CircularProgressIndicator())),
+          const Expanded(
+            child: Center(child: Spinner(size: Spinner.large)),
+          ),
         ],
       );
     }
@@ -513,11 +494,7 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
       return Column(
         children: [
           filter,
-          Expanded(
-            child: Center(
-              child: SelectableText(_dataError!, style: TextStyle(color: theme.colorScheme.error)),
-            ),
-          ),
+          Expanded(child: EmptyState.error(_dataError!)),
         ],
       );
     }
@@ -555,7 +532,8 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
     ],
   );
 
-  Widget _constraints(TableDetails d, ThemeData theme) {
+  Widget _constraints(TableDetails d) {
+    final c = DbColors.of(context);
     Widget section(String title, Widget child) => Align(
       alignment: Alignment.topLeft,
       child: ConstrainedBox(
@@ -588,16 +566,15 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
               : Column(
                   children: [
                     for (final f in d.foreignKeys)
-                      ListTile(
-                        dense: true,
-                        leading: const Icon(AppIcons.link, size: 18, color: Color(0xFF7E57C2)),
-                        title: Text(f.name ?? '(senza nome)'),
-                        subtitle: Text(
-                          '(${f.columns.join(', ')}) → ${f.pkTable} (${f.refColumns.join(', ')})'
-                          '${DbForeignKey.ruleName(f.deleteRule).isEmpty ? '' : '  ON DELETE ${DbForeignKey.ruleName(f.deleteRule)}'}',
-                        ),
-                        trailing: TextButton(
-                          child: const Text('Apri'),
+                      ListRow(
+                        icon: AppIcons.link,
+                        iconColor: c.foreignKeyIcon,
+                        title: f.name ?? '(senza nome)',
+                        subtitle:
+                            '(${f.columns.join(', ')}) → ${f.pkTable} (${f.refColumns.join(', ')})'
+                            '${DbForeignKey.ruleName(f.deleteRule).isEmpty ? '' : '  ON DELETE ${DbForeignKey.ruleName(f.deleteRule)}'}',
+                        trailing: LinkButton(
+                          label: 'Apri',
                           onPressed: () => app.openTable(
                             tab.connection,
                             DbTable(catalog: f.pkCatalog, schema: f.pkSchema, name: f.pkTable, type: 'TABLE'),
@@ -614,13 +591,12 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
               : Column(
                   children: [
                     for (final f in d.referencedBy)
-                      ListTile(
-                        dense: true,
-                        leading: const Icon(AppIcons.incoming, size: 18),
-                        title: Text(f.fkTable),
-                        subtitle: Text('${f.name ?? ''}  (${f.columns.join(', ')}) → (${f.refColumns.join(', ')})'),
-                        trailing: TextButton(
-                          child: const Text('Apri'),
+                      ListRow(
+                        icon: AppIcons.incoming,
+                        title: f.fkTable,
+                        subtitle: '${f.name ?? ''}  (${f.columns.join(', ')}) → (${f.refColumns.join(', ')})',
+                        trailing: LinkButton(
+                          label: 'Apri',
                           onPressed: () => app.openTable(
                             tab.connection,
                             DbTable(catalog: f.fkCatalog, schema: f.fkSchema, name: f.fkTable, type: 'TABLE'),
@@ -641,35 +617,32 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
     ],
   );
 
-  Widget _ddl(TableDetails d, ThemeData theme) {
+  Widget _ddl(TableDetails d) {
     final ddl = tab.connection.dialect.ddl(d);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.all(6),
-          child: Row(
-            children: [
-              Text('DDL ricostruito dai metadati ODBC', style: TextStyle(color: theme.hintColor, fontSize: 12)),
-              const Spacer(),
-              TextButton.icon(
-                icon: const Icon(AppIcons.copy, size: 16),
-                label: const Text('Copia'),
-                onPressed: () => Clipboard.setData(ClipboardData(text: ddl)),
-              ),
-              TextButton.icon(
-                icon: const Icon(AppIcons.openExternal, size: 16),
-                label: const Text('Apri in editor SQL'),
-                onPressed: () => AppScope.read(context).sqlEditorWith(tab.connection, ddl),
-              ),
-            ],
-          ),
+        PaneHeader(
+          title: 'DDL ricostruito dai metadati ODBC',
+          actions: [
+            ToolButton(
+              icon: AppIcons.copy,
+              label: 'Copia',
+              tooltip: 'Copia il DDL',
+              onPressed: () => Clipboard.setData(ClipboardData(text: ddl)),
+            ),
+            ToolButton(
+              icon: AppIcons.openExternal,
+              label: 'Apri in editor SQL',
+              tooltip: 'Apri il DDL in un editor SQL',
+              onPressed: () => AppScope.read(context).sqlEditorWith(tab.connection, ddl),
+            ),
+          ],
         ),
-        const Divider(height: 1),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(12),
-            child: SelectableText(ddl, style: monoStyle(context, size: 13)),
+            padding: const EdgeInsets.all(Gap.md),
+            child: SelectableText(ddl, style: monoStyle(context, size: TypeSize.mono)),
           ),
         ),
       ],

@@ -90,7 +90,7 @@ Future<bool> executeDdl(
   return true;
 }
 
-/// Dialog showing a generated DDL script with "Apri nell'editor SQL", "Copia"
+/// Sheet showing a generated DDL script with "Apri nell'editor SQL", "Copia"
 /// and "Esegui". Returns true when the script was executed successfully.
 Future<bool> showDdlScriptDialog(
   BuildContext context, {
@@ -98,8 +98,9 @@ Future<bool> showDdlScriptDialog(
   required List<String> statements,
   String title = 'Script DDL',
 }) async {
-  final r = await showDialog<bool>(
-    context: context,
+  final r = await showSheet<bool>(
+    context,
+    size: SheetSize.large,
     builder: (_) => _DdlScriptDialog(dc: dc, statements: statements, title: title),
   );
   return r ?? false;
@@ -145,78 +146,42 @@ class _DdlScriptDialogState extends State<_DdlScriptDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final c = DbColors.of(context);
     final readOnly = widget.dc.config.readOnly;
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SizedBox(
-        width: 760,
-        height: 460,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '$_count istruzioni · ${widget.dc.config.name} (${widget.dc.dialect.dbmsName})',
-              style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular),
-            ),
-            const SizedBox(height: Gap.sm),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: c.codeBackground,
-                  borderRadius: BorderRadius.circular(Radii.panel),
-                  border: Border.all(color: c.separator),
-                ),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(Gap.md),
-                  child: SelectableText(
-                    _script.isEmpty ? '-- Nessuna modifica' : _script,
-                    style: monoStyle(context, size: 12.5),
-                  ),
-                ),
-              ),
-            ),
-            if (_progress != null) ...[
-              const SizedBox(height: Gap.sm),
-              Row(
-                children: [
-                  const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                  const SizedBox(width: Gap.sm),
-                  Text(
-                    _progress!,
-                    style: const TextStyle(fontSize: TypeSize.small, fontFeatures: kTabular),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
+    return PopScope(
+      canPop: !_running,
+      child: SheetScaffold(
+        title: widget.title,
+        subtitle: '$_count istruzioni · ${widget.dc.config.name} (${widget.dc.dialect.dbmsName})',
+        body: SingleChildScrollView(child: CodeBox(_script.isEmpty ? '-- Nessuna modifica' : _script, copy: false)),
+        leading: [
+          PushButton(
+            label: 'Copia',
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: _script));
+              showToast(context, 'Script copiato');
+            },
+          ),
+          PushButton(
+            label: 'Apri nell\'editor SQL',
+            onPressed: _running
+                ? null
+                : () {
+                    AppScope.read(context).openSqlEditor(widget.dc, initialSql: _script);
+                    Navigator.pop(context, false);
+                  },
+          ),
+          if (_progress != null) Flexible(child: StatusLine.busy(_progress!)),
+        ],
+        actions: [
+          PushButton(label: 'Chiudi', onPressed: _running ? null : () => Navigator.pop(context, false)),
+          PushButton.primary(
+            label: 'Esegui',
+            icon: AppIcons.run,
+            tooltip: readOnly ? 'Connessione in sola lettura' : null,
+            onPressed: _running || readOnly || _count == 0 ? null : _run,
+          ),
+        ],
       ),
-      actions: [
-        OutlinedButton(
-          onPressed: () {
-            Clipboard.setData(ClipboardData(text: _script));
-            showToast(context, 'Script copiato');
-          },
-          child: const Text('Copia'),
-        ),
-        OutlinedButton(
-          onPressed: _running
-              ? null
-              : () {
-                  AppScope.read(context).openSqlEditor(widget.dc, initialSql: _script);
-                  Navigator.pop(context, false);
-                },
-          child: const Text('Apri nell\'editor SQL'),
-        ),
-        OutlinedButton(onPressed: _running ? null : () => Navigator.pop(context, false), child: const Text('Chiudi')),
-        PrimaryButton(
-          label: 'Esegui',
-          icon: AppIcons.run,
-          tooltip: readOnly ? 'Connessione in sola lettura' : null,
-          onPressed: _running || readOnly || _count == 0 ? null : _run,
-        ),
-      ],
     );
   }
 }

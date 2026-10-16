@@ -239,25 +239,23 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
   }
 }
 
-/// Popup list shown by the autocompletion.
+/// Popup list shown by the autocompletion ([CompletionList]).
 class SqlAutocompleteView extends StatefulWidget implements PreferredSizeWidget {
   const SqlAutocompleteView({super.key, required this.notifier, required this.onSelected});
 
   final ValueNotifier<CodeAutocompleteEditingValue> notifier;
   final ValueChanged<CodeAutocompleteResult> onSelected;
 
-  static const double itemHeight = 24;
+  static const double width = 380;
 
   @override
-  Size get preferredSize => Size(380, min(itemHeight * notifier.value.prompts.length, 240) + 2);
+  Size get preferredSize => Size(width, CompletionList.heightFor(notifier.value.prompts.length));
 
   @override
   State<SqlAutocompleteView> createState() => _SqlAutocompleteViewState();
 }
 
 class _SqlAutocompleteViewState extends State<SqlAutocompleteView> {
-  final _scroll = ScrollController();
-
   @override
   void initState() {
     super.initState();
@@ -267,103 +265,55 @@ class _SqlAutocompleteViewState extends State<SqlAutocompleteView> {
   @override
   void dispose() {
     widget.notifier.removeListener(_changed);
-    _scroll.dispose();
     super.dispose();
   }
 
   void _changed() {
-    if (!mounted) return;
-    setState(() {});
-    final i = widget.notifier.value.index;
-    if (_scroll.hasClients) {
-      final top = i * SqlAutocompleteView.itemHeight;
-      final vh = _scroll.position.viewportDimension;
-      if (top < _scroll.offset) {
-        _scroll.jumpTo(top);
-      } else if (top + SqlAutocompleteView.itemHeight > _scroll.offset + vh) {
-        _scroll.jumpTo(top + SqlAutocompleteView.itemHeight - vh);
-      }
-    }
+    if (mounted) setState(() {});
   }
 
-  static (IconData, Color) _icon(PromptKind k) => switch (k) {
-    PromptKind.keyword => (AppIcons.code, const Color(0xFFAF52DE)),
-    PromptKind.function => (AppIcons.function, const Color(0xFF30B0C7)),
-    PromptKind.table => (AppIcons.table, const Color(0xFF007AFF)),
-    PromptKind.view => (AppIcons.erDiagram, const Color(0xFF007AFF)),
-    PromptKind.column => (AppIcons.column, const Color(0xFFFF9500)),
-    PromptKind.type => (AppIcons.category, const Color(0xFF8E8E93)),
+  static CompletionKind _kind(PromptKind k) => switch (k) {
+    PromptKind.keyword => CompletionKind.keyword,
+    PromptKind.function => CompletionKind.function,
+    PromptKind.table => CompletionKind.table,
+    PromptKind.view => CompletionKind.view,
+    PromptKind.column => CompletionKind.column,
+    PromptKind.type => CompletionKind.type,
   };
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final v = widget.notifier.value;
+    // Transparent material: gives the overlay a text style without painting.
     return Material(
-      elevation: 8,
-      shadowColor: Colors.black45,
-      borderRadius: BorderRadius.circular(4),
-      color: DbColors.of(context).raised,
-      child: Container(
-        constraints: BoxConstraints.loose(widget.preferredSize),
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: ListView.builder(
-          controller: _scroll,
-          itemExtent: SqlAutocompleteView.itemHeight,
-          itemCount: v.prompts.length,
-          itemBuilder: (context, i) {
-            final p = v.prompts[i] as SqlPrompt;
-            final (icon, color) = _icon(p.kind);
-            return InkWell(
-              onTap: () => widget.onSelected(v.copyWith(index: i).autocomplete),
-              child: Container(
-                color: i == v.index ? theme.colorScheme.primary.withValues(alpha: 0.25) : null,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Row(
-                  children: [
-                    Icon(icon, size: 14, color: color),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        p.word,
-                        overflow: TextOverflow.ellipsis,
-                        style: monoStyle(context, size: 12.5),
-                      ),
-                    ),
-                    if (p.detail != null)
-                      Flexible(
-                        child: Text(
-                          p.detail!,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: DbColors.of(context).textTertiary),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
+      type: MaterialType.transparency,
+      child: CompletionList(
+        width: SqlAutocompleteView.width,
+        items: [
+          for (final p in v.prompts.cast<SqlPrompt>()) CompletionItem(p.word, _kind(p.kind), detail: p.detail),
+        ],
+        selected: v.index,
+        onSelect: (i) => widget.onSelected(v.copyWith(index: i).autocomplete),
       ),
     );
   }
 }
 
-/// Compact find / replace bar for the editor (Ctrl+F / Ctrl+H).
+/// Compact find / replace bar for the editor (Ctrl+F / Ctrl+H): a `bar`
+/// row with the search field, plus a `subbar` row in replace mode.
 class SqlFindBar extends StatelessWidget implements PreferredSizeWidget {
   const SqlFindBar({super.key, required this.controller, required this.readOnly});
   final CodeFindController controller;
   final bool readOnly;
 
   @override
-  Size get preferredSize =>
-      Size.fromHeight(controller.value == null ? 0 : (controller.value!.replaceMode ? 72 : 38));
+  Size get preferredSize => Size.fromHeight(
+    controller.value == null ? 0 : BarHeight.bar + (controller.value!.replaceMode ? BarHeight.subbar : 0),
+  );
 
   @override
   Widget build(BuildContext context) {
+    final c = DbColors.of(context);
     final v = controller.value;
     if (v == null) return const SizedBox.shrink();
     final result = v.result;
@@ -372,75 +322,72 @@ class SqlFindBar extends StatelessWidget implements PreferredSizeWidget {
         : result.matches.isEmpty
         ? 'Nessun risultato'
         : '${result.index + 1} di ${result.matches.length}';
-    Widget input(TextEditingController c, FocusNode f, String hint) => SizedBox(
-      width: 240,
-      height: 28,
-      child: TextField(
-        controller: c,
-        focusNode: f,
-        style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: hint,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-          border: const OutlineInputBorder(),
-        ),
-        onSubmitted: (_) => controller.nextMatch(),
-      ),
-    );
     return Container(
-      color: DbColors.of(context).chrome,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+      decoration: BoxDecoration(
+        color: c.chrome,
+        border: Border(bottom: BorderSide(color: c.separator, width: 0.5)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              ToolButton(
-                icon: v.replaceMode ? AppIcons.chevronUp : AppIcons.chevronDown,
-                tooltip: 'Sostituisci',
-                onPressed: readOnly ? null : controller.toggleMode,
-              ),
-              input(controller.findInputController, controller.findInputFocusNode, 'Trova'),
-              const SizedBox(width: 4),
-              ToolButton(
-                icon: AppIcons.text,
-                tooltip: 'Maiuscole/minuscole',
-                active: v.option.caseSensitive,
-                onPressed: controller.toggleCaseSensitive,
-              ),
-              ToolButton(
-                icon: AppIcons.code,
-                tooltip: 'Espressione regolare',
-                active: v.option.regex,
-                onPressed: controller.toggleRegex,
-              ),
-              const SizedBox(width: 8),
-              Text(count, style: const TextStyle(fontSize: 12)),
-              const Spacer(),
-              ToolButton(
-                icon: AppIcons.arrowUp,
-                tooltip: 'Precedente',
-                onPressed: controller.previousMatch,
-              ),
-              ToolButton(icon: AppIcons.arrowDown, tooltip: 'Successivo', onPressed: controller.nextMatch),
-              ToolButton(icon: AppIcons.close, tooltip: 'Chiudi (Esc)', onPressed: controller.close),
-            ],
+          SizedBox(
+            height: BarHeight.bar - 0.5,
+            child: Row(
+              children: [
+                ToolButton(
+                  icon: v.replaceMode ? AppIcons.chevronUp : AppIcons.chevronDown,
+                  tooltip: 'Sostituisci',
+                  onPressed: readOnly ? null : controller.toggleMode,
+                ),
+                const SizedBox(width: Gap.xs),
+                SearchField(
+                  width: 240,
+                  controller: controller.findInputController,
+                  focusNode: controller.findInputFocusNode,
+                  hint: 'Trova',
+                  onSubmitted: (_) => controller.nextMatch(),
+                ),
+                const SizedBox(width: Gap.xs),
+                ToolButton(
+                  icon: AppIcons.text,
+                  tooltip: 'Maiuscole/minuscole',
+                  active: v.option.caseSensitive,
+                  onPressed: controller.toggleCaseSensitive,
+                ),
+                ToolButton(
+                  icon: AppIcons.code,
+                  tooltip: 'Espressione regolare',
+                  active: v.option.regex,
+                  onPressed: controller.toggleRegex,
+                ),
+                const SizedBox(width: Gap.sm),
+                Text(count, style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular)),
+                const Spacer(),
+                ToolButton(icon: AppIcons.arrowUp, tooltip: 'Precedente', onPressed: controller.previousMatch),
+                ToolButton(icon: AppIcons.arrowDown, tooltip: 'Successivo', onPressed: controller.nextMatch),
+                ToolButton(icon: AppIcons.close, tooltip: 'Chiudi (Esc)', onPressed: controller.close),
+              ],
+            ),
           ),
           if (v.replaceMode)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
+            Container(
+              height: BarHeight.subbar,
+              padding: const EdgeInsets.only(bottom: BarHeight.subbar - ControlSize.regular),
               child: Row(
                 children: [
-                  const SizedBox(width: 28),
-                  input(
-                    controller.replaceInputController,
-                    controller.replaceInputFocusNode,
-                    'Sostituisci con',
+                  const SizedBox(width: ControlSize.regular + Gap.xs),
+                  MacTextField(
+                    width: 240,
+                    controller: controller.replaceInputController,
+                    focusNode: controller.replaceInputFocusNode,
+                    hint: 'Sostituisci con',
+                    onSubmitted: (_) => controller.replaceMatch(),
                   ),
-                  const SizedBox(width: 8),
-                  TextButton(onPressed: controller.replaceMatch, child: const Text('Sostituisci')),
-                  TextButton(onPressed: controller.replaceAllMatches, child: const Text('Tutti')),
+                  const SizedBox(width: Gap.sm),
+                  PushButton(label: 'Sostituisci', size: ControlScale.small, onPressed: controller.replaceMatch),
+                  const SizedBox(width: Gap.xs),
+                  PushButton(label: 'Tutti', size: ControlScale.small, onPressed: controller.replaceAllMatches),
                 ],
               ),
             ),
@@ -470,7 +417,7 @@ class SqlCodeEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final theme = Theme.of(context);
+    final c = DbColors.of(context);
     return CodeAutocomplete(
       viewBuilder: (context, notifier, onSelected) =>
           SqlAutocompleteView(notifier: notifier, onSelected: onSelected),
@@ -492,9 +439,9 @@ class SqlCodeEditor extends StatelessWidget {
           fontSize: fontSize,
           fontFamily: kMono,
           fontFamilyFallback: kMonoFallback,
-          backgroundColor: DbColors.of(context).codeBackground,
-          cursorLineColor: dark ? const Color(0xFF26262A) : const Color(0xFFF5F8FF),
-          selectionColor: DbColors.of(context).accent.withValues(alpha: 0.25),
+          backgroundColor: c.codeBackground,
+          cursorLineColor: c.codeCurrentLine,
+          selectionColor: c.accent.withValues(alpha: Tint.strong),
           codeTheme: CodeHighlightTheme(
             languages: {'sql': CodeHighlightThemeMode(mode: langSql)},
             theme: dark ? githubDarkDimmedTheme : xcodeTheme,
@@ -507,13 +454,13 @@ class SqlCodeEditor extends StatelessWidget {
               notifier: notifier,
               textStyle: TextStyle(
                 fontSize: fontSize - 1,
-                color: DbColors.of(context).textTertiary,
+                color: c.textTertiary,
                 fontFamily: kMono,
                 fontFamilyFallback: kMonoFallback,
               ),
               focusedTextStyle: TextStyle(
                 fontSize: fontSize - 1,
-                color: theme.colorScheme.onSurface,
+                color: c.text,
                 fontFamily: kMono,
                 fontFamilyFallback: kMonoFallback,
               ),
@@ -521,7 +468,7 @@ class SqlCodeEditor extends StatelessWidget {
             const SizedBox(width: 6),
           ],
         ),
-        leadingDivider: Container(width: 1, color: DbColors.of(context).separator),
+        leadingDivider: Container(width: 0.5, color: c.separator),
       ),
     );
   }

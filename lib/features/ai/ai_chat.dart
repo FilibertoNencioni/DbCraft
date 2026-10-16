@@ -222,42 +222,30 @@ class _AiChatViewState extends State<_AiChatView> {
       color: c.content,
       child: Column(
         children: [
-          Container(
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: c.separator)),
-            ),
-            child: Row(
-              children: [
-                Icon(AppIcons.ai, size: 16, color: c.accent),
+          PaneBar(
+            padding: const EdgeInsets.only(left: Gap.md, right: Gap.sm),
+            children: [
+              Icon(AppIcons.ai, size: 16, color: c.accent),
+              const SizedBox(width: Gap.sm),
+              Text(
+                'Assistente AI',
+                style: uiText(TypeSize.body, weight: FontWeight.w600, color: c.text),
+              ),
+              if (dc != null) ...[
                 const SizedBox(width: Gap.sm),
-                Text(
-                  'Assistente AI',
-                  style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600, color: c.text),
-                ),
-                if (dc != null) ...[
-                  const SizedBox(width: Gap.sm),
-                  StatusDot(dc.isConnected ? c.success : c.textTertiary, size: 7, ring: !dc.isConnected),
-                  const SizedBox(width: 5),
-                  Text(
-                    dc.config.name,
-                    style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary),
-                  ),
-                ],
-                const Spacer(),
-                Text(
-                  app.settings.aiModel,
-                  style: TextStyle(fontSize: TypeSize.small, color: c.textTertiary),
-                ),
-                const ToolSeparator(),
-                ToolButton(
-                  icon: AppIcons.compose,
-                  tooltip: 'Nuova conversazione',
-                  onPressed: tab.messages.isEmpty ? null : tab.clear,
-                ),
+                StatusDot(dc.isConnected ? c.success : c.textTertiary, size: 7, ring: !dc.isConnected),
+                const SizedBox(width: 5),
+                Text(dc.config.name, style: uiText(TypeSize.small, color: c.textSecondary)),
               ],
-            ),
+              const Spacer(),
+              Text(app.settings.aiModel, style: uiText(TypeSize.small, color: c.textTertiary)),
+              const ToolSeparator(),
+              ToolButton(
+                icon: AppIcons.compose,
+                tooltip: 'Nuova conversazione',
+                onPressed: tab.messages.isEmpty ? null : tab.clear,
+              ),
+            ],
           ),
           Expanded(
             child: tab.messages.isEmpty
@@ -276,7 +264,6 @@ class _AiChatViewState extends State<_AiChatView> {
   }
 
   Widget _empty(DbConnection? dc) {
-    final c = DbColors.of(context);
     const suggestions = [
       'Quali tabelle contengono i dati dei clienti?',
       'Scrivi una query con il fatturato mensile dell\'ultimo anno',
@@ -292,14 +279,15 @@ class _AiChatViewState extends State<_AiChatView> {
       action: Column(
         children: [
           for (final s in suggestions)
-            TextButton(
-              onPressed: () {
-                tab.input.text = s;
-                _focus.requestFocus();
-              },
-              child: Text(
-                s,
-                style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.accent),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: Gap.xs),
+              child: LinkButton(
+                label: s,
+                small: true,
+                onPressed: () {
+                  tab.input.text = s;
+                  _focus.requestFocus();
+                },
               ),
             ),
         ],
@@ -317,10 +305,7 @@ class _AiChatViewState extends State<_AiChatView> {
           margin: const EdgeInsets.only(bottom: Gap.md, left: Gap.xxl),
           padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.sm),
           decoration: BoxDecoration(color: c.chrome, borderRadius: BorderRadius.circular(Radii.sheet)),
-          child: SelectableText(
-            m.text,
-            style: TextStyle(fontSize: TypeSize.body, color: c.text, height: 1.4),
-          ),
+          child: SelectableText(m.text, style: uiText(TypeSize.body, color: c.text, height: 1.4)),
         ),
       );
     }
@@ -339,18 +324,15 @@ class _AiChatViewState extends State<_AiChatView> {
                     MarkdownView(data: m.text, codeActions: editorCodeActions(app, tab.connection)),
                   if (m.error != null) ...[
                     const SizedBox(height: Gap.sm),
-                    AiNotice(m.error!, error: m.error != 'Richiesta annullata'),
+                    aiNotice(m.error!, error: m.error != 'Richiesta annullata'),
                   ],
                   if (m.response?.notice != null) ...[
                     const SizedBox(height: Gap.sm),
-                    AiNotice(m.response!.notice!, error: m.response!.refused),
+                    aiNotice(m.response!.notice!, error: m.response!.refused),
                   ],
                   if (m.response != null && !m.response!.refused) ...[
                     const SizedBox(height: Gap.xs),
-                    Text(
-                      formatUsage(m.response!),
-                      style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
-                    ),
+                    Text(formatUsage(m.response!), style: uiText(TypeSize.caption, color: c.textTertiary)),
                   ],
                 ],
               ),
@@ -358,14 +340,16 @@ class _AiChatViewState extends State<_AiChatView> {
     );
   }
 
+  /// Bottom bar with the message field: `chrome` with a hairline above, as
+  /// tall as the field (up to six lines).
   Widget _composer() {
     final c = DbColors.of(context);
     final mac = Platform.isMacOS;
     return Container(
-      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.sm, Gap.xl, Gap.md),
+      padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.md, Gap.sm),
       decoration: BoxDecoration(
-        color: c.content,
-        border: Border(top: BorderSide(color: c.separator)),
+        color: c.chrome,
+        border: Border(top: BorderSide(color: c.separator, width: 0.5)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -376,21 +360,25 @@ class _AiChatViewState extends State<_AiChatView> {
                 const SingleActivator(LogicalKeyboardKey.enter): _send,
                 SingleActivator(LogicalKeyboardKey.enter, meta: mac, control: !mac): _send,
               },
-              child: TextField(
+              child: MacTextField(
                 controller: tab.input,
                 focusNode: _focus,
                 minLines: 1,
                 maxLines: 6,
-                keyboardType: TextInputType.multiline,
-                decoration: const InputDecoration(hintText: 'Scrivi un messaggio… (⇧Invio per andare a capo)'),
+                hint: 'Scrivi un messaggio… (⇧Invio per andare a capo)',
               ),
             ),
           ),
           const SizedBox(width: Gap.sm),
           if (tab.busy)
-            PrimaryButton(label: 'Interrompi', icon: AppIcons.stop, color: c.danger, onPressed: tab.cancel)
+            PushButton(
+              label: 'Interrompi',
+              icon: AppIcons.stop,
+              kind: PushButtonKind.destructive,
+              onPressed: tab.cancel,
+            )
           else
-            PrimaryButton(label: 'Invia', icon: AppIcons.arrowUp, onPressed: _send),
+            PushButton.primary(label: 'Invia', icon: AppIcons.arrowUp, onPressed: _send),
         ],
       ),
     );

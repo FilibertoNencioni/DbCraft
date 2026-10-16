@@ -21,8 +21,9 @@ Future<ValueDialogResult?> showValueDialog(
   required Object? value,
   bool editable = false,
 }) {
-  return showDialog<ValueDialogResult>(
-    context: context,
+  return showSheet<ValueDialogResult>(
+    context,
+    size: SheetSize.xlarge,
     builder: (_) => _ValueDialog(column: column, value: value, editable: editable),
   );
 }
@@ -87,128 +88,121 @@ class _ValueDialogState extends State<_ValueDialog> {
     }
   }
 
+  void _apply() {
+    if (!_changed) return Navigator.pop(context);
+    final out = _value is Uint8List && _view == _View.hex ? _value : _ctrl.text;
+    Navigator.pop(context, ValueDialogResult(out, true));
+  }
+
+  Future<void> _saveToFile(Object? v) async {
+    final loc = await getSaveLocation(suggestedName: '${widget.column.name}.bin');
+    if (loc == null) return;
+    final data = v is Uint8List ? v : utf8.encode(_ctrl.text);
+    await File(loc.path).writeAsBytes(data);
+  }
+
+  Future<void> _loadFromFile(bool isBinary) async {
+    final f = await openFile();
+    if (f == null) return;
+    final bytes = await f.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _changed = true;
+      if (isBinary) {
+        _value = bytes;
+        _view = _View.hex;
+      } else {
+        _ctrl.text = utf8.decode(bytes, allowMalformed: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final v = _value;
     final isBinary = v is Uint8List || widget.column.isBinary;
     final readOnly = !widget.editable || _view == _View.hex;
-    Widget body;
-    if (_view == _View.hex && v is Uint8List) {
-      body = SingleChildScrollView(child: SelectableText(_hexDump(v), style: monoStyle(context, size: 12.5)));
-    } else {
-      body = TextField(
-        controller: _ctrl,
-        readOnly: readOnly,
-        expands: true,
-        maxLines: null,
-        style: monoStyle(context, size: 13),
-        decoration: const InputDecoration(border: OutlineInputBorder()),
-        onChanged: (_) => _changed = true,
-      );
-    }
-    return Dialog(
-      insetPadding: const EdgeInsets.all(32),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${widget.column.name}  ·  ${widget.column.displayType}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  SegmentedButton<_View>(
-                    showSelectedIcon: false,
-                    segments: [
-                      const ButtonSegment(value: _View.text, label: Text('Testo')),
-                      const ButtonSegment(value: _View.json, label: Text('JSON')),
-                      if (v is Uint8List) const ButtonSegment(value: _View.hex, label: Text('Hex')),
-                    ],
-                    selected: {_view},
-                    onSelectionChanged: (s) => setState(() {
-                      _view = s.first;
-                      if (_view == _View.json) _ctrl.text = _pretty(_ctrl.text);
-                    }),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                v == null
-                    ? 'NULL'
-                    : v is Uint8List
-                    ? '${v.length} byte'
-                    : '${v.toString().length} caratteri',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 8),
-              Expanded(child: body),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  TextButton.icon(
-                    icon: const Icon(AppIcons.copy, size: 16),
-                    label: const Text('Copia'),
-                    onPressed: () => Clipboard.setData(ClipboardData(text: _ctrl.text)),
-                  ),
-                  if (isBinary || v is String)
-                    TextButton.icon(
-                      icon: const Icon(AppIcons.download, size: 16),
-                      label: const Text('Salva su file…'),
-                      onPressed: () async {
-                        final loc = await getSaveLocation(suggestedName: '${widget.column.name}.bin');
-                        if (loc == null) return;
-                        final data = v is Uint8List ? v : utf8.encode(_ctrl.text);
-                        await File(loc.path).writeAsBytes(data);
-                      },
-                    ),
-                  if (widget.editable)
-                    TextButton.icon(
-                      icon: const Icon(AppIcons.upload, size: 16),
-                      label: const Text('Carica da file…'),
-                      onPressed: () async {
-                        final f = await openFile();
-                        if (f == null) return;
-                        final bytes = await f.readAsBytes();
-                        setState(() {
-                          _changed = true;
-                          if (isBinary) {
-                            _value = bytes;
-                            _view = _View.hex;
-                          } else {
-                            _ctrl.text = utf8.decode(bytes, allowMalformed: true);
-                          }
-                        });
-                      },
-                    ),
-                  const Spacer(),
-                  if (widget.editable)
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, const ValueDialogResult(null, true)),
-                      child: const Text('Imposta NULL'),
-                    ),
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
-                  if (widget.editable)
-                    FilledButton(
-                      onPressed: () {
-                        if (!_changed) return Navigator.pop(context);
-                        final out = _value is Uint8List && _view == _View.hex ? _value : _ctrl.text;
-                        Navigator.pop(context, ValueDialogResult(out, true));
-                      },
-                      child: const Text('Applica'),
-                    ),
-                ],
-              ),
-            ],
+    // The editors fill the sheet: size them in whole lines of mono text.
+    final body = LayoutBuilder(
+      builder: (context, box) {
+        final mono = MediaQuery.textScalerOf(context).scale(TypeSize.mono);
+        if (_view == _View.hex && v is Uint8List) {
+          final lines = ((box.maxHeight - Gap.md * 2) / (mono * 1.35)).floor().clamp(1, 1000);
+          return Align(
+            alignment: Alignment.topCenter,
+            child: CodeBox(_hexDump(v), copy: false, maxLines: lines),
+          );
+        }
+        final lines = ((box.maxHeight - 8) / (mono * 1.3)).floor().clamp(1, 1000);
+        return Align(
+          alignment: Alignment.topCenter,
+          child: MacTextField(
+            controller: _ctrl,
+            readOnly: readOnly,
+            mono: true,
+            minLines: lines,
+            maxLines: lines,
+            onChanged: (_) => _changed = true,
           ),
-        ),
+        );
+      },
+    );
+    return SheetScaffold(
+      title: widget.column.name,
+      subtitle: [
+        widget.column.displayType,
+        v == null
+            ? 'NULL'
+            : v is Uint8List
+            ? '${v.length} byte'
+            : '${v.toString().length} caratteri',
+      ].join('  ·  '),
+      onSubmit: widget.editable ? _apply : () => Navigator.pop(context),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Segmented<_View>(
+              value: _view,
+              items: [
+                (_View.text, 'Testo', null),
+                (_View.json, 'JSON', null),
+                if (v is Uint8List) (_View.hex, 'Hex', null),
+              ],
+              onChanged: (view) => setState(() {
+                _view = view;
+                if (_view == _View.json) _ctrl.text = _pretty(_ctrl.text);
+              }),
+            ),
+          ),
+          const SizedBox(height: Gap.md),
+          Expanded(child: body),
+        ],
       ),
+      leading: [
+        PushButton(
+          label: 'Copia',
+          onPressed: () => Clipboard.setData(ClipboardData(text: _ctrl.text)),
+        ),
+        if (isBinary || v is String) PushButton(label: 'Salva su file…', onPressed: () => _saveToFile(v)),
+        if (widget.editable) PushButton(label: 'Carica da file…', onPressed: () => _loadFromFile(isBinary)),
+      ],
+      actions: widget.editable
+          ? [
+              PushButton(
+                label: 'Imposta NULL',
+                onPressed: () => Navigator.pop(context, const ValueDialogResult(null, true)),
+              ),
+              PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+              PushButton.primary(label: 'Applica', onPressed: _apply),
+            ]
+          : [PushButton.primary(label: 'Fine', onPressed: () => Navigator.pop(context))],
     );
   }
 }

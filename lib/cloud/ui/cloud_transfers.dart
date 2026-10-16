@@ -110,7 +110,6 @@ class CloudTransfersView extends StatelessWidget {
                 trailing: ToolButton(
                   icon: AppIcons.clearAll,
                   tooltip: 'Rimuovi i trasferimenti completati',
-                  size: 15,
                   onPressed: mgr.items.any((t) => t.state != TransferState.running) ? mgr.clearFinished : null,
                 ),
               ),
@@ -120,7 +119,7 @@ class CloudTransfersView extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: Gap.xs),
                   child: Text(
                     'e altri ${mgr.items.length - shown.length}',
-                    style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
+                    style: uiText(TypeSize.caption, color: c.textTertiary),
                   ),
                 ),
               const SizedBox(height: Gap.xs),
@@ -151,7 +150,6 @@ class _TransferRow extends StatelessWidget {
     };
     return Tooltip(
       message: t.error?.toString() ?? t.label,
-      waitDuration: const Duration(milliseconds: 600),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(Gap.md, 2, Gap.xs, 2),
         child: Row(
@@ -169,16 +167,16 @@ class _TransferRow extends StatelessWidget {
                         child: Text(
                           t.label,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: TypeSize.small, color: c.text),
+                          style: uiText(TypeSize.small, color: c.text),
                         ),
                       ),
                       const SizedBox(width: Gap.xs),
                       Text(
                         status,
-                        style: TextStyle(
-                          fontSize: TypeSize.caption,
+                        style: uiText(
+                          TypeSize.caption,
                           color: t.state == TransferState.failed ? c.danger : c.textTertiary,
-                          fontFeatures: kTabular,
+                          features: kTabular,
                         ),
                       ),
                     ],
@@ -186,26 +184,17 @@ class _TransferRow extends StatelessWidget {
                   if (t.state == TransferState.running)
                     Padding(
                       padding: const EdgeInsets.only(top: 3),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(2),
-                        child: LinearProgressIndicator(
-                          value: t.fraction,
-                          minHeight: 3,
-                          color: c.accent,
-                          backgroundColor: c.pressed,
-                        ),
-                      ),
+                      child: ProgressBar(value: t.fraction, semanticLabel: t.label),
                     ),
                 ],
               ),
             ),
             if (t.state == TransferState.running)
-              ToolButton(icon: AppIcons.close, tooltip: 'Annulla', size: 14, onPressed: t.cancel.cancel)
+              ToolButton(icon: AppIcons.close, tooltip: 'Annulla', onPressed: t.cancel.cancel)
             else if (t.state == TransferState.failed)
               ToolButton(
                 icon: AppIcons.info,
                 tooltip: 'Dettagli errore',
-                size: 14,
                 onPressed: () => showErrorDialog(context, t.error ?? 'Errore', title: t.label),
               ),
           ],

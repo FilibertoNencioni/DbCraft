@@ -3,6 +3,7 @@
 // WHERE / ORDER BY strings are generated with the dialect quoting.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/sql_dialect.dart';
 import '../../ui/widgets/common.dart';
@@ -88,65 +89,65 @@ class VisualFilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final sort = filter.sort.isEmpty ? null : filter.sort.first;
+    // A pane bar that grows when the tokens wrap.
     return Container(
-      constraints: const BoxConstraints(minHeight: 40),
-      padding: const EdgeInsets.fromLTRB(Gap.sm, 6, Gap.sm, 6),
+      constraints: const BoxConstraints(minHeight: BarHeight.bar),
+      padding: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: 7),
       decoration: BoxDecoration(
         color: c.chrome,
-        border: Border(bottom: BorderSide(color: c.separator)),
+        border: Border(bottom: BorderSide(color: c.separator, width: 0.5)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 6, right: Gap.sm),
-            child: Icon(AppIcons.filter, size: 15, color: c.textSecondary),
+          SizedBox(
+            height: ControlSize.regular,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 2, right: Gap.sm),
+              child: Icon(AppIcons.filter, size: 14, color: c.textSecondary),
+            ),
           ),
           Expanded(
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (filter.customWhere.trim().isNotEmpty)
-                  Tooltip(
-                    message: filter.customWhere,
-                    child: _Chip(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 1.5),
+              child: TokenField(
+                joiner: 'e',
+                tokens: [
+                  if (filter.customWhere.trim().isNotEmpty)
+                    FilterToken(
                       label: 'SQL: ${filter.customWhere.trim()}',
-                      onTap: () {},
+                      mono: true,
+                      tooltip: filter.customWhere,
                       onRemove: () {
                         filter.customWhere = '';
                         onChanged();
                       },
                     ),
-                  ),
-                for (final (i, cond) in filter.conditions.indexed) ...[
-                  if (i > 0)
-                    Text(
-                      'e',
-                      style: TextStyle(fontSize: TypeSize.small, color: c.textTertiary),
-                    ),
-                  Builder(
-                    builder: (ctx) => _Chip(
-                      label: cond.label,
-                      onTap: () async {
-                        final r = await showFilterPopover(ctx, columns, initial: cond);
-                        if (r != null) {
-                          filter.conditions[i] = r;
+                  for (final (i, cond) in filter.conditions.indexed)
+                    Builder(
+                      builder: (ctx) => FilterToken(
+                        label: cond.label,
+                        onTap: () async {
+                          final r = await showFilterPopover(ctx, columns, initial: cond);
+                          if (r != null) {
+                            filter.conditions[i] = r;
+                            onChanged();
+                          }
+                        },
+                        onRemove: () {
+                          filter.conditions.removeAt(i);
                           onChanged();
-                        }
-                      },
-                      onRemove: () {
-                        filter.conditions.removeAt(i);
-                        onChanged();
-                      },
+                        },
+                      ),
                     ),
-                  ),
                 ],
-                Builder(
-                  builder: (ctx) => _AddButton(
+                trailing: Builder(
+                  builder: (ctx) => ToolButton(
+                    icon: AppIcons.add,
+                    tooltip: 'Aggiungi un filtro',
                     label: filter.conditions.isEmpty ? 'Aggiungi filtro' : 'Aggiungi',
-                    onTap: columns.isEmpty
+                    extent: ControlSize.small,
+                    onPressed: columns.isEmpty
                         ? null
                         : () async {
                             final r = await showFilterPopover(ctx, columns);
@@ -157,7 +158,7 @@ class VisualFilterBar extends StatelessWidget {
                           },
                   ),
                 ),
-              ],
+              ),
             ),
           ),
           const SizedBox(width: Gap.sm),
@@ -187,74 +188,6 @@ class VisualFilterBar extends StatelessWidget {
   }
 }
 
-class _Chip extends StatefulWidget {
-  const _Chip({required this.label, required this.onTap, required this.onRemove});
-  final String label;
-  final VoidCallback onTap;
-  final VoidCallback onRemove;
-
-  @override
-  State<_Chip> createState() => _ChipState();
-}
-
-class _ChipState extends State<_Chip> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: Container(
-          height: 26,
-          padding: const EdgeInsets.only(left: 10, right: 4),
-          decoration: BoxDecoration(
-            color: c.accent.withValues(alpha: _hover ? 0.18 : 0.12),
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: Text(
-                  widget.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.text, fontFeatures: kTabular),
-                ),
-              ),
-              const SizedBox(width: 2),
-              Tooltip(
-                message: 'Rimuovi filtro',
-                child: GestureDetector(
-                  onTap: widget.onRemove,
-                  child: Padding(
-                    padding: const EdgeInsets.all(3),
-                    child: Icon(AppIcons.close, size: 13, color: c.textSecondary),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AddButton extends StatelessWidget {
-  const _AddButton({required this.label, required this.onTap});
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) =>
-      ToolButton(icon: AppIcons.add, tooltip: 'Aggiungi un filtro', label: label, onPressed: onTap);
-}
-
 class _SortButton extends StatelessWidget {
   const _SortButton({required this.columns, required this.current, required this.onChanged});
   final List<FilterColumn> columns;
@@ -264,49 +197,27 @@ class _SortButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cur = current;
-    return PopupMenuButton<SortKey?>(
+    bool on(String col, bool desc) => cur != null && cur.column == col && cur.descending == desc;
+    return PulldownButton(
+      icon: cur == null ? AppIcons.swapVertical : (cur.descending ? AppIcons.arrowDown : AppIcons.arrowUp),
+      label: cur == null ? 'Ordina' : cur.column,
       tooltip: 'Ordina',
-      position: PopupMenuPosition.under,
-      onSelected: onChanged,
-      itemBuilder: (ctx) => [
-        const PopupMenuItem<SortKey?>(height: 28, value: null, child: Text('Nessun ordinamento')),
-        const PopupMenuDivider(height: 9),
+      entries: () => [
+        MenuEntry('Nessun ordinamento', checked: cur == null, onSelected: () => onChanged(null)),
+        const MenuEntry.divider(),
         for (final col in columns) ...[
-          PopupMenuItem<SortKey?>(
-            height: 28,
-            value: SortKey(col.name),
-            child: Row(
-              children: [
-                const Icon(AppIcons.arrowUp, size: 14),
-                const SizedBox(width: 8),
-                Text('${col.name} crescente'),
-              ],
-            ),
+          MenuEntry(
+            '${col.name} crescente',
+            checked: on(col.name, false),
+            onSelected: () => onChanged(SortKey(col.name)),
           ),
-          PopupMenuItem<SortKey?>(
-            height: 28,
-            value: SortKey(col.name, descending: true),
-            child: Row(
-              children: [
-                const Icon(AppIcons.arrowDown, size: 14),
-                const SizedBox(width: 8),
-                Text('${col.name} decrescente'),
-              ],
-            ),
+          MenuEntry(
+            '${col.name} decrescente',
+            checked: on(col.name, true),
+            onSelected: () => onChanged(SortKey(col.name, descending: true)),
           ),
         ],
       ],
-      child: IgnorePointer(
-        child: ToolButton(
-          icon: cur == null
-              ? AppIcons.swapVertical
-              : (cur.descending ? AppIcons.arrowDown : AppIcons.arrowUp),
-          tooltip: 'Ordina',
-          active: cur != null,
-          label: cur == null ? 'Ordina' : cur.column,
-          onPressed: () {},
-        ),
-      ),
     );
   }
 }
@@ -316,35 +227,14 @@ Future<FilterCondition?> showFilterPopover(
   BuildContext anchorContext,
   List<FilterColumn> columns, {
   FilterCondition? initial,
-}) {
-  final box = anchorContext.findRenderObject() as RenderBox?;
-  final overlay = Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
-  var anchor = Offset.zero;
-  if (box != null && overlay != null) {
-    anchor = box.localToGlobal(Offset(0, box.size.height + 4), ancestor: overlay);
-  }
-  final screen = overlay?.size ?? const Size(1200, 800);
-  const width = 340.0;
-  final left = anchor.dx.clamp(8.0, (screen.width - width - 8).clamp(8.0, double.infinity));
-  final top = anchor.dy.clamp(8.0, (screen.height - 260).clamp(8.0, double.infinity));
-  return showGeneralDialog<FilterCondition>(
-    context: anchorContext,
-    barrierDismissible: true,
-    barrierLabel: 'Chiudi',
-    barrierColor: Colors.transparent,
-    transitionDuration: Duration.zero,
-    pageBuilder: (ctx, _, _) => Stack(
-      children: [
-        Positioned(
-          left: left,
-          top: top,
-          width: width,
-          child: _FilterPopover(columns: columns, initial: initial),
-        ),
-      ],
-    ),
-  );
-}
+}) => showPopover<FilterCondition>(
+  anchorContext,
+  anchor: anchorRect(anchorContext),
+  builder: (_) => SizedBox(
+    width: 300,
+    child: _FilterPopover(columns: columns, initial: initial),
+  ),
+);
 
 class _FilterPopover extends StatefulWidget {
   const _FilterPopover({required this.columns, this.initial});
@@ -373,8 +263,6 @@ class _FilterPopoverState extends State<_FilterPopover> {
     super.dispose();
   }
 
-  bool get _isDate => _col.kind == ValueKind.date || _col.kind == ValueKind.timestamp;
-
   bool get _valid => switch (_op.arity) {
     0 => true,
     2 => _v1.text.trim().isNotEmpty && _v2.text.trim().isNotEmpty,
@@ -393,51 +281,67 @@ class _FilterPopoverState extends State<_FilterPopover> {
     );
   }
 
-  Future<void> _pickDate(TextEditingController ctrl) async {
-    final now = DateTime.now();
-    final cur = DateTime.tryParse(ctrl.text.trim()) ?? now;
-    final d = await showDatePicker(
-      context: context,
-      initialDate: cur,
-      firstDate: DateTime(1900),
-      lastDate: DateTime(now.year + 50),
+  static String _day(DateTime d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  /// Calendar for a timestamp: replaces the date and keeps the time typed
+  /// after it.
+  Future<void> _pickDay(BuildContext anchor, TextEditingController ctrl) async {
+    final text = ctrl.text.trim();
+    final d = await showPopover<DateTime>(
+      context,
+      anchor: anchorRect(anchor),
+      padding: const EdgeInsets.all(Gap.sm),
+      builder: (ctx) => MiniCalendar(selected: DateTime.tryParse(text), onPick: (d) => Navigator.of(ctx).pop(d)),
     );
     if (d == null) return;
-    String two(int n) => n.toString().padLeft(2, '0');
-    setState(() => ctrl.text = '${d.year}-${two(d.month)}-${two(d.day)}');
+    final time = text.length > 10 ? text.substring(10) : '';
+    setState(() => ctrl.text = '${_day(d)}$time');
   }
 
   Widget _valueField(TextEditingController ctrl, String hint) {
-    final c = DbColors.of(context);
     if (_col.kind == ValueKind.boolean) {
       final v = ctrl.text.isEmpty ? 'sì' : ctrl.text;
-      return Segmented<String>(
-        value: v,
-        items: const [('sì', 'Sì', null), ('no', 'No', null)],
-        onChanged: (x) => setState(() => ctrl.text = x),
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Segmented<String>(
+          value: v,
+          items: const [('sì', 'Sì', null), ('no', 'No', null)],
+          onChanged: (x) => setState(() => ctrl.text = x),
+        ),
       );
     }
-    return SizedBox(
-      height: 28,
-      child: TextField(
-        controller: ctrl,
-        autofocus: ctrl == _v1,
-        style: const TextStyle(fontSize: TypeSize.body, fontFeatures: kTabular),
-        decoration: InputDecoration(
-          hintText: hint,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-          suffixIcon: _isDate
-              ? GestureDetector(
-                  onTap: () => _pickDate(ctrl),
-                  child: Icon(AppIcons.calendar, size: 14, color: c.textSecondary),
-                )
-              : null,
-          suffixIconConstraints: const BoxConstraints(minWidth: 28),
+    if (_col.kind == ValueKind.date && _op != FilterOp.inList) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: CallbackShortcuts(
+          bindings: {const SingleActivator(LogicalKeyboardKey.enter): _submit},
+          child: DateField(
+            value: DateTime.tryParse(ctrl.text.trim()),
+            onChanged: (d) => setState(() => ctrl.text = d == null ? '' : _day(d)),
+          ),
         ),
-        onChanged: (_) => setState(() {}),
-        onSubmitted: (_) => _submit(),
-      ),
+      );
+    }
+    return MacTextField(
+      controller: ctrl,
+      autofocus: ctrl == _v1,
+      hint: hint,
+      tabular: true,
+      trailing: _col.kind == ValueKind.timestamp && _op != FilterOp.inList
+          ? Builder(
+              builder: (anchor) => ToolButton(
+                icon: AppIcons.calendar,
+                tooltip: 'Calendario',
+                extent: 18,
+                onPressed: () => _pickDay(anchor, ctrl),
+              ),
+            )
+          : null,
+      onChanged: (_) => setState(() {}),
+      onSubmitted: (_) => _submit(),
     );
   }
 
@@ -455,99 +359,70 @@ class _FilterPopoverState extends State<_FilterPopover> {
     final c = DbColors.of(context);
     final ops = FilterOp.forKind(_col.kind);
     if (!ops.contains(_op)) _op = ops.first;
-    final label = TextStyle(fontSize: TypeSize.small, color: c.textSecondary);
-    return Material(
-      color: c.raised,
-      elevation: 8,
-      shadowColor: Colors.black.withValues(alpha: 0.3),
-      borderRadius: BorderRadius.circular(Radii.panel + 2),
-      child: Padding(
-        padding: const EdgeInsets.all(Gap.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    final label = uiText(TypeSize.small, color: c.textSecondary);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Colonna', style: label),
+        const SizedBox(height: 4),
+        PopUpButton<String>(
+          value: _col.name,
+          expand: true,
+          items: [for (final col in widget.columns) (col.name, col.name, null)],
+          entries: () => [
+            for (final col in widget.columns)
+              MenuEntry(
+                col.name,
+                value: col.name,
+                checked: col.name == _col.name,
+                trailing: col.typeName.isEmpty ? null : TypeLabel(col.typeName.toLowerCase()),
+              ),
+          ],
+          onChanged: (v) => setState(() {
+            final prev = _col.kind;
+            _col = widget.columns.firstWhere((e) => e.name == v);
+            if (prev != _col.kind) {
+              _op = _defaultOp(_col.kind);
+              _v1.clear();
+              _v2.clear();
+            }
+          }),
+        ),
+        const SizedBox(height: Gap.sm),
+        Text('Condizione', style: label),
+        const SizedBox(height: 4),
+        PopUpButton<FilterOp>(
+          value: _op,
+          expand: true,
+          items: [for (final o in ops) (o, o == FilterOp.like ? 'contiene' : o.label, null)],
+          onChanged: (v) => setState(() => _op = v),
+        ),
+        if (_op.arity > 0) ...[
+          const SizedBox(height: Gap.sm),
+          Text(_op.arity == 2 ? 'Da' : 'Valore', style: label),
+          const SizedBox(height: 4),
+          _valueField(_v1, _hint),
+        ],
+        if (_op.arity == 2) ...[
+          const SizedBox(height: Gap.sm),
+          Text('A', style: label),
+          const SizedBox(height: 4),
+          _valueField(_v2, _hint),
+        ],
+        const SizedBox(height: Gap.md),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Text('Colonna', style: label),
-            const SizedBox(height: 4),
-            DropdownButtonFormField<String>(
-              initialValue: _col.name,
-              isDense: true,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              ),
-              items: [
-                for (final col in widget.columns)
-                  DropdownMenuItem(
-                    value: col.name,
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(text: col.name),
-                          TextSpan(
-                            text: '  ${col.typeName.toLowerCase()}',
-                            style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
-                          ),
-                        ],
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-              ],
-              onChanged: (v) => setState(() {
-                final prev = _col.kind;
-                _col = widget.columns.firstWhere((e) => e.name == v);
-                if (prev != _col.kind) {
-                  _op = _defaultOp(_col.kind);
-                  _v1.clear();
-                  _v2.clear();
-                }
-              }),
-            ),
-            const SizedBox(height: Gap.sm),
-            Text('Condizione', style: label),
-            const SizedBox(height: 4),
-            DropdownButtonFormField<FilterOp>(
-              initialValue: _op,
-              isDense: true,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              ),
-              items: [
-                for (final o in ops) DropdownMenuItem(value: o, child: Text(o == FilterOp.like ? 'contiene' : o.label)),
-              ],
-              onChanged: (v) => setState(() => _op = v ?? _op),
-            ),
-            if (_op.arity > 0) ...[
-              const SizedBox(height: Gap.sm),
-              Text(_op.arity == 2 ? 'Da' : 'Valore', style: label),
-              const SizedBox(height: 4),
-              _valueField(_v1, _hint),
-            ],
-            if (_op.arity == 2) ...[
-              const SizedBox(height: Gap.sm),
-              Text('A', style: label),
-              const SizedBox(height: 4),
-              _valueField(_v2, _hint),
-            ],
-            const SizedBox(height: Gap.md),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-                const SizedBox(width: Gap.sm),
-                PrimaryButton(
-                  label: widget.initial == null ? 'Aggiungi' : 'Applica',
-                  onPressed: _valid ? _submit : null,
-                ),
-              ],
+            PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+            const SizedBox(width: Gap.sm),
+            PushButton.primary(
+              label: widget.initial == null ? 'Aggiungi' : 'Applica',
+              onPressed: _valid ? _submit : null,
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 }

@@ -328,6 +328,43 @@ List<DiffLine> parseUnifiedDiff(String patch) {
   return out;
 }
 
+/// Line diff of two small texts (the before and after of a fix), by longest
+/// common subsequence: context, removed and added lines with their numbers.
+List<DiffLine> diffLines(String before, String after) {
+  final a = before.split('\n'), b = after.split('\n');
+  if (a.length * b.length > 4000000) {
+    return [
+      for (final (i, l) in a.indexed) DiffLine(DiffLineKind.removed, l, oldLine: i + 1),
+      for (final (j, l) in b.indexed) DiffLine(DiffLineKind.added, l, newLine: j + 1),
+    ];
+  }
+  final n = a.length, m = b.length;
+  final lcs = List.generate(n + 1, (_) => List<int>.filled(m + 1, 0));
+  for (var i = n - 1; i >= 0; i--) {
+    for (var j = m - 1; j >= 0; j--) {
+      lcs[i][j] = a[i] == b[j] ? lcs[i + 1][j + 1] + 1 : math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  final out = <DiffLine>[];
+  var i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] == b[j]) {
+      out.add(DiffLine(DiffLineKind.context, a[i], oldLine: ++i, newLine: ++j));
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      out.add(DiffLine(DiffLineKind.removed, a[i], oldLine: ++i));
+    } else {
+      out.add(DiffLine(DiffLineKind.added, b[j], newLine: ++j));
+    }
+  }
+  while (i < n) {
+    out.add(DiffLine(DiffLineKind.removed, a[i], oldLine: ++i));
+  }
+  while (j < m) {
+    out.add(DiffLine(DiffLineKind.added, b[j], newLine: ++j));
+  }
+  return out;
+}
+
 /// The one diff renderer (AI fixes, git): `diff*` tokens, a gutter with old
 /// and new line numbers and the +/− marker, no wrapping (long lines scroll
 /// sideways), selectable text.

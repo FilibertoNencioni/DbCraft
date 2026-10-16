@@ -351,7 +351,9 @@ class SearchField extends StatelessWidget {
 
 /// NSComboBox: a text field with an attached ⌄ that lists suggestions. The
 /// user can type anything; picking a suggestion replaces the text. ↓ opens
-/// the list from the keyboard.
+/// the list from the keyboard, narrowed to the suggestions that contain the
+/// typed text. With [autocomplete], typing at the end completes inline the
+/// first suggestion that starts with the text, the added part selected.
 class ComboField extends StatefulWidget {
   const ComboField({
     super.key,
@@ -365,12 +367,14 @@ class ComboField extends StatefulWidget {
     this.width,
     this.focusNode,
     this.error,
+    this.autocomplete = true,
   });
 
   final TextEditingController controller;
 
   /// Suggestions, or a function evaluated when the list opens.
   final List<String> Function() options;
+  final bool autocomplete;
   final String? hint;
   final ValueChanged<String>? onChanged;
   final bool mono;
@@ -387,9 +391,47 @@ class ComboField extends StatefulWidget {
 class _ComboFieldState extends State<ComboField> {
   final _key = GlobalKey();
 
+  /// What the user typed, without the inline completion.
+  String _last = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _last = widget.controller.text;
+  }
+
+  /// Completes [text] inline when it grew by typing at its end. Deleting
+  /// (including the selected completion) never completes.
+  void _changed(String text) {
+    final sel = widget.controller.selection;
+    final typedAtEnd = text.length > _last.length && sel.isCollapsed && sel.baseOffset == text.length;
+    _last = text;
+    if (widget.autocomplete && typedAtEnd) {
+      final lower = text.toLowerCase();
+      final match = widget
+          .options()
+          .where((o) => o.length > text.length && o.toLowerCase().startsWith(lower))
+          .firstOrNull;
+      if (match != null) {
+        final full = text + match.substring(text.length);
+        widget.controller.value = TextEditingValue(
+          text: full,
+          selection: TextSelection(baseOffset: text.length, extentOffset: full.length),
+        );
+        text = full;
+      }
+    }
+    widget.onChanged?.call(text);
+  }
+
   Future<void> _open() async {
     final ctx = _key.currentContext;
-    final options = widget.options();
+    final all = widget.options();
+    final typed = widget.controller.text.trim().toLowerCase();
+    final narrowed = typed.isEmpty || all.contains(widget.controller.text)
+        ? all
+        : all.where((o) => o.toLowerCase().contains(typed)).toList();
+    final options = narrowed.isEmpty ? all : narrowed;
     if (ctx == null || options.isEmpty) return;
     final rect = anchorRect(ctx);
     final v = await showMacMenu<String>(
@@ -400,6 +442,7 @@ class _ComboFieldState extends State<ComboField> {
     );
     if (v == null) return;
     widget.controller.value = TextEditingValue(text: v, selection: TextSelection.collapsed(offset: v.length));
+    _last = v;
     widget.onChanged?.call(v);
   }
 
@@ -415,7 +458,7 @@ class _ComboFieldState extends State<ComboField> {
           controller: widget.controller,
           focusNode: widget.focusNode,
           hint: widget.hint,
-          onChanged: widget.onChanged,
+          onChanged: _changed,
           mono: widget.mono,
           small: widget.small,
           enabled: widget.enabled,
@@ -632,7 +675,8 @@ class _TrianglePainter extends CustomPainter {
 }
 
 /// Numeric field: right-aligned tabular text and a [MacStepper]. ↑/↓ and the
-/// scroll wheel (while focused) step by [step] within [min]…[max].
+/// scroll wheel (while focused) step by [step] within [min]…[max]; a typed
+/// value outside the range is brought back into it when the field loses focus.
 class NumberField extends StatefulWidget {
   const NumberField({
     super.key,
@@ -678,20 +722,52 @@ class _NumberFieldState extends State<NumberField> {
   FocusNode get _focus => widget.focusNode ?? (_own ??= FocusNode());
 
   @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_focusChanged);
+  }
+
+  @override
+  void didUpdateWidget(NumberField old) {
+    super.didUpdateWidget(old);
+    final was = old.focusNode ?? _own;
+    if (was != _focus) {
+      was?.removeListener(_focusChanged);
+      _focus.addListener(_focusChanged);
+    }
+  }
+
+  @override
   void dispose() {
+    _focus.removeListener(_focusChanged);
     _own?.dispose();
     super.dispose();
   }
 
-  void _step(int dir) {
-    if (!widget.enabled) return;
-    final cur = num.tryParse(widget.controller.text.trim().replaceAll(',', '.'));
-    num v = cur == null ? (widget.min ?? 0) : cur + dir * widget.step;
-    if (widget.min != null && v < widget.min!) v = widget.min!;
-    if (widget.max != null && v > widget.max!) v = widget.max!;
+  num? get _current => num.tryParse(widget.controller.text.trim().replaceAll(',', '.'));
+
+  num _clamp(num v) {
+    if (widget.min != null && v < widget.min!) return widget.min!;
+    if (widget.max != null && v > widget.max!) return widget.max!;
+    return v;
+  }
+
+  void _write(num v) {
     final text = widget.decimals == 0 ? v.round().toString() : v.toStringAsFixed(widget.decimals);
     widget.controller.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
     widget.onChanged?.call(text);
+  }
+
+  void _focusChanged() {
+    if (_focus.hasFocus) return;
+    final cur = _current;
+    if (cur != null && _clamp(cur) != cur) _write(_clamp(cur));
+  }
+
+  void _step(int dir) {
+    if (!widget.enabled) return;
+    final cur = _current;
+    _write(_clamp(cur == null ? (widget.min ?? 0) : cur + dir * widget.step));
   }
 
   @override
@@ -757,14 +833,23 @@ int _daysIn(int year, int month) => DateTime(year, month + 1, 0).day;
 
 /// NSDatePicker (text field with stepper style): day, month and year are
 /// separate segments. Click or ←/→ select a segment, digits type it, ↑/↓
-/// change it. The calendar button opens a mini calendar in a popover.
+/// change it. The calendar button opens a mini calendar in a popover. With
+/// [clearable], ⌫ or Canc with nothing typed empties the date (`null`).
 class DateField extends StatefulWidget {
-  const DateField({super.key, required this.value, required this.onChanged, this.enabled = true, this.focusNode});
+  const DateField({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+    this.focusNode,
+    this.clearable = true,
+  });
 
   final DateTime? value;
   final ValueChanged<DateTime?> onChanged;
   final bool enabled;
   final FocusNode? focusNode;
+  final bool clearable;
 
   @override
   State<DateField> createState() => _DateFieldState();
@@ -860,8 +945,12 @@ class _DateFieldState extends State<DateField> {
         _typed = '';
         _seg = (_seg + 1).clamp(0, 2);
       });
+    } else if ((k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete) && _typed.isEmpty) {
+      if (!widget.clearable || widget.value == null) return KeyEventResult.ignored;
+      setState(() => _seg = 0);
+      widget.onChanged(null);
     } else if (k == LogicalKeyboardKey.backspace) {
-      setState(() => _typed = _typed.isEmpty ? '' : _typed.substring(0, _typed.length - 1));
+      setState(() => _typed = _typed.substring(0, _typed.length - 1));
     } else if (e.character case final ch? when RegExp(r'^\d$').hasMatch(ch)) {
       _type(ch);
     } else {

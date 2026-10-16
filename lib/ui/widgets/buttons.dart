@@ -144,30 +144,6 @@ class PushButton extends StatelessWidget {
   }
 }
 
-/// The default action of a bar or sheet. Kept as a name for the many call
-/// sites; it is a [PushButton] with [PushButtonKind.defaultAction] (or
-/// [PushButtonKind.destructive] when given a [color], e.g. "Interrompi").
-class PrimaryButton extends StatelessWidget {
-  const PrimaryButton({super.key, required this.label, required this.onPressed, this.icon, this.tooltip, this.color});
-
-  final String label;
-  final IconData? icon;
-  final VoidCallback? onPressed;
-  final String? tooltip;
-
-  /// Any color makes it a destructive button.
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) => PushButton(
-    label: label,
-    icon: icon,
-    tooltip: tooltip,
-    onPressed: onPressed,
-    kind: color == null ? PushButtonKind.defaultAction : PushButtonKind.destructive,
-  );
-}
-
 /// Borderless icon button for toolbars and bars (NSButton, toolbar style):
 /// the bezel appears only on hover and press. [active] keeps the pressed
 /// bezel and tints the glyph with the accent (an "on" toggle).

@@ -481,9 +481,6 @@ const kMonoFamily = 'SF Mono';
 const kMonoFallback = ['Menlo', 'Consolas', 'Cascadia Mono', 'DejaVu Sans Mono', 'monospace'];
 const kTabular = [FontFeature.tabularFigures()];
 
-/// Height of the unified toolbar (title bar area on macOS).
-const double kUnifiedToolbarHeight = BarHeight.toolbar;
-
 /// Space reserved for the macOS traffic lights.
 double trafficLightInset(bool fullScreen) => Platform.isMacOS && !fullScreen ? 78 : 0;
 

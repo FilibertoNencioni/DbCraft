@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -34,6 +36,11 @@ class NavigatorPanel extends StatefulWidget {
 }
 
 class _NavigatorPanelState extends State<NavigatorPanel> {
+  // Shown in the context menu; the bindings live in the shell and below.
+  static const _refreshKey = SingleActivator(LogicalKeyboardKey.f5);
+  static const _editKey = SingleActivator(LogicalKeyboardKey.f4);
+  static final _newEditorKey =
+      SingleActivator(LogicalKeyboardKey.bracketRight, meta: Platform.isMacOS, control: !Platform.isMacOS);
   final Map<String, NavNode> _cache = {};
   final _filter = TextEditingController();
   final _focus = FocusNode();
@@ -200,7 +207,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               ),
               ToolButton(
                 icon: AppIcons.refresh,
-                tooltip: 'Aggiorna (F5)',
+                tooltip: 'Aggiorna (${shortcutLabel(_refreshKey)})',
                 onPressed: _selected == null ? null : () => _refresh(_selected!),
               ),
             ],
@@ -247,13 +254,13 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     icon: AppIcons.database,
     title: 'Nessuna connessione',
     message: 'Aggiungi un database tramite driver ODBC, DSN o stringa di connessione.',
-    action: PrimaryButton(label: 'Nuova connessione', onPressed: () => newConnection(context)),
+    action: PushButton.primary(label: 'Nuova connessione', onPressed: () => newConnection(context)),
   );
 
   Color _iconColor(NavNode n, DbColors c) => switch (n) {
     ConnectionNode x => x.dc.config.template.color,
     TableNode _ || ProcedureNode _ => c.accent,
-    LeafNode l when l.color == const Color(0xFFFFB300) => c.keyIcon,
+    LeafNode l when l.isKey => c.keyIcon,
     LeafNode _ => c.textTertiary,
     _ => c.textSecondary,
   };
@@ -307,30 +314,12 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   // Context menus
   // -------------------------------------------------------------------------
 
-  PopupMenuItem<VoidCallback> _item(String label, IconData icon, VoidCallback? action, {String? shortcut}) =>
-      PopupMenuItem<VoidCallback>(
-        value: action,
-        enabled: action != null,
-        height: 28,
-        child: Row(
-          children: [
-            Icon(icon, size: 15, color: DbColors.of(context).textSecondary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(label, style: const TextStyle(fontSize: TypeSize.body)),
-            ),
-            if (shortcut != null)
-              Text(
-                shortcut,
-                style: TextStyle(fontSize: TypeSize.caption, color: DbColors.of(context).textTertiary),
-              ),
-          ],
-        ),
-      );
+  MenuEntry<void> _item(String label, VoidCallback? action, {SingleActivator? shortcut}) =>
+      MenuEntry(label, onSelected: action, enabled: action != null, shortcut: shortcut);
 
   Future<void> _contextMenu(BuildContext context, NavNode n, Offset pos) async {
     final app = AppScope.read(context);
-    final items = <PopupMenuEntry<VoidCallback>>[];
+    final items = <MenuEntry<void>>[];
     final dc = n.connection;
     void sqlWith(String sql) => app.sqlEditorWith(dc!, sql);
 
@@ -339,42 +328,39 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       case ConnectionNode c:
         final d = c.dc;
         items.addAll([
-          if (!d.isConnected) _item('Connetti', AppIcons.connect, () => ensureConnected(context, d)),
-          if (d.isConnected) _item('Disconnetti', AppIcons.disconnect, () => disconnectWithCheck(context, d)),
+          if (!d.isConnected) _item('Connetti', () => ensureConnected(context, d)),
+          if (d.isConnected) _item('Disconnetti', () => disconnectWithCheck(context, d)),
           if (d.isConnected)
             _item(
               'Riconnetti',
-              AppIcons.sync,
               () => guarded(context, () => d.reconnect(libPath: app.settings.libPathOrNull)),
             ),
-          const PopupMenuDivider(height: 9),
-          _item('Nuovo editor SQL', AppIcons.newScript, () => openSqlEditor(context, dc: d), shortcut: 'Ctrl+]'),
+          const MenuEntry.divider(),
+          _item('Nuovo editor SQL', () => openSqlEditor(context, dc: d), shortcut: _newEditorKey),
           if (d.isConnected && d.dialect.isSql)
-            _item('Query builder…', AppIcons.join, () => app.openFeatureTab(QueryBuilderTab(d))),
+            _item('Query builder…', () => app.openFeatureTab(QueryBuilderTab(d))),
           if (d.isConnected && !simple)
             _item(
               'Prestazioni…',
-              AppIcons.performance,
               () => app.openFeatureTab<PerformanceDashboardTab>(PerformanceDashboardTab(d), match: (t) => t.dc == d),
             ),
-          _item('Informazioni connessione', AppIcons.info, d.isConnected ? () => app.openConnectionInfo(d) : null),
-          const PopupMenuDivider(height: 9),
-          _item('Modifica connessione…', AppIcons.edit, () => editConnection(context, d), shortcut: 'F4'),
-          _item('Duplica', AppIcons.copy, () => duplicateConnection(context, d)),
-          _item('Sposta su', AppIcons.arrowUp, () => app.moveConnection(d, -1)),
-          _item('Sposta giù', AppIcons.arrowDown, () => app.moveConnection(d, 1)),
-          _item('Elimina', AppIcons.delete, () => deleteConnection(context, d)),
-          const PopupMenuDivider(height: 9),
-          _item('Aggiorna', AppIcons.refresh, d.isConnected ? () => _refresh(n) : null, shortcut: 'F5'),
+          _item('Informazioni connessione', d.isConnected ? () => app.openConnectionInfo(d) : null),
+          const MenuEntry.divider(),
+          _item('Modifica connessione…', () => editConnection(context, d), shortcut: _editKey),
+          _item('Duplica', () => duplicateConnection(context, d)),
+          _item('Sposta su', () => app.moveConnection(d, -1)),
+          _item('Sposta giù', () => app.moveConnection(d, 1)),
+          _item('Elimina', () => deleteConnection(context, d)),
+          const MenuEntry.divider(),
+          _item('Aggiorna', d.isConnected ? () => _refresh(n) : null, shortcut: _refreshKey),
         ]);
       case CatalogNode c:
         items.addAll([
           _item(
             'Nuovo editor SQL',
-            AppIcons.newScript,
             () => app.openSqlEditor(dc, catalog: c.catalog),
           ),
-          _item('Imposta come predefinito', AppIcons.check, () async {
+          _item('Imposta come predefinito', () async {
             await guarded(context, () async {
               await dc!.useCatalog(c.catalog);
               dc.defaultCatalog = c.catalog;
@@ -382,40 +368,36 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               if (mounted) showToast(this.context, 'Catalogo attivo: ${c.catalog}');
             });
           }),
-          _item('Diagramma ER', AppIcons.tree, () => app.openErDiagram(dc!, c.catalog, null)),
+          _item('Diagramma ER', () => app.openErDiagram(dc!, c.catalog, null)),
           if (dc!.dialect.isSql)
             _item(
               'Query builder…',
-              AppIcons.join,
               () => app.openFeatureTab(QueryBuilderTab(dc, catalog: c.catalog)),
             ),
           if (dc.dialect.isSql && !simple)
             _item(
               'Confronta schema…',
-              AppIcons.diff,
               () => app.openFeatureTab(SchemaCompareTab(source: dc, sourceCatalog: c.catalog)),
             ),
-          _item('Copia nome', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: c.catalog))),
-          _item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'),
+          _item('Copia nome', () => Clipboard.setData(ClipboardData(text: c.catalog))),
+          _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
         ]);
       case SchemaNode s:
         items.addAll([
-          _item('Nuovo editor SQL', AppIcons.newScript, () => app.openSqlEditor(dc, catalog: s.catalog)),
-          _item('Diagramma ER', AppIcons.tree, () => app.openErDiagram(dc!, s.catalog, s.schema)),
+          _item('Nuovo editor SQL', () => app.openSqlEditor(dc, catalog: s.catalog)),
+          _item('Diagramma ER', () => app.openErDiagram(dc!, s.catalog, s.schema)),
           if (dc!.dialect.isSql)
             _item(
               'Query builder…',
-              AppIcons.join,
               () => app.openFeatureTab(QueryBuilderTab(dc, catalog: s.catalog, schema: s.schema)),
             ),
           if (dc.dialect.isSql && !simple)
             _item(
               'Confronta schema…',
-              AppIcons.diff,
               () => app.openFeatureTab(SchemaCompareTab(source: dc, sourceCatalog: s.catalog, sourceSchema: s.schema)),
             ),
-          _item('Copia nome', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: s.schema))),
-          _item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'),
+          _item('Copia nome', () => Clipboard.setData(ClipboardData(text: s.schema))),
+          _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
         ]);
       case TableNode t:
         final tb = t.table;
@@ -428,111 +410,95 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         }
 
         items.addAll([
-          _item('Apri', AppIcons.openExternal, () => app.openTable(dc, tb), shortcut: 'Invio'),
-          _item('Visualizza dati', AppIcons.grid, () => app.openTable(dc, tb, page: 1)),
+          _item('Apri', () => app.openTable(dc, tb), shortcut: const SingleActivator(LogicalKeyboardKey.enter)),
+          _item('Visualizza dati', () => app.openTable(dc, tb, page: 1)),
           if (d.isSql)
             _item(
               'Query builder…',
-              AppIcons.join,
               () => app.openFeatureTab(QueryBuilderTab(dc, catalog: tb.catalog, schema: tb.schema, initialTable: tb)),
             ),
-          _item('Leggi in editor SQL', AppIcons.runOutline, () => sqlWith('SELECT * FROM ${d.tableName(tb)}')),
+          _item('Leggi in editor SQL', () => sqlWith('SELECT * FROM ${d.tableName(tb)}')),
           if (d.isSql && !simple) ...[
-            const PopupMenuDivider(height: 9),
-            _item('Genera SELECT', AppIcons.code, () => gen((x) => '${d.selectSql(tb, x.columns)};')),
-            _item('Genera INSERT', AppIcons.code, () => gen((x) => '${d.insertSql(tb, x.columns)};')),
+            const MenuEntry.divider(),
+            _item('Genera SELECT', () => gen((x) => '${d.selectSql(tb, x.columns)};')),
+            _item('Genera INSERT', () => gen((x) => '${d.insertSql(tb, x.columns)};')),
             _item(
               'Genera UPDATE',
-              AppIcons.code,
               () => gen((x) => '${d.updateSql(tb, x.columns, x.primaryKey?.columns ?? [])};'),
             ),
             _item(
               'Genera DELETE',
-              AppIcons.code,
               () => gen((x) => '${d.deleteSql(tb, x.columns, x.primaryKey?.columns ?? [])};'),
             ),
-            _item('Genera DDL', AppIcons.document, () => gen(d.ddl)),
+            _item('Genera DDL', () => gen(d.ddl)),
           ],
-          const PopupMenuDivider(height: 9),
-          _item('Esporta dati…', AppIcons.upload, () => showTableExportDialog(context, dc, tb)),
+          const MenuEntry.divider(),
+          _item('Esporta dati…', () => showTableExportDialog(context, dc, tb)),
           if (!tb.isView)
             _item(
               'Importa dati (CSV)…',
-              AppIcons.download,
               dc.config.readOnly ? null : () => showImportDialog(context, dc, tb),
             ),
           _item(
             'Diagramma ER',
-            AppIcons.tree,
             () => app.openErDiagram(dc, tb.catalog, tb.schema, focus: tb),
           ),
           if (!tb.isView && d.isSql && !simple)
             _item(
               'Genera dati di test…',
-              AppIcons.random,
               dc.config.readOnly ? null : () => showMockDataDialog(context, dc, tb),
             ),
           if (!simple)
             _item(
               'Confronta dati…',
-              AppIcons.compare,
               () => app.openFeatureTab(DataCompareTab(source: dc, sourceTable: tb)),
             ),
-          _item('Conta righe', AppIcons.number, () => _countRows(dc, tb)),
+          _item('Conta righe', () => _countRows(dc, tb)),
           if (app.settings.aiEnabled)
-            _item('Spiega con AI', AppIcons.ai, () async {
+            _item('Spiega con AI', () async {
               if (await ensureAiReady(context) && mounted) await showAiExplainObject(this.context, dc, tb);
             }),
           _item(
             'Copia nome qualificato',
-            AppIcons.copy,
             () => Clipboard.setData(ClipboardData(text: d.tableName(tb))),
           ),
-          const PopupMenuDivider(height: 9),
+          const MenuEntry.divider(),
           if (!tb.isView)
             _item(
               'Svuota (TRUNCATE)…',
-              AppIcons.clearAll,
               dc.config.readOnly ? null : () => _dangerous(dc, d.truncateSql(tb), n),
             ),
           _item(
             'Elimina (DROP)…',
-            AppIcons.delete,
             dc.config.readOnly ? null : () => _dangerous(dc, d.dropSql(tb), n),
           ),
-          _item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'),
+          _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
         ]);
       case ProcedureNode p:
         items.addAll([
-          _item('Apri', AppIcons.openExternal, () => app.openProcedure(dc!, p.procedure)),
+          _item('Apri', () => app.openProcedure(dc!, p.procedure)),
           if (app.settings.aiEnabled)
-            _item('Spiega con AI', AppIcons.ai, () async {
+            _item('Spiega con AI', () async {
               if (await ensureAiReady(context) && mounted) await showAiExplainProcedure(this.context, dc!, p.procedure);
             }),
           if (dc!.dialect.family == DbFamily.postgres)
-            _item('Debug…', AppIcons.debug, () => PgDebuggerTab.open(context, dc, p.procedure)),
-          _item('Genera chiamata', AppIcons.code, () async {
+            _item('Debug…', () => PgDebuggerTab.open(context, dc, p.procedure)),
+          _item('Genera chiamata', () async {
             final params = await dc.metadata!.procedureParams(p.procedure);
             sqlWith(dc.dialect.procedureCall(p.procedure, params));
           }),
-          _item('Copia nome', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: p.procedure.cleanName))),
+          _item('Copia nome', () => Clipboard.setData(ClipboardData(text: p.procedure.cleanName))),
         ]);
       case ObjectFolderNode _:
       case TablePartNode _:
-        items.add(_item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'));
+        items.add(_item('Aggiorna', () => _refresh(n), shortcut: _refreshKey));
       case LeafNode l:
-        items.add(_item('Copia nome', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: l.name))));
+        items.add(_item('Copia nome', () => Clipboard.setData(ClipboardData(text: l.name))));
       default:
         break;
     }
     if (items.isEmpty) return;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final action = await showMenu<VoidCallback>(
-      context: context,
-      position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & overlay.size),
-      items: items,
-    );
-    action?.call();
+    await showMacMenu<void>(context, position: pos, entries: items);
   }
 
   Future<void> _countRows(DbConnection dc, DbTable t) async {

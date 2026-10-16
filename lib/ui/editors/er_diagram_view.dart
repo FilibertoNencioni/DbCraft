@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
@@ -33,8 +34,8 @@ class _Entity {
   _Mark mark = _Mark.none;
   Map<String, _Mark> colMarks = const {};
 
-  static const double headerH = 26;
-  static const double rowH = 17;
+  static const double headerH = 24;
+  static const double rowH = 18;
   static const int maxCols = 18;
 
   Size get size {
@@ -162,6 +163,11 @@ class _ErDiagramViewState extends State<ErDiagramView> {
   String? _error;
   String? _selected;
   int _skipped = 0;
+
+  /// Last click on a table box, to tell a double click without delaying the
+  /// single one.
+  String? _lastTapId;
+  DateTime? _lastTapAt;
 
   /// The schema has no tables (the editor can still create some).
   bool _noTables = false;
@@ -764,7 +770,6 @@ class _ErDiagramViewState extends State<ErDiagramView> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final c = DbColors.of(context);
     var w = 1200.0, h = 900.0;
     for (final e in _entities) {
@@ -780,7 +785,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
         entities: _entities,
         fks: _shownFks,
         byName: _byName,
-        color: theme.colorScheme.primary.withValues(alpha: 0.7),
+        color: c.textTertiary,
         selected: _selected,
         selectedFk: _selectedFk,
         newFks: edits?.newFks ?? const {},
@@ -790,79 +795,65 @@ class _ErDiagramViewState extends State<ErDiagramView> {
     );
     return Column(
       children: [
-        Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: theme.dividerColor)),
-          ),
-          child: Row(
-            children: [
-              ToolButton(icon: AppIcons.zoomIn, tooltip: 'Zoom +', onPressed: () => _zoom(1.2)),
-              ToolButton(icon: AppIcons.zoomOut, tooltip: 'Zoom -', onPressed: () => _zoom(1 / 1.2)),
+        PaneBar(
+          children: [
+            ToolButton(icon: AppIcons.zoomIn, tooltip: 'Zoom +', onPressed: () => _zoom(1.2)),
+            ToolButton(icon: AppIcons.zoomOut, tooltip: 'Zoom -', onPressed: () => _zoom(1 / 1.2)),
+            ToolButton(
+              icon: AppIcons.fitScreen,
+              tooltip: 'Zoom 100%',
+              onPressed: () => _transform.value = Matrix4.identity(),
+            ),
+            ToolButton(icon: AppIcons.mosaic, tooltip: 'Disposizione automatica', onPressed: _autoLayout),
+            ToolButton(icon: AppIcons.image, tooltip: 'Esporta PNG…', onPressed: _exportPng),
+            if (widget.connection.dialect.isSql) ...[
+              const ToolSeparator(),
               ToolButton(
-                icon: AppIcons.fitScreen,
-                tooltip: 'Zoom 100%',
-                onPressed: () => _transform.value = Matrix4.identity(),
+                icon: AppIcons.edit,
+                label: 'Modifica',
+                active: _editMode,
+                tooltip: _editMode ? 'Esci dalla modalità modifica' : 'Modifica lo schema nel diagramma',
+                onPressed: _loading || _preparing || !_canEdit && !_editMode ? null : _toggleEdit,
               ),
-              ToolButton(
-                icon: AppIcons.mosaic,
-                tooltip: 'Disposizione automatica',
-                onPressed: _autoLayout,
-              ),
-              ToolButton(icon: AppIcons.image, tooltip: 'Esporta PNG…', onPressed: _exportPng),
-              if (widget.connection.dialect.isSql) ...[
-                const ToolSeparator(),
+              if (_editMode) ...[
                 ToolButton(
-                  icon: AppIcons.edit,
-                  label: 'Modifica',
-                  active: _editMode,
-                  tooltip: _editMode ? 'Esci dalla modalità modifica' : 'Modifica lo schema nel diagramma',
-                  onPressed: _loading || _preparing || !_canEdit && !_editMode ? null : _toggleEdit,
+                  icon: AppIcons.addBox,
+                  label: 'Nuova tabella',
+                  tooltip: 'Crea una nuova tabella',
+                  onPressed: _newTable,
                 ),
-                if (_editMode) ...[
-                  ToolButton(
-                    icon: AppIcons.addBox,
-                    label: 'Nuova tabella',
-                    tooltip: 'Crea una nuova tabella',
-                    onPressed: _newTable,
-                  ),
-                  ToolButton(
-                    icon: AppIcons.delete,
-                    tooltip: 'Elimina la tabella o la relazione selezionata',
-                    onPressed: _selectedFk != null || (_selected != null && _byName(_selected!)?.mark != _Mark.deleted)
-                        ? _deleteSelected
-                        : null,
-                  ),
-                ],
-              ],
-              const SizedBox(width: 12),
-              Text(
-                '$shownTables tabelle · ${_shownFks.length} relazioni'
-                '${_skipped > 0 ? ' · $_skipped tabelle omesse' : ''}',
-                style: const TextStyle(fontSize: 12),
-              ),
-              if (_loading || _preparing) ...[
-                const SizedBox(width: 12),
-                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-              ],
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _editMode
-                      ? 'Trascina l\'intestazione per spostare · da una colonna a un\'altra per collegare · doppio clic per modificare'
-                      : 'Trascina le tabelle · doppio clic per aprire',
-                  textAlign: TextAlign.right,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: c.textTertiary),
+                ToolButton(
+                  icon: AppIcons.delete,
+                  tooltip: 'Elimina la tabella o la relazione selezionata',
+                  onPressed: _selectedFk != null || (_selected != null && _byName(_selected!)?.mark != _Mark.deleted)
+                      ? _deleteSelected
+                      : null,
                 ),
-              ),
+              ],
             ],
-          ),
+            const SizedBox(width: Gap.md),
+            Text(
+              '$shownTables tabelle · ${_shownFks.length} relazioni'
+              '${_skipped > 0 ? ' · $_skipped tabelle omesse' : ''}',
+              style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular),
+            ),
+            if (_loading || _preparing) ...[const SizedBox(width: Gap.md), const Spinner(size: Spinner.small)],
+            const SizedBox(width: Gap.md),
+            Expanded(
+              child: Text(
+                _editMode
+                    ? 'Trascina l\'intestazione per spostare · da una colonna a un\'altra per collegare · doppio clic per modificare'
+                    : 'Trascina le tabelle · doppio clic per aprire',
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: uiText(TypeSize.small, color: c.textTertiary),
+              ),
+            ),
+          ],
         ),
         Expanded(
           child: !showCanvas
-              ? Center(child: Text(_error!))
+              ? _emptyState()
               : InteractiveViewer(
                   transformationController: _transform,
                   constrained: false,
@@ -874,7 +865,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
                     child: Container(
                       width: w,
                       height: h,
-                      color: theme.colorScheme.surface,
+                      color: c.content,
                       child: Stack(
                         children: [
                           Positioned.fill(
@@ -886,7 +877,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
                                   )
                                 : relations,
                           ),
-                          for (final e in _entities) _box(e, theme),
+                          for (final e in _entities) _box(e),
                           if (_dragA != null)
                             Positioned.fill(
                               child: IgnorePointer(
@@ -915,43 +906,68 @@ class _ErDiagramViewState extends State<ErDiagramView> {
     );
   }
 
-  Widget _footer(DbColors c, int count) => Container(
-    height: 40,
-    padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-    decoration: BoxDecoration(
-      color: c.chrome,
-      border: Border(top: BorderSide(color: c.separator)),
-    ),
-    child: Row(
-      children: [
-        Icon(AppIcons.script, size: 18, color: count > 0 ? c.warning : c.textTertiary),
-        const SizedBox(width: Gap.sm),
-        Text(
-          count == 0 ? 'Nessuna modifica' : (count == 1 ? '1 modifica' : '$count modifiche'),
-          style: TextStyle(
-            fontSize: TypeSize.body,
-            color: count > 0 ? c.text : c.textSecondary,
-            fontFeatures: kTabular,
+  Widget _emptyState() => _noTables
+      ? const EmptyState(icon: AppIcons.erDiagram, title: 'Nessuna tabella')
+      : widget.connection.metadata == null
+      ? EmptyState(icon: AppIcons.disconnect, title: _error!)
+      : EmptyState.error(_error!, title: 'Impossibile leggere lo schema');
+
+  /// Pending-changes bar under the canvas: a [PaneBar] with the hairline on
+  /// top, since it closes the pane.
+  Widget _footer(DbColors c, int count) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(height: 0.5, color: c.separator),
+      PaneBar(
+        padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+        children: [
+          Icon(AppIcons.script, size: 16, color: count > 0 ? c.warning : c.textTertiary),
+          const SizedBox(width: Gap.sm),
+          Text(
+            count == 0 ? 'Nessuna modifica' : (count == 1 ? '1 modifica' : '$count modifiche'),
+            style: uiText(TypeSize.body, color: count > 0 ? c.text : c.textSecondary, features: kTabular),
           ),
-        ),
-        if (widget.connection.config.readOnly) ...[
-          const SizedBox(width: Gap.md),
-          Badge2('sola lettura', color: c.textSecondary),
+          if (widget.connection.config.readOnly) ...[const SizedBox(width: Gap.md), const Tag('sola lettura')],
+          const Spacer(),
+          ToolButton(
+            icon: AppIcons.undo,
+            label: 'Annulla modifiche',
+            tooltip: 'Scarta tutte le modifiche non applicate',
+            onPressed: count > 0 ? _discardAll : null,
+          ),
+          const SizedBox(width: Gap.sm),
+          PushButton.primary(
+            label: 'Rivedi script…',
+            icon: AppIcons.document,
+            size: ControlScale.small,
+            onPressed: count > 0 ? _review : null,
+          ),
         ],
-        const Spacer(),
-        ToolButton(
-          icon: AppIcons.undo,
-          label: 'Annulla modifiche',
-          tooltip: 'Scarta tutte le modifiche non applicate',
-          onPressed: count > 0 ? _discardAll : null,
-        ),
-        const SizedBox(width: Gap.sm),
-        PrimaryButton(label: 'Rivedi script…', icon: AppIcons.document, onPressed: count > 0 ? _review : null),
-      ],
-    ),
+      ),
+    ],
   );
 
-  Widget _box(_Entity e, ThemeData theme) {
+  /// Click on a table box: selects it; a second click within the double-tap
+  /// timeout opens it (or edits it in edit mode).
+  void _tapBox(_Entity e) {
+    final now = DateTime.now();
+    final last = _lastTapAt;
+    final isDouble = _lastTapId == e.id && last != null && now.difference(last) <= kDoubleTapTimeout;
+    _lastTapId = isDouble ? null : e.id;
+    _lastTapAt = isDouble ? null : now;
+    if (!isDouble) {
+      setState(() {
+        _selected = e.table.name;
+        _selectedFk = null;
+      });
+    } else if (!_editMode) {
+      AppScope.read(context).openTable(widget.connection, e.table);
+    } else if (e.mark != _Mark.deleted) {
+      _editTable(e);
+    }
+  }
+
+  Widget _box(_Entity e) {
     final c = DbColors.of(context);
     final selected = _selected == e.table.name;
     final shown = e.columns.take(_Entity.maxCols).toList();
@@ -963,26 +979,28 @@ class _ErDiagramViewState extends State<ErDiagramView> {
       _Mark.deleted => c.danger,
       _Mark.none => null,
     };
+    // Canvas node: raised box with the node shadow; edit marks draw a colored
+    // outline over it (foreground, so the rows do not move).
     final box = Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLowest,
-        border: Border.all(
-          color: selected ? theme.colorScheme.primary : (markColor ?? theme.dividerColor),
-          width: selected || markColor != null ? 2 : 1,
-        ),
-        borderRadius: BorderRadius.circular(4),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 4, offset: const Offset(1, 2))],
+        color: c.raised,
+        borderRadius: BorderRadius.circular(Radii.menu),
+        boxShadow: Elevation.node(Theme.of(context).brightness),
       ),
+      foregroundDecoration: markColor == null
+          ? null
+          : BoxDecoration(
+              border: Border.all(color: markColor, width: 1.5),
+              borderRadius: BorderRadius.circular(Radii.menu),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            height: _Entity.headerH - 2,
+            height: _Entity.headerH,
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            decoration: BoxDecoration(
-              color: (markColor ?? c.accent).withValues(alpha: 0.10),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-            ),
+            color: (markColor ?? c.accent).withValues(alpha: selected ? Tint.regular : Tint.subtle),
             child: Row(
               children: [
                 Icon(AppIcons.table, size: 14, color: markColor ?? c.accent),
@@ -991,15 +1009,15 @@ class _ErDiagramViewState extends State<ErDiagramView> {
                   child: Text(
                     e.table.name,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12.5,
-                      decoration: deleted ? TextDecoration.lineThrough : null,
-                    ),
+                    style: uiText(
+                      TypeSize.small,
+                      weight: FontWeight.w600,
+                      color: c.text,
+                    ).copyWith(decoration: deleted ? TextDecoration.lineThrough : null),
                   ),
                 ),
                 if (markColor != null)
-                  Badge2(switch (e.mark) {
+                  Tag(switch (e.mark) {
                     _Mark.added => 'nuova',
                     _Mark.modified => 'modificata',
                     _ => 'eliminata',
@@ -1013,36 +1031,27 @@ class _ErDiagramViewState extends State<ErDiagramView> {
               padding: const EdgeInsets.only(left: 6),
               child: Text(
                 '… altre ${e.columns.length - _Entity.maxCols} colonne',
-                style: TextStyle(fontSize: 10.5, color: c.textTertiary),
+                style: uiText(TypeSize.mini, color: c.textTertiary),
               ),
             ),
         ],
       ),
     );
+    final node = FocusRing(visible: selected, radius: Radii.menu, child: box);
     return Positioned(
       left: e.pos.dx,
       top: e.pos.dy,
       width: e.size.width,
       height: e.size.height,
       child: GestureDetector(
-        onTap: () => setState(() {
-          _selected = e.table.name;
-          _selectedFk = null;
-        }),
-        onDoubleTap: () {
-          if (!_editMode) {
-            AppScope.read(context).openTable(widget.connection, e.table);
-          } else if (!deleted) {
-            _editTable(e);
-          }
-        },
+        onTap: () => _tapBox(e),
         onPanUpdate: (d) => setState(() {
           e.pos += d.delta;
           if (e.pos.dx < 0) e.pos = Offset(0, e.pos.dy);
           if (e.pos.dy < 0) e.pos = Offset(e.pos.dx, 0);
         }),
         onPanEnd: (_) => _remember(),
-        child: deleted ? Opacity(opacity: 0.6, child: box) : box,
+        child: deleted ? Opacity(opacity: 0.6, child: node) : node,
       ),
     );
   }
@@ -1071,9 +1080,9 @@ class _ErDiagramViewState extends State<ErDiagramView> {
                   : AppIcons.dot,
               size: isPk || fkCols.contains(col.name) ? 11 : 5,
               color: isPk
-                  ? const Color(0xFFFFB300)
+                  ? c.keyIcon
                   : fkCols.contains(col.name)
-                  ? const Color(0xFF7E57C2)
+                  ? c.foreignKeyIcon
                   : c.textTertiary,
             ),
             const SizedBox(width: 5),
@@ -1081,15 +1090,15 @@ class _ErDiagramViewState extends State<ErDiagramView> {
               child: Text(
                 col.name,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: isPk ? FontWeight.w600 : null,
-                  color: markColor,
-                  decoration: mark == _Mark.deleted ? TextDecoration.lineThrough : null,
-                ),
+                style: uiText(
+                  TypeSize.caption,
+                  weight: isPk ? FontWeight.w600 : null,
+                  color: markColor ?? c.text,
+                ).copyWith(decoration: mark == _Mark.deleted ? TextDecoration.lineThrough : null),
               ),
             ),
-            Text(col.fullType.toLowerCase(), style: TextStyle(fontSize: 10.5, color: markColor ?? c.textTertiary)),
+            const SizedBox(width: Gap.xs),
+            TypeLabel(col.fullType.toLowerCase(), mono: true),
           ],
         ),
       ),
@@ -1156,9 +1165,8 @@ class _RelationsPainter extends CustomPainter {
       final isSel = key != null && key == selectedFk;
       final isNew = key != null && newFks.contains(key);
       final hl = isSel || (selected != null && (selected == f.fkTable || selected == f.pkTable));
-      final base = isSel ? (selectedColor ?? color) : (isNew ? (addedColor ?? color) : color);
       final paint = Paint()
-        ..color = hl ? base : base.withValues(alpha: 0.45)
+        ..color = hl ? (selectedColor ?? color) : (isNew ? (addedColor ?? color) : color)
         ..strokeWidth = isSel ? 2.5 : (hl ? 2 : 1.2)
         ..style = PaintingStyle.stroke;
       final y1 = from.rowY(f.columns.isEmpty ? '' : f.columns.first);

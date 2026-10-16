@@ -10,188 +10,12 @@ import 'ai_service.dart';
 import 'claude_client.dart';
 import 'markdown_view.dart';
 
-/// Sheet scaffold: title bar, scrollable body and an action bar.
-class AiSheet extends StatelessWidget {
-  const AiSheet({
-    super.key,
-    required this.title,
-    required this.body,
-    this.subtitle,
-    this.icon = AppIcons.ai,
-    this.leading = const [],
-    this.actions = const [],
-    this.width = 760,
-    this.height = 620,
-  });
-
-  final String title;
-  final String? subtitle;
-  final IconData icon;
-  final Widget body;
-
-  /// Widgets on the left of the action bar (options, status).
-  final List<Widget> leading;
-  final List<Widget> actions;
-  final double width;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Dialog(
-      insetPadding: const EdgeInsets.all(Gap.xl),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.md, Gap.sm),
-              child: Row(
-                children: [
-                  Icon(icon, size: 18, color: c.accent),
-                  const SizedBox(width: Gap.sm),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(title, style: Theme.of(context).textTheme.titleLarge, overflow: TextOverflow.ellipsis),
-                        if (subtitle != null)
-                          Text(
-                            subtitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-                          ),
-                      ],
-                    ),
-                  ),
-                  ToolButton(
-                    icon: AppIcons.close,
-                    tooltip: 'Chiudi (Esc)',
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: c.separator),
-            Expanded(child: body),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: Gap.lg, vertical: Gap.md),
-              decoration: BoxDecoration(
-                color: c.chrome,
-                border: Border(top: BorderSide(color: c.separator)),
-              ),
-              child: Row(
-                children: [
-                  ...leading,
-                  const Spacer(),
-                  for (final (i, a) in actions.indexed) ...[if (i > 0) const SizedBox(width: Gap.sm), a],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Read-only code preview (the query being explained or fixed).
-class AiCodePreview extends StatelessWidget {
-  const AiCodePreview(this.code, {super.key, this.label, this.maxLines = 8});
-  final String code;
-  final String? label;
-  final int maxLines;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (label != null) SectionLabel(label!, padding: const EdgeInsets.only(bottom: Gap.xs)),
-        Container(
-          constraints: BoxConstraints(maxHeight: maxLines * 17.0 + Gap.md * 2),
-          padding: const EdgeInsets.all(Gap.md),
-          decoration: BoxDecoration(
-            color: c.codeBackground,
-            borderRadius: BorderRadius.circular(Radii.panel),
-            border: Border.all(color: c.separator),
-          ),
-          child: SingleChildScrollView(
-            child: SelectableText(code.trim(), style: monoStyle(context, size: 12.5, color: c.textSecondary)),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Colored message box (error, refusal, truncation).
-class AiNotice extends StatelessWidget {
-  const AiNotice(this.message, {super.key, this.error = true, this.action});
-  final String message;
-  final bool error;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    final col = error ? c.danger : c.warning;
-    return Container(
-      padding: const EdgeInsets.all(Gap.md),
-      decoration: BoxDecoration(
-        color: col.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(Radii.panel),
-        border: Border.all(color: col.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(error ? AppIcons.error : AppIcons.warning, size: 16, color: col),
-          const SizedBox(width: Gap.sm),
-          Expanded(
-            child: SelectableText(
-              message,
-              style: TextStyle(fontSize: TypeSize.body, color: c.text),
-            ),
-          ),
-          ?action,
-        ],
-      ),
-    );
-  }
-}
-
-/// Progress line shown while waiting for the first token.
-class AiProgress extends StatelessWidget {
-  const AiProgress(this.text, {super.key, this.onCancel});
-  final String text;
-  final VoidCallback? onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Row(
-      children: [
-        const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-        const SizedBox(width: Gap.sm),
-        Text(
-          text,
-          style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary),
-        ),
-        if (onCancel != null) ...[
-          const SizedBox(width: Gap.sm),
-          TextButton(onPressed: onCancel, child: const Text('Annulla')),
-        ],
-      ],
-    );
-  }
-}
+/// Notice for an error, a refusal or a truncation in an answer.
+Widget aiNotice(String message, {bool error = true, Widget? action}) => Notice(
+  kind: error ? NoticeKind.danger : NoticeKind.warning,
+  message: message,
+  actions: [?action],
+);
 
 String formatUsage(AiResponse r) {
   String n(int v) => v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}k' : '$v';
@@ -220,52 +44,42 @@ class AiAnswerView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (run.busy && run.text.isEmpty) AiProgress(run.statusText, onCancel: run.cancel),
+        if (run.busy && run.text.isEmpty)
+          StatusLine.busy(run.statusText, onDetails: run.cancel, detailsLabel: 'Annulla'),
         if (text.isNotEmpty) MarkdownView(data: text, codeActions: codeActions),
         if (run.state == AiRunState.streaming)
           Padding(
             padding: const EdgeInsets.only(top: Gap.sm),
-            child: Row(
-              children: [
-                const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5)),
-                const SizedBox(width: Gap.sm),
-                Text(
-                  run.statusText,
-                  style: TextStyle(fontSize: TypeSize.small, color: c.textTertiary),
-                ),
-                const SizedBox(width: Gap.xs),
-                TextButton(onPressed: run.cancel, child: const Text('Interrompi')),
-              ],
-            ),
+            child: StatusLine.busy(run.statusText, onDetails: run.cancel, detailsLabel: 'Interrompi'),
           ),
         if (run.state == AiRunState.error)
           Padding(
             padding: const EdgeInsets.only(top: Gap.sm),
-            child: AiNotice(
+            child: aiNotice(
               run.error ?? 'Errore',
-              action: onRetry == null ? null : TextButton(onPressed: onRetry, child: const Text('Riprova')),
+              action: onRetry == null ? null : LinkButton(label: 'Riprova', onPressed: onRetry),
             ),
           ),
         if (run.state == AiRunState.cancelled)
           Padding(
             padding: const EdgeInsets.only(top: Gap.sm),
-            child: AiNotice(
+            child: aiNotice(
               'Richiesta annullata.',
               error: false,
-              action: onRetry == null ? null : TextButton(onPressed: onRetry, child: const Text('Riprova')),
+              action: onRetry == null ? null : LinkButton(label: 'Riprova', onPressed: onRetry),
             ),
           ),
         if (r != null && r.notice != null)
           Padding(
             padding: const EdgeInsets.only(top: Gap.sm),
-            child: AiNotice(r.notice!, error: r.refused),
+            child: aiNotice(r.notice!, error: r.refused),
           ),
         if (r != null && run.state == AiRunState.done)
           Padding(
             padding: const EdgeInsets.only(top: Gap.md),
             child: Text(
               formatUsage(r),
-              style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
+              style: uiText(TypeSize.caption, color: c.textTertiary),
             ),
           ),
       ],
@@ -300,7 +114,7 @@ CodeActionsBuilder editorCodeActions(AppState app, DbConnection? dc, {VoidCallba
       if (isQueryBlock(b)) ...[
         ToolButton(
           icon: AppIcons.insert,
-          size: 14,
+          extent: 18,
           tooltip: 'Inserisci nell\'editor',
           onPressed: () {
             before?.call();
@@ -310,7 +124,7 @@ CodeActionsBuilder editorCodeActions(AppState app, DbConnection? dc, {VoidCallba
         if (dc != null && dialectOf(dc).isSql)
           ToolButton(
             icon: AppIcons.run,
-            size: 15,
+            extent: 18,
             tooltip: 'Esegui in editor SQL',
             onPressed: () {
               before?.call();

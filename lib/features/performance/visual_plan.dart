@@ -195,14 +195,14 @@ class _VisualPlanViewState extends State<VisualPlanView> {
         }
         Widget body;
         if (tab.loading && p == null) {
-          body = const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)));
+          body = const Center(child: Spinner(size: Spinner.large));
         } else if (tab.error != null) {
           final e = tab.error!;
           body = EmptyState(
             icon: AppIcons.error,
             title: 'Piano non disponibile',
             message: e is OdbcException ? e.message : e.toString().replaceFirst(RegExp(r'^\w+Error: '), ''),
-            action: PrimaryButton(label: 'Riprova', icon: AppIcons.refresh, onPressed: tab.run),
+            action: PushButton.primary(label: 'Riprova', icon: AppIcons.refresh, onPressed: tab.run),
           );
         } else if (p == null) {
           body = const SizedBox();
@@ -218,7 +218,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
                   PlanViewMode.source => _textView(context, _prettySource(p)),
                 },
               ),
-              Container(width: 1, color: c.separator),
+              Container(width: 0.5, color: c.separator),
               SizedBox(width: 320, child: _details(context, p)),
             ],
           );
@@ -228,8 +228,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _toolbar(context),
-              if (tab.loading && p != null) const LinearProgressIndicator(minHeight: 2),
+              _toolbar(context, loading: tab.loading && p != null),
               Expanded(child: body),
               if (p != null) _statusBar(context, p),
             ],
@@ -239,74 +238,68 @@ class _VisualPlanViewState extends State<VisualPlanView> {
     );
   }
 
-  Widget _toolbar(BuildContext context) {
-    final c = DbColors.of(context);
+  Widget _toolbar(BuildContext context, {required bool loading}) {
     final analyzable = planAnalyzeSupported(tab.dc.dialect.family);
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          PrimaryButton(
-            label: 'Aggiorna',
-            icon: AppIcons.refresh,
-            tooltip: 'Ricalcola il piano',
-            onPressed: tab.loading ? null : tab.run,
-          ),
-          if (analyzable) ...[
-            const SizedBox(width: Gap.md),
-            DbSwitch(value: tab.analyze, onChanged: tab.loading ? null : _toggleAnalyze),
-            const SizedBox(width: 6),
-            Tooltip(
-              message: 'Esegue l\'istruzione (in una transazione annullata) per misurare tempi e righe effettive',
-              child: Text(
-                'Analyze',
-                style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary),
-              ),
+    return PaneBar(
+      loading: loading,
+      children: [
+        PushButton.primary(
+          label: 'Aggiorna',
+          icon: AppIcons.refresh,
+          size: ControlScale.small,
+          tooltip: 'Ricalcola il piano',
+          onPressed: tab.loading ? null : tab.run,
+        ),
+        if (analyzable) ...[
+          const SizedBox(width: Gap.md),
+          Tooltip(
+            message: 'Esegue l\'istruzione (in una transazione annullata) per misurare tempi e righe effettive',
+            child: CheckboxRow(
+              small: true,
+              label: 'Analyze',
+              value: tab.analyze,
+              onChanged: tab.loading ? null : _toggleAnalyze,
             ),
-          ],
-          const ToolSeparator(),
-          Segmented<PlanViewMode>(
-            value: tab.mode,
-            items: const [
-              (PlanViewMode.graph, 'Grafico', AppIcons.tree),
-              (PlanViewMode.table, 'Tabella', AppIcons.rows),
-              (PlanViewMode.text, 'Testo', AppIcons.notes),
-              (PlanViewMode.source, 'Sorgente', AppIcons.code),
-            ],
-            onChanged: (m) {
-              tab.mode = m;
-              if (m == PlanViewMode.graph) _needsFit = true;
-              tab.refresh();
-            },
-          ),
-          if (tab.mode == PlanViewMode.graph) ...[
-            const ToolSeparator(),
-            ToolButton(icon: AppIcons.zoomOut, tooltip: 'Riduci', onPressed: () => _zoom(1 / 1.25)),
-            ToolButton(icon: AppIcons.zoomIn, tooltip: 'Ingrandisci', onPressed: () => _zoom(1.25)),
-            ToolButton(icon: AppIcons.fitScreen, tooltip: 'Adatta alla finestra', onPressed: _fit),
-          ],
-          const Spacer(),
-          ToolButton(
-            icon: AppIcons.copy,
-            tooltip: 'Copia il piano come testo',
-            onPressed: tab.plan == null
-                ? null
-                : () {
-                    Clipboard.setData(ClipboardData(text: planToText(tab.plan!)));
-                    showToast(context, 'Piano copiato');
-                  },
-          ),
-          ToolButton(
-            icon: AppIcons.script,
-            tooltip: 'Apri l\'istruzione nell\'editor SQL',
-            onPressed: () => AppScope.read(context).sqlEditorWith(tab.dc, tab.sql),
           ),
         ],
-      ),
+        const ToolSeparator(),
+        Segmented<PlanViewMode>(
+          value: tab.mode,
+          items: const [
+            (PlanViewMode.graph, 'Grafico', AppIcons.tree),
+            (PlanViewMode.table, 'Tabella', AppIcons.rows),
+            (PlanViewMode.text, 'Testo', AppIcons.notes),
+            (PlanViewMode.source, 'Sorgente', AppIcons.code),
+          ],
+          onChanged: (m) {
+            tab.mode = m;
+            if (m == PlanViewMode.graph) _needsFit = true;
+            tab.refresh();
+          },
+        ),
+        if (tab.mode == PlanViewMode.graph) ...[
+          const ToolSeparator(),
+          ToolButton(icon: AppIcons.zoomOut, tooltip: 'Riduci', onPressed: () => _zoom(1 / 1.25)),
+          ToolButton(icon: AppIcons.zoomIn, tooltip: 'Ingrandisci', onPressed: () => _zoom(1.25)),
+          ToolButton(icon: AppIcons.fitScreen, tooltip: 'Adatta alla finestra', onPressed: _fit),
+        ],
+        const Spacer(),
+        ToolButton(
+          icon: AppIcons.copy,
+          tooltip: 'Copia il piano come testo',
+          onPressed: tab.plan == null
+              ? null
+              : () {
+                  Clipboard.setData(ClipboardData(text: planToText(tab.plan!)));
+                  showToast(context, 'Piano copiato');
+                },
+        ),
+        ToolButton(
+          icon: AppIcons.script,
+          tooltip: 'Apri l\'istruzione nell\'editor SQL',
+          onPressed: () => AppScope.read(context).sqlEditorWith(tab.dc, tab.sql),
+        ),
+      ],
     );
   }
 
@@ -320,32 +313,15 @@ class _VisualPlanViewState extends State<VisualPlanView> {
         if (p.summary[k] != null) '${k == 'Planning Time' ? 'Pianificazione' : 'Esecuzione'} ${p.summary[k]} ms',
       if (p.analyzed) 'valori effettivi' else 'stime',
     ];
-    return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-      decoration: BoxDecoration(
-        color: c.chrome,
-        border: Border(top: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              parts.join(' · '),
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textSecondary, fontFeatures: kTabular),
-            ),
-          ),
-          if (warnings > 0) ...[
-            Icon(AppIcons.warning, size: 13, color: c.warning),
-            const SizedBox(width: 4),
-            Text(
-              '$warnings avvisi',
-              style: TextStyle(fontSize: TypeSize.caption + 0.5, color: c.warning),
-            ),
-          ],
+    return StatusBar(
+      children: [
+        Expanded(child: Text(parts.join(' · '), style: const TextStyle(fontFeatures: kTabular))),
+        if (warnings > 0) ...[
+          Icon(AppIcons.warning, size: 12, color: c.warning),
+          const SizedBox(width: 4),
+          Text('$warnings avvisi', style: TextStyle(color: c.warning)),
         ],
-      ),
+      ],
     );
   }
 
@@ -381,7 +357,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
               height: l.size.height,
               child: Stack(
                 children: [
-                  Positioned.fill(child: CustomPaint(painter: _EdgesPainter(l, c.textTertiary.withValues(alpha: 0.6)))),
+                  Positioned.fill(child: CustomPaint(painter: _EdgesPainter(l, c.textTertiary))),
                   for (final e in l.rects.entries) Positioned.fromRect(rect: e.value, child: _nodeCard(context, e.key)),
                 ],
               ),
@@ -413,82 +389,75 @@ class _VisualPlanViewState extends State<VisualPlanView> {
       onTap: () => tab.select(n),
       child: Tooltip(
         message: [n.title, if (n.detail != null) n.detail!, for (final w in n.warnings) '⚠ ${w.message}'].join('\n'),
-        waitDuration: const Duration(milliseconds: 700),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
-          decoration: BoxDecoration(
-            color: Color.alphaBlend(
-              (heat ?? c.accent).withValues(alpha: heat == null ? 0.03 : 0.06 + 0.16 * n.share),
-              c.content,
+        child: FocusRing(
+          visible: selected,
+          radius: Radii.menu,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+            decoration: BoxDecoration(
+              // Hot operators keep a tint of their heat color over the node.
+              color: heat == null
+                  ? c.raised
+                  : Color.alphaBlend(heat.withValues(alpha: n.share >= 0.5 ? Tint.regular : Tint.subtle), c.raised),
+              borderRadius: BorderRadius.circular(Radii.menu),
+              border: Border.all(color: heat?.withValues(alpha: Tint.border) ?? c.separator, width: 0.5),
+              boxShadow: Elevation.node(Theme.of(context).brightness),
             ),
-            borderRadius: BorderRadius.circular(Radii.panel),
-            border: Border.all(
-              color: selected ? c.accent : (heat ?? c.separator),
-              width: selected ? 2 : (heat == null ? 1 : 1.5),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      n.operation,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: TypeSize.small + 0.5, fontWeight: FontWeight.w600, color: c.text),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        n.operation,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: uiText(TypeSize.small, weight: FontWeight.w600, color: c.text),
+                      ),
                     ),
-                  ),
-                  if (worst != null)
-                    Icon(
-                      AppIcons.warning,
-                      size: 14,
-                      color: worst == PlanWarningLevel.danger
-                          ? c.danger
-                          : (worst == PlanWarningLevel.warning ? c.warning : c.textTertiary),
-                    ),
-                ],
-              ),
-              Text(
-                n.object ?? n.detail ?? '',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: TypeSize.caption, color: c.textSecondary),
-              ),
-              const Spacer(),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      metrics.join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: TypeSize.caption, color: c.textSecondary, fontFeatures: kTabular),
-                    ),
-                  ),
-                  Text(
-                    '${pct.toStringAsFixed(pct < 10 ? 1 : 0)}%',
-                    style: TextStyle(
-                      fontSize: TypeSize.caption,
-                      fontWeight: FontWeight.w600,
-                      color: heat ?? c.textSecondary,
-                      fontFeatures: kTabular,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 3),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: n.share.clamp(0.0, 1.0),
-                  minHeight: 3,
-                  backgroundColor: c.pressed,
-                  color: heat ?? c.accent,
+                    if (worst != null)
+                      Icon(
+                        AppIcons.warning,
+                        size: 14,
+                        color: worst == PlanWarningLevel.danger
+                            ? c.danger
+                            : (worst == PlanWarningLevel.warning ? c.warning : c.textTertiary),
+                      ),
+                  ],
                 ),
-              ),
-            ],
+                Text(
+                  n.object ?? n.detail ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: uiText(TypeSize.caption, color: c.textSecondary),
+                ),
+                const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        metrics.join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: uiText(TypeSize.caption, color: c.textSecondary, features: kTabular),
+                      ),
+                    ),
+                    Text(
+                      '${pct.toStringAsFixed(pct < 10 ? 1 : 0)}%',
+                      style: uiText(
+                        TypeSize.caption,
+                        weight: FontWeight.w600,
+                        color: heat ?? c.textSecondary,
+                        features: kTabular,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                LevelIndicator(value: n.share.clamp(0.0, 1.0), warningAt: 0.2, dangerAt: 0.5),
+              ],
+            ),
           ),
         ),
       ),
@@ -535,7 +504,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
       onSelect: (r) => tab.select(nodes[r]),
       rowTint: (r) {
         final h = _heat(context, nodes[r]);
-        return h == null ? null : Color.alphaBlend(h.withValues(alpha: 0.08), c.content);
+        return h == null ? null : Color.alphaBlend(h.withValues(alpha: Tint.subtle), c.content);
       },
       tooltip: (r, i) => i == 8 || i == 0 ? (i == 0 ? nodes[r].detail : nodes[r].warnings.join('\n')) : null,
     );
@@ -556,7 +525,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
     padding: const EdgeInsets.all(Gap.lg),
     child: SizedBox(
       width: double.infinity,
-      child: SelectableText(text, style: monoStyle(context, size: TypeSize.small)),
+      child: SelectableText(text, style: monoStyle(context, size: TypeSize.mono)),
     ),
   );
 
@@ -566,77 +535,42 @@ class _VisualPlanViewState extends State<VisualPlanView> {
     final children = <Widget>[];
     if (n == null) {
       children.addAll([
-        Text(
-          'Piano',
-          style: TextStyle(fontSize: TypeSize.title, fontWeight: FontWeight.w600, color: c.text),
-        ),
+        Text('Piano', style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text)),
         const SizedBox(height: Gap.xs),
         Text(
           'Seleziona un operatore per vederne le proprietà.',
-          style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
+          style: uiText(TypeSize.small, color: c.textSecondary),
         ),
         const SizedBox(height: Gap.md),
-        if (p.summary.isNotEmpty)
-          PropertyTable(labelWidth: 120, entries: [for (final e in p.summary.entries) (e.key, e.value)]),
-        const SizedBox(height: Gap.md),
+        if (p.summary.isNotEmpty) PropertyTable(entries: [for (final e in p.summary.entries) (e.key, e.value)]),
         ..._warningList(
           context,
           p.allWarnings.map((e) => e.$2).toList(),
           nodes: p.allWarnings.map((e) => e.$1).toList(),
         ),
-        if (p.allWarnings.isEmpty)
-          Row(
-            children: [
-              Icon(AppIcons.checkCircle, size: 15, color: c.success),
-              const SizedBox(width: Gap.xs),
-              Text(
-                'Nessun avviso',
-                style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-              ),
-            ],
-          ),
+        if (p.allWarnings.isEmpty) const StatusLine('Nessun avviso', kind: StatusKind.success),
       ]);
     } else {
       final pct = n.share * 100;
       children.addAll([
-        Text(
-          n.operation,
-          style: TextStyle(fontSize: TypeSize.title, fontWeight: FontWeight.w600, color: c.text),
-        ),
-        if (n.object != null)
-          Text(
-            n.object!,
-            style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-          ),
+        Text(n.operation, style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text)),
+        if (n.object != null) Text(n.object!, style: uiText(TypeSize.small, color: c.textSecondary)),
         const SizedBox(height: Gap.sm),
         Wrap(
           spacing: 6,
           runSpacing: 4,
           children: [
-            Badge2(
+            Tag(
               '${pct.toStringAsFixed(1)}% del ${p.analyzed && n.selfTimeMs != null ? 'tempo' : 'costo'}',
               color: _heat(context, n) ?? c.accent,
             ),
-            if (n.loops != null) Badge2('${n.loops} loop'),
+            if (n.loops != null) Tag('${n.loops} loop'),
           ],
         ),
         const SizedBox(height: Gap.md),
         ..._warningList(context, n.warnings),
-        if (n.detail != null) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(Gap.sm),
-            decoration: BoxDecoration(
-              color: c.chrome,
-              borderRadius: BorderRadius.circular(Radii.control),
-              border: Border.all(color: c.separator),
-            ),
-            child: SelectableText(n.detail!, style: monoStyle(context, size: TypeSize.caption + 0.5)),
-          ),
-          const SizedBox(height: Gap.md),
-        ],
+        if (n.detail != null) ...[CodeBox(n.detail!, wrap: true), const SizedBox(height: Gap.md)],
         PropertyTable(
-          labelWidth: 120,
           entries: [
             if (n.cost != null) ('Costo totale', n.cost!.toStringAsFixed(2)),
             ('Costo proprio', n.selfCost.toStringAsFixed(2)),
@@ -648,89 +582,47 @@ class _VisualPlanViewState extends State<VisualPlanView> {
             if (n.buffers != null) ('Buffer / letture', formatCount(n.buffers!)),
           ],
         ),
-        const SizedBox(height: Gap.md),
-        Text(
-          'Tutte le proprietà',
-          style: TextStyle(fontSize: TypeSize.caption, fontWeight: FontWeight.w600, color: c.textTertiary),
-        ),
-        const SizedBox(height: Gap.xs),
-        PropertyTable(labelWidth: 120, entries: [for (final e in n.props.entries) (e.key, e.value)]),
+        PropertyTable(title: 'Tutte le proprietà', entries: [for (final e in n.props.entries) (e.key, e.value)]),
       ]);
     }
+    // Inspector: window background, like Xcode's.
     return Container(
-      color: c.content,
+      color: c.windowBackground,
       child: ListView(padding: const EdgeInsets.all(Gap.md), children: children),
     );
   }
 
   List<Widget> _warningList(BuildContext context, List<PlanWarning> warnings, {List<PlanNode?>? nodes}) {
-    final c = DbColors.of(context);
     return [
       for (var i = 0; i < warnings.length; i++)
         Padding(
           padding: const EdgeInsets.only(bottom: Gap.sm),
-          child: Container(
-            padding: const EdgeInsets.all(Gap.sm),
-            decoration: BoxDecoration(
-              color: (switch (warnings[i].level) {
-                PlanWarningLevel.danger => c.danger,
-                PlanWarningLevel.warning => c.warning,
-                PlanWarningLevel.info => c.textTertiary,
-              }).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(Radii.control),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      warnings[i].level == PlanWarningLevel.info
-                          ? AppIcons.info
-                          : AppIcons.warning,
-                      size: 14,
-                      color: switch (warnings[i].level) {
-                        PlanWarningLevel.danger => c.danger,
-                        PlanWarningLevel.warning => c.warning,
-                        PlanWarningLevel.info => c.textSecondary,
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        warnings[i].message,
-                        style: TextStyle(fontSize: TypeSize.small, color: c.text),
-                      ),
-                    ),
-                  ],
-                ),
-                if (nodes != null && nodes[i] != null)
-                  TextButton(
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 24)),
-                    onPressed: () => tab.select(nodes[i]),
-                    child: Text('Vai a ${nodes[i]!.operation}', style: const TextStyle(fontSize: TypeSize.small)),
-                  ),
-                if (warnings[i].suggestion != null) ...[
-                  const SizedBox(height: Gap.xs),
-                  SelectableText(warnings[i].suggestion!, style: monoStyle(context, size: TypeSize.caption + 0.5)),
-                  Row(
-                    children: [
-                      ToolButton(
-                        icon: AppIcons.copy,
-                        tooltip: 'Copia',
-                        onPressed: () => Clipboard.setData(ClipboardData(text: warnings[i].suggestion!)),
-                      ),
+          child: Notice.card(
+            kind: switch (warnings[i].level) {
+              PlanWarningLevel.danger => NoticeKind.danger,
+              PlanWarningLevel.warning => NoticeKind.warning,
+              PlanWarningLevel.info => NoticeKind.info,
+            },
+            message: warnings[i].message,
+            actions: [
+              if (nodes != null && nodes[i] != null)
+                LinkButton(label: 'Vai a ${nodes[i]!.operation}', small: true, onPressed: () => tab.select(nodes[i])),
+            ],
+            child: warnings[i].suggestion == null
+                ? null
+                : CodeBox(
+                    warnings[i].suggestion!,
+                    label: 'Suggerimento',
+                    wrap: true,
+                    actions: [
                       ToolButton(
                         icon: AppIcons.script,
                         tooltip: 'Apri nell\'editor SQL',
+                        extent: 18,
                         onPressed: () => AppScope.read(context).sqlEditorWith(tab.dc, warnings[i].suggestion!),
                       ),
                     ],
                   ),
-                ],
-              ],
-            ),
           ),
         ),
     ];

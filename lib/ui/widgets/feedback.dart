@@ -201,40 +201,6 @@ class Notice extends StatelessWidget {
   );
 }
 
-/// Former name of the inline [Notice], tinted with an explicit [color], with
-/// the bottom margin form sheets expect.
-class InlineNotice extends StatelessWidget {
-  const InlineNotice({
-    super.key,
-    required this.color,
-    required this.title,
-    this.icon = AppIcons.warning,
-    this.message,
-    this.child,
-    this.action,
-  });
-
-  final Color color;
-  final IconData icon;
-  final String title;
-  final String? message;
-  final Widget? child;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: Gap.lg),
-    child: Notice(
-      color: color,
-      icon: icon,
-      title: title,
-      message: message,
-      actions: [?action],
-      child: child,
-    ),
-  );
-}
-
 // ---------------------------------------------------------------------------
 // HUD
 // ---------------------------------------------------------------------------

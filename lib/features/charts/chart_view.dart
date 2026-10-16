@@ -174,11 +174,12 @@ class _ChartViewState extends State<ChartView> {
               children: [
                 Expanded(child: _chartArea(c)),
                 if (_panel)
+                  // Inspector: window background, hairline on the left.
                   Container(
-                    width: 250,
+                    width: 260,
                     decoration: BoxDecoration(
-                      color: c.chrome,
-                      border: Border(left: BorderSide(color: c.separator)),
+                      color: c.windowBackground,
+                      border: Border(left: BorderSide(color: c.separator, width: 0.5)),
                     ),
                     child: _configPanel(c),
                   ),
@@ -204,63 +205,51 @@ class _ChartViewState extends State<ChartView> {
     final model = m;
     final cfg = _config;
     final capped = model != null && model.hasMore && model.rows.length >= kChartRowCap;
-    return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          for (final (k, icon) in _kinds)
-            ToolButton(
-              icon: icon,
-              tooltip: k.label,
-              active: cfg.kind == k,
-              onPressed: () => _update((x) => x.kind = k),
-            ),
-          const ToolSeparator(),
-          Flexible(
-            child: Text(
-              '${_rows.length} ${_rows.length == 1 ? 'riga' : 'righe'}'
-              '${model != null && model.hasMore ? (capped ? ' · limite di ${formatNumber(kChartRowCap.toDouble())} righe' : ' · altre disponibili') : ''}',
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular),
-            ),
+    return PaneBar(
+      children: [
+        for (final (k, icon) in _kinds)
+          ToolButton(icon: icon, tooltip: k.label, active: cfg.kind == k, onPressed: () => _update((x) => x.kind = k)),
+        const ToolSeparator(),
+        Flexible(
+          child: Text(
+            '${_rows.length} ${_rows.length == 1 ? 'riga' : 'righe'}'
+            '${model != null && model.hasMore ? (capped ? ' · limite di ${formatNumber(kChartRowCap.toDouble())} righe' : ' · altre disponibili') : ''}',
+            overflow: TextOverflow.ellipsis,
+            style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular),
           ),
-          if (model != null && model.hasMore && !capped) ...[
-            const SizedBox(width: Gap.xs),
-            ToolButton(
-              icon: AppIcons.expandAll,
-              tooltip: 'Carica tutte le righe nel grafico (fino a ${formatNumber(kChartRowCap.toDouble())})',
-              label: 'Carica tutte le righe',
-              onPressed: _loadingAll || model.loading ? null : _loadAll,
-            ),
-          ],
-          if (_loadingAll)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: Gap.sm),
-              child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5)),
-            ),
-          const Spacer(),
+        ),
+        if (model != null && model.hasMore && !capped) ...[
+          const SizedBox(width: Gap.xs),
           ToolButton(
-            icon: AppIcons.copy,
-            tooltip: 'Copia i dati del grafico (CSV)',
-            onPressed: _data.isEmpty ? null : _copyCsv,
-          ),
-          ToolButton(
-            icon: AppIcons.image,
-            tooltip: 'Esporta il grafico come PNG…',
-            onPressed: _data.isEmpty ? null : _exportPng,
-          ),
-          ToolButton(
-            icon: AppIcons.tune,
-            tooltip: _panel ? 'Nascondi impostazioni' : 'Mostra impostazioni',
-            active: _panel,
-            onPressed: () => setState(() => _panel = !_panel),
+            icon: AppIcons.expandAll,
+            tooltip: 'Carica tutte le righe nel grafico (fino a ${formatNumber(kChartRowCap.toDouble())})',
+            label: 'Carica tutte le righe',
+            onPressed: _loadingAll || model.loading ? null : _loadAll,
           ),
         ],
-      ),
+        if (_loadingAll)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: Gap.sm),
+            child: Spinner(),
+          ),
+        const Spacer(),
+        ToolButton(
+          icon: AppIcons.copy,
+          tooltip: 'Copia i dati del grafico (CSV)',
+          onPressed: _data.isEmpty ? null : _copyCsv,
+        ),
+        ToolButton(
+          icon: AppIcons.image,
+          tooltip: 'Esporta il grafico come PNG…',
+          onPressed: _data.isEmpty ? null : _exportPng,
+        ),
+        ToolButton(
+          icon: AppIcons.tune,
+          tooltip: _panel ? 'Nascondi impostazioni' : 'Mostra impostazioni',
+          active: _panel,
+          onPressed: () => setState(() => _panel = !_panel),
+        ),
+      ],
     );
   }
 
@@ -284,9 +273,7 @@ class _ChartViewState extends State<ChartView> {
         message: _profiles.any((p) => p.numeric)
             ? 'Seleziona almeno una colonna numerica come serie (asse Y) nelle impostazioni.'
             : 'Nessuna colonna numerica: scegli "Conteggio" come aggregazione per contare le righe per categoria.',
-        action: _panel
-            ? null
-            : OutlinedButton(onPressed: () => setState(() => _panel = true), child: const Text('Impostazioni')),
+        action: _panel ? null : PushButton(label: 'Impostazioni', onPressed: () => setState(() => _panel = true)),
       );
     }
     final palette = ChartPalette.of(context);
@@ -343,10 +330,7 @@ class _ChartViewState extends State<ChartView> {
                 Icon(AppIcons.info, size: 13, color: c.textTertiary),
                 const SizedBox(width: Gap.xs),
                 Expanded(
-                  child: Text(
-                    n,
-                    style: TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textSecondary),
-                  ),
+                  child: Text(n, style: uiText(TypeSize.caption, color: c.textSecondary)),
                 ),
               ],
             ),
@@ -391,10 +375,7 @@ class _ChartViewState extends State<ChartView> {
             children: [
               _swatch(palette[s.slot], line: line),
               const SizedBox(width: 6),
-              Text(
-                s.name,
-                style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-              ),
+              Text(s.name, style: uiText(TypeSize.small, color: c.textSecondary)),
             ],
           ),
       ],
@@ -423,13 +404,13 @@ class _ChartViewState extends State<ChartView> {
                   child: Text(
                     d.labels[i],
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: TypeSize.small, color: c.text),
+                    style: uiText(TypeSize.small, color: c.text),
                   ),
                 ),
                 const SizedBox(width: Gap.sm),
                 Text(
                   total > 0 ? '${formatNumber((values[i] ?? 0) / total * 100, maxDecimals: 1)}%' : '',
-                  style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular),
+                  style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular),
                 ),
               ],
             ),
@@ -470,24 +451,19 @@ class _ChartViewState extends State<ChartView> {
     const w = 240.0;
     var left = _pointer.dx + 14;
     if (left + w > area.width) left = _pointer.dx - w - 14;
-    final est = 34.0 + rows.length * 18;
+    final est = 26.0 + rows.length * 16;
     var top = _pointer.dy + 14;
     if (top + est > area.height) top = (area.height - est).clamp(0, double.infinity);
     return Positioned(
       left: left.clamp(0, area.width),
       top: top,
+      // Follows the pointer, so it is drawn here rather than by a Tooltip,
+      // with the look of a RichTooltip (app tooltip style).
       child: IgnorePointer(
         child: Container(
           constraints: const BoxConstraints(maxWidth: w),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: c.raised,
-            borderRadius: BorderRadius.circular(Radii.control),
-            border: Border.all(color: c.separator),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.14), blurRadius: 10, offset: const Offset(0, 3)),
-            ],
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+          decoration: TooltipTheme.of(context).decoration,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -496,14 +472,9 @@ class _ChartViewState extends State<ChartView> {
                 title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: TypeSize.small,
-                  fontWeight: FontWeight.w600,
-                  color: c.text,
-                  fontFeatures: kTabular,
-                ),
+                style: uiText(TypeSize.caption, weight: FontWeight.w600, color: c.text, features: kTabular),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               for (final (color, name, value) in rows)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
@@ -516,13 +487,13 @@ class _ChartViewState extends State<ChartView> {
                         child: Text(
                           name,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
+                          style: uiText(TypeSize.caption, color: c.textSecondary),
                         ),
                       ),
                       const SizedBox(width: Gap.md),
                       Text(
                         value,
-                        style: TextStyle(fontSize: TypeSize.small, color: c.text, fontFeatures: kTabular),
+                        style: uiText(TypeSize.caption, color: c.text, features: kTabular),
                       ),
                     ],
                   ),
@@ -540,24 +511,8 @@ class _ChartViewState extends State<ChartView> {
   // Configuration panel
   // -------------------------------------------------------------------------
 
-  Widget _dropdown<T>(T value, List<(T, String)> items, ValueChanged<T> onChanged) => DropdownButtonFormField<T>(
-    initialValue: value,
-    key: ValueKey(value),
-    isDense: true,
-    isExpanded: true,
-    decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
-    style: TextStyle(fontSize: TypeSize.body, color: DbColors.of(context).text),
-    items: [
-      for (final (v, l) in items)
-        DropdownMenuItem<T>(
-          value: v,
-          child: Text(l, overflow: TextOverflow.ellipsis),
-        ),
-    ],
-    onChanged: (v) {
-      if (v is T) onChanged(v);
-    },
-  );
+  Widget _dropdown<T>(T value, List<(T, String)> items, ValueChanged<T> onChanged) =>
+      SelectField<T>(value: value, items: [for (final (v, l) in items) (v, l, null)], onChanged: onChanged);
 
   Widget _configPanel(DbColors c) {
     final cfg = _config;
@@ -581,7 +536,7 @@ class _ChartViewState extends State<ChartView> {
         : cfg.kind.isPie
         ? 1
         : kMaxSeries;
-    final label = TextStyle(fontSize: TypeSize.small, color: c.textSecondary);
+    final label = uiText(TypeSize.caption, weight: FontWeight.w600, color: c.textSecondary);
     return ListView(
       padding: const EdgeInsets.all(Gap.md),
       children: [
@@ -602,41 +557,27 @@ class _ChartViewState extends State<ChartView> {
         if (numeric.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: Gap.xs),
-            child: Text(
-              'Nessuna colonna numerica',
-              style: TextStyle(fontSize: TypeSize.small, color: c.textTertiary),
-            ),
+            child: Text('Nessuna colonna numerica', style: uiText(TypeSize.small, color: c.textTertiary)),
           ),
         for (final p in numeric)
           if (p.index != cfg.x)
-            InkWell(
-              borderRadius: BorderRadius.circular(Radii.control),
-              onTap: () => _toggleSeries(p.index),
-              child: SizedBox(
-                height: 26,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 24,
-                      child: Checkbox(
+            SizedBox(
+              height: ListRow.height,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: CheckboxRow(
+                        label: p.name,
                         value: cfg.y.contains(p.index),
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         onChanged: (_) => _toggleSeries(p.index),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        p.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: TypeSize.body, color: c.text),
-                      ),
-                    ),
-                    if (cfg.y.contains(p.index) && cfg.y.indexOf(p.index) < maxSeries && !cfg.kind.isPie)
-                      _swatch(palette[cfg.slotOf(p.index, 0)]),
-                  ],
-                ),
+                  ),
+                  if (cfg.y.contains(p.index) && cfg.y.indexOf(p.index) < maxSeries && !cfg.kind.isPie)
+                    _swatch(palette[cfg.slotOf(p.index, 0)]),
+                ],
               ),
             ),
         const SizedBox(height: Gap.md),
@@ -666,7 +607,7 @@ class _ChartViewState extends State<ChartView> {
         const SizedBox(height: Gap.md),
         Text(
           'Il grafico usa le righe caricate e il filtro rapido della griglia.',
-          style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
+          style: uiText(TypeSize.caption, color: c.textTertiary),
         ),
       ],
     );
@@ -683,16 +624,6 @@ class _ChartViewState extends State<ChartView> {
 
   Widget _switchRow(DbColors c, String text, bool value, ValueChanged<bool> onChanged) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(
-      children: [
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(fontSize: TypeSize.body, color: c.text),
-          ),
-        ),
-        DbSwitch(value: value, onChanged: onChanged),
-      ],
-    ),
+    child: CheckboxRow(label: text, value: value, onChanged: onChanged),
   );
 }

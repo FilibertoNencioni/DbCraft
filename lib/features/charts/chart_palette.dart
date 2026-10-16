@@ -11,13 +11,17 @@ import '../../ui/theme/app_theme.dart';
 /// slots in order and never cycle; past eight series the chart folds or
 /// truncates. Scatter plots use only the first three slots.
 class ChartPalette {
-  ChartPalette._(this.slots, this.other, this.surface);
+  ChartPalette._(this.slots, this.other, this.surface, this.lightInk);
 
   factory ChartPalette.of(BuildContext context) {
     final c = DbColors.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return ChartPalette._([c.accent, ...(dark ? _dark : _light)], c.textTertiary, c.content);
+    return ChartPalette._([c.accent, ...(dark ? _dark : _light)], c.textTertiary, c.content, c.onAccent);
   }
+
+  /// Labels on light slices: the light-mode text color in both modes (the
+  /// dark-mode `text` would be light on light).
+  static const darkInk = Color(0xFF1D1D1F);
 
   static const _light = [
     Color(0xFFEB6834), // orange
@@ -46,6 +50,12 @@ class ChartPalette {
 
   /// Chart surface (used for the 2px gaps and marker rings).
   final Color surface;
+
+  /// Labels on dark slices (`onAccent`).
+  final Color lightInk;
+
+  /// Label color that reads on [fill].
+  Color inkOn(Color fill) => fill.computeLuminance() > 0.45 ? darkInk : lightInk;
 
   Color operator [](int slot) => slots[slot % slots.length];
 }

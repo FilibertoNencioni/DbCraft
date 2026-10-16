@@ -14,8 +14,8 @@ import '../widgets/common.dart';
 /// Export of a result set shown in a grid.
 Future<void> showResultExportDialog(BuildContext context, ResultSetModel m) {
   final table = m.table;
-  return showDialog<void>(
-    context: context,
+  return showSheet<void>(
+    context,
     builder: (_) => _ExportDialog(
       connection: m.connection,
       columns: m.columns.map((c) => c.name).toList(),
@@ -33,8 +33,8 @@ Future<void> showResultExportDialog(BuildContext context, ResultSetModel m) {
 Future<void> showTableExportDialog(BuildContext context, DbConnection dc, DbTable t) async {
   final cols = await dc.metadata!.columns(t);
   if (!context.mounted) return;
-  return showDialog<void>(
-    context: context,
+  return showSheet<void>(
+    context,
     builder: (_) => _ExportDialog(
       connection: dc,
       columns: cols.map((c) => c.name).toList(),
@@ -173,105 +173,103 @@ class _ExportDialogState extends State<_ExportDialog> {
   @override
   Widget build(BuildContext context) {
     final f = _o.format;
-    return AlertDialog(
-      title: Text('Esporta dati · ${widget.tableName}'),
-      content: SizedBox(
-        width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final c = DbColors.of(context);
+    final csv = f == ExportFormat.csv || f == ExportFormat.tsv;
+    return PopScope(
+      canPop: !_running,
+      child: SheetScaffold(
+      title: 'Esporta dati · ${widget.tableName}',
+      onSubmit: _running ? null : _toFile,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FormGroup(
             children: [
-              const Text('Formato', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final x in ExportFormat.values)
-                    ChoiceChip(
-                      label: Text(x.label),
-                      selected: f == x,
-                      onSelected: (_) => setState(() => _o.format = x),
-                    ),
-                ],
+              FormRow(
+                label: 'Formato',
+                child: PopUpButton<ExportFormat>(
+                  value: f,
+                  items: [for (final x in ExportFormat.values) (x, x.label, null)],
+                  onChanged: _running ? null : (x) => setState(() => _o.format = x),
+                ),
               ),
-              const SizedBox(height: 16),
-              if (widget.loadedRows != null) ...[
-                const Text('Righe', style: TextStyle(fontWeight: FontWeight.w600)),
-                RadioGroup<bool>(
-                  groupValue: _allRows,
-                  onChanged: (v) => setState(() => _allRows = v ?? true),
-                  child: const Column(
-                    children: [
-                      RadioListTile(dense: true, value: false, title: Text('Solo righe caricate / filtrate')),
-                      RadioListTile(
-                        dense: true,
-                        value: true,
-                        title: Text('Tutte le righe (riesegue la query)'),
-                      ),
-                    ],
+              if (widget.loadedRows != null)
+                FormRow(
+                  label: 'Righe',
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: MacRadioGroup<bool>(
+                      value: _allRows,
+                      items: const [
+                        (false, 'Solo righe caricate / filtrate', null),
+                        (true, 'Tutte le righe (riesegue la query)', null),
+                      ],
+                      onChanged: _running ? null : (v) => setState(() => _allRows = v),
+                    ),
                   ),
                 ),
-              ],
-              if (f == ExportFormat.csv)
-                TextField(
-                  controller: _delimiter,
-                  decoration: const InputDecoration(labelText: r'Delimitatore (\t = tab)'),
-                ),
-              if (f == ExportFormat.csv || f == ExportFormat.tsv)
-                CheckboxListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Intestazione con i nomi di colonna'),
-                  value: _o.header,
-                  onChanged: (v) => setState(() => _o.header = v ?? true),
-                ),
-              if (f == ExportFormat.csv || f == ExportFormat.tsv)
-                CheckboxListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Racchiudi sempre i valori tra virgolette'),
-                  value: _o.quoteAll,
-                  onChanged: (v) => setState(() => _o.quoteAll = v ?? false),
-                ),
-              if (f != ExportFormat.json && f != ExportFormat.xml && f != ExportFormat.sql)
-                TextField(
-                  controller: _nullText,
-                  decoration: const InputDecoration(labelText: 'Testo per NULL'),
-                ),
-              if (f == ExportFormat.sql || f == ExportFormat.xml || f == ExportFormat.html)
-                TextField(
-                  controller: _table,
-                  decoration: const InputDecoration(labelText: 'Nome tabella'),
-                ),
-              if (f == ExportFormat.sql)
-                TextField(
-                  controller: _batch,
-                  decoration: const InputDecoration(labelText: 'Righe per INSERT (multi-row)'),
-                ),
-              if (_running) ...[
-                const SizedBox(height: 16),
-                const LinearProgressIndicator(),
-                const SizedBox(height: 4),
-                Text('$_exported righe lette…'),
-              ],
             ],
           ),
-        ),
+          FormGroup(
+            children: [
+              if (f == ExportFormat.csv)
+                FormRow(
+                  label: 'Delimitatore',
+                  help: r'\t = tab',
+                  child: MacTextField(controller: _delimiter, mono: true, width: 80),
+                ),
+              if (csv)
+                FormRow(
+                  label: 'Intestazione',
+                  child: CheckboxRow(
+                    label: 'Nomi di colonna nella prima riga',
+                    value: _o.header,
+                    onChanged: (v) => setState(() => _o.header = v),
+                  ),
+                ),
+              if (csv)
+                FormRow(
+                  label: 'Virgolette',
+                  child: CheckboxRow(
+                    label: 'Racchiudi sempre i valori',
+                    value: _o.quoteAll,
+                    onChanged: (v) => setState(() => _o.quoteAll = v),
+                  ),
+                ),
+              if (f != ExportFormat.json && f != ExportFormat.xml && f != ExportFormat.sql)
+                FormRow(
+                  label: 'Testo per NULL',
+                  child: MacTextField(controller: _nullText, mono: true),
+                ),
+              if (f == ExportFormat.sql || f == ExportFormat.xml || f == ExportFormat.html)
+                FormRow(
+                  label: 'Nome tabella',
+                  child: MacTextField(controller: _table, mono: true),
+                ),
+              if (f == ExportFormat.sql)
+                FormRow(
+                  label: 'Righe per INSERT',
+                  help: 'INSERT multi-riga',
+                  child: NumberField(controller: _batch, min: 1, max: 10000),
+                ),
+            ],
+          ),
+          if (_running) ...[
+            const ProgressBar(),
+            const SizedBox(height: Gap.xs),
+            Text(
+              '$_exported righe lette…',
+              style: uiText(TypeSize.caption, color: c.textSecondary, features: kTabular),
+            ),
+          ],
+        ],
       ),
       actions: [
-        TextButton(onPressed: _running ? null : () => Navigator.pop(context), child: const Text('Annulla')),
-        OutlinedButton.icon(
-          onPressed: _running ? null : _toClipboard,
-          icon: const Icon(AppIcons.paste, size: 16),
-          label: const Text('Copia negli appunti'),
-        ),
-        FilledButton.icon(
-          onPressed: _running ? null : _toFile,
-          icon: const Icon(AppIcons.download, size: 16),
-          label: const Text('Salva su file…'),
-        ),
+        PushButton(label: 'Annulla', onPressed: _running ? null : () => Navigator.pop(context)),
+        PushButton(label: 'Copia negli appunti', onPressed: _running ? null : _toClipboard),
+        PushButton.primary(label: 'Salva su file…', onPressed: _running ? null : _toFile),
       ],
+    ),
     );
   }
 }

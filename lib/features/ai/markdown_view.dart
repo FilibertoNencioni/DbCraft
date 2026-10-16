@@ -2,7 +2,6 @@
 // bullet / numbered lists, quotes, rules, pipe tables, inline code, bold,
 // italic and fenced code blocks. Tolerant of partial (streaming) input.
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../ui/widgets/common.dart';
 
@@ -286,20 +285,30 @@ class MarkdownView extends StatelessWidget {
     );
   }
 
+  /// Longer inline code stays a plain span, so that it can wrap.
+  static const _maxChipCode = 40;
+
   TextSpan _spans(BuildContext context, String text, TextStyle base) {
     final c = DbColors.of(context);
+    final code = monoStyle(context, size: base.fontSize! - 1, color: c.text);
     return TextSpan(
       style: base,
       children: [
         for (final s in parseInline(text))
-          if (s.code)
+          if (s.code && s.text.length <= _maxChipCode)
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(color: c.hover, borderRadius: BorderRadius.circular(3)),
+                child: Text(s.text, style: code.copyWith(fontWeight: s.bold ? FontWeight.w600 : null)),
+              ),
+            )
+          else if (s.code)
             TextSpan(
               text: s.text,
-              style: monoStyle(
-                context,
-                size: base.fontSize! - 1,
-                color: c.text,
-              ).copyWith(backgroundColor: c.hover, fontWeight: s.bold ? FontWeight.w600 : null),
+              style: code.copyWith(backgroundColor: c.hover, fontWeight: s.bold ? FontWeight.w600 : null),
             )
           else
             TextSpan(
@@ -315,14 +324,10 @@ class MarkdownView extends StatelessWidget {
 
   Widget _block(BuildContext context, MdBlock b) {
     final c = DbColors.of(context);
-    final body = TextStyle(fontSize: fontSize, color: c.text, height: 1.45);
+    final body = uiText(fontSize, color: c.text, height: 1.45);
     switch (b) {
       case MdHeading(:final level, :final text):
-        final size = switch (level) {
-          1 => TypeSize.title + 1,
-          2 => TypeSize.title,
-          _ => fontSize,
-        };
+        final size = level <= 2 ? TypeSize.title : fontSize;
         return Text.rich(_spans(context, text, body.copyWith(fontSize: size, fontWeight: FontWeight.w600)));
       case MdParagraph(:final text):
         return Text.rich(_spans(context, text, body));
@@ -335,7 +340,7 @@ class MarkdownView extends StatelessWidget {
           child: Text.rich(_spans(context, text, body.copyWith(color: c.textSecondary))),
         );
       case MdRule():
-        return Divider(height: Gap.md, color: c.separator);
+        return Divider(height: Gap.md, thickness: 0.5, color: c.separator);
       case MdList(:final items):
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,96 +367,27 @@ class MarkdownView extends StatelessWidget {
       case MdTable(:final header, :final rows):
         final cols = [header.length, for (final r in rows) r.length].reduce((a, b) => a > b ? a : b);
         List<String> pad(List<String> r) => [...r, for (var k = r.length; k < cols; k++) ''];
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: c.separator),
-              borderRadius: BorderRadius.circular(Radii.control),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Table(
-              defaultColumnWidth: const IntrinsicColumnWidth(),
-              border: TableBorder(horizontalInside: BorderSide(color: c.separator)),
-              children: [
-                TableRow(
-                  decoration: BoxDecoration(color: c.chrome),
-                  children: [
-                    for (final h in pad(header))
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: 5),
-                        child: Text.rich(_spans(context, h, body.copyWith(fontWeight: FontWeight.w600))),
-                      ),
-                  ],
-                ),
-                for (final (i, r) in rows.indexed)
-                  TableRow(
-                    decoration: BoxDecoration(color: i.isOdd ? c.zebra : c.content),
-                    children: [
-                      for (final v in pad(r))
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: 4),
-                          child: Text.rich(_spans(context, v, body)),
-                        ),
-                    ],
-                  ),
-              ],
-            ),
+        // Cells are single-line plain text: inline marks are dropped and long
+        // values show in full in the tooltip.
+        String plain(String md) => parseInline(md).map((e) => e.text).join();
+        final cells = [for (final r in rows) pad(r).map(plain).toList()];
+        return Align(
+          alignment: Alignment.topLeft,
+          child: MacTable(
+            headers: pad(header).map(plain).toList(),
+            rowCount: cells.length,
+            cell: (r, col) => cells[r][col],
+            tooltip: (r, col) => cells[r][col].length > 40 ? cells[r][col] : null,
+            shrinkWrap: true,
+            bordered: true,
           ),
         );
       case MdCode():
-        return CodeBlockView(block: b, actions: codeActions?.call(context, b) ?? const []);
+        return CodeBox(
+          b.code,
+          label: b.language.isEmpty ? 'codice' : b.language,
+          actions: b.closed ? codeActions?.call(context, b) ?? const [] : const [],
+        );
     }
-  }
-}
-
-/// Fenced code block with a language label, copy button and extra actions.
-class CodeBlockView extends StatelessWidget {
-  const CodeBlockView({super.key, required this.block, this.actions = const []});
-  final MdCode block;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: c.codeBackground,
-        borderRadius: BorderRadius.circular(Radii.panel),
-        border: Border.all(color: c.separator),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 30,
-            color: c.chrome,
-            padding: const EdgeInsets.only(left: Gap.md, right: Gap.xs),
-            child: Row(
-              children: [
-                Text(
-                  block.language.isEmpty ? 'codice' : block.language,
-                  style: TextStyle(fontSize: TypeSize.caption, color: c.textSecondary, fontWeight: FontWeight.w500),
-                ),
-                const Spacer(),
-                if (block.closed) ...actions,
-                ToolButton(
-                  icon: AppIcons.copy,
-                  size: 14,
-                  tooltip: 'Copia',
-                  onPressed: () => Clipboard.setData(ClipboardData(text: block.code)),
-                ),
-              ],
-            ),
-          ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.all(Gap.md),
-            child: Text(block.code, style: monoStyle(context, size: 12.5)),
-          ),
-        ],
-      ),
-    );
   }
 }

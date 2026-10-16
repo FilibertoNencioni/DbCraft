@@ -227,7 +227,7 @@ class _ControlGalleryState extends State<ControlGallery> {
       PushButton.primary(label: 'Esegui', icon: AppIcons.run, size: ControlScale.small, onPressed: () {}),
       PushButton(label: 'Commit (2)', size: ControlScale.small, onPressed: () {}),
       PushButton(label: 'Prova connessione', icon: AppIcons.plug, onPressed: () {}),
-      PrimaryButton(label: 'Interrompi', icon: AppIcons.stop, color: DbColors.of(context).danger, onPressed: () {}),
+      PushButton(label: 'Interrompi', icon: AppIcons.stop, kind: PushButtonKind.destructive, onPressed: () {}),
     ]),
     _Row([
       ToolButton(icon: AppIcons.sidebar, tooltip: 'Barra laterale', extent: ControlSize.toolbar, onPressed: () {}),

@@ -358,14 +358,12 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
         return Container(
           color: c.content,
           child: switch (ctl.phase) {
-            DashboardPhase.idle || DashboardPhase.starting => const Center(
-              child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
+            DashboardPhase.idle || DashboardPhase.starting => const Center(child: Spinner(size: Spinner.large)),
             DashboardPhase.notConnected => EmptyState(
               icon: AppIcons.disconnect,
               title: 'Connessione non attiva',
               message: 'Connetti "${widget.tab.dc.config.name}" per vedere sessioni, lock e metriche del server.',
-              action: PrimaryButton(label: 'Connetti', icon: AppIcons.connect, onPressed: _connect),
+              action: PushButton.primary(label: 'Connetti', icon: AppIcons.connect, onPressed: _connect),
             ),
             DashboardPhase.unsupported => EmptyState(
               icon: AppIcons.performance,
@@ -380,7 +378,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
               icon: AppIcons.error,
               title: 'Monitoraggio interrotto',
               message: ctl.error,
-              action: PrimaryButton(label: 'Riprova', icon: AppIcons.refresh, onPressed: ctl.restart),
+              action: PushButton.primary(label: 'Riprova', icon: AppIcons.refresh, onPressed: ctl.restart),
             ),
             DashboardPhase.running => _dashboard(context),
           },
@@ -404,28 +402,18 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
         if (ctl.counterErrors.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(Gap.md, 0, Gap.md, Gap.sm),
-            child: Row(
-              children: [
-                Icon(AppIcons.info, size: 14, color: c.warning),
-                const SizedBox(width: Gap.xs),
-                Expanded(
-                  child: Text(
-                    'Alcune metriche non sono leggibili: ${ctl.counterErrors.values.first.split('\n').first}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textSecondary),
-                  ),
-                ),
-              ],
+            child: StatusLine(
+              'Alcune metriche non sono leggibili: ${ctl.counterErrors.values.first.split('\n').first}',
+              kind: StatusKind.warning,
+              maxLines: 1,
             ),
           ),
-        Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+        DecoratedBox(
           decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: c.separator)),
+            border: Border(top: BorderSide(color: c.separator, width: 0.5)),
           ),
-          child: Row(
+          child: PaneBar(
+            padding: const EdgeInsets.symmetric(horizontal: Gap.md),
             children: [
               Flexible(
                 child: SingleChildScrollView(
@@ -454,68 +442,55 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
     final c = DbColors.of(context);
     final t = ctl.lastUpdate;
     String two(int v) => v.toString().padLeft(2, '0');
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          ToolButton(
-            icon: ctl.paused ? AppIcons.run : AppIcons.pause,
-            tooltip: ctl.paused ? 'Riprendi l\'aggiornamento automatico' : 'Sospendi l\'aggiornamento automatico',
-            label: ctl.paused ? 'Riprendi' : 'Pausa',
-            onPressed: ctl.togglePause,
-          ),
-          ToolButton(
-            icon: AppIcons.refresh,
-            tooltip: 'Aggiorna ora (tutte le schede)',
-            onPressed: () => ctl.refresh(full: true),
-          ),
-          PopupMenuButton<int>(
-            tooltip: 'Intervallo di aggiornamento',
-            position: PopupMenuPosition.under,
-            onSelected: (v) {
-              ctl.refreshSec = v;
-              final app = AppScope.read(context);
-              app.settings.perfRefreshSec = v;
-              unawaited(app.saveSettings());
-            },
-            itemBuilder: (_) => [
-              for (final s in const [1, 2, 5, 10, 30, 60])
-                CheckedPopupMenuItem(value: s, checked: s == ctl.refreshSec, child: Text('Ogni $s s')),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(AppIcons.timer, size: 15, color: c.textSecondary),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Ogni ${ctl.refreshSec} s',
-                    style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary, fontFeatures: kTabular),
-                  ),
-                  Icon(AppIcons.chevronDown, size: 14, color: c.textTertiary),
-                ],
+    return PaneBar(
+      children: [
+        ToolButton(
+          icon: ctl.paused ? AppIcons.run : AppIcons.pause,
+          tooltip: ctl.paused ? 'Riprendi l\'aggiornamento automatico' : 'Sospendi l\'aggiornamento automatico',
+          label: ctl.paused ? 'Riprendi' : 'Pausa',
+          onPressed: ctl.togglePause,
+        ),
+        ToolButton(
+          icon: AppIcons.refresh,
+          tooltip: 'Aggiorna ora (tutte le schede)',
+          onPressed: () => ctl.refresh(full: true),
+        ),
+        PopUpButton<int>(
+          style: PopUpStyle.toolbar,
+          value: ctl.refreshSec,
+          tooltip: 'Intervallo di aggiornamento',
+          items: [
+            for (final s in const [1, 2, 5, 10, 30, 60]) (s, 'Ogni $s s', null),
+          ],
+          onChanged: (v) {
+            ctl.refreshSec = v;
+            final app = AppScope.read(context);
+            app.settings.perfRefreshSec = v;
+            unawaited(app.saveSettings());
+          },
+        ),
+        const SizedBox(width: Gap.md),
+        Expanded(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              StatusDot(ctl.paused ? c.textTertiary : c.success, size: 7),
+              const SizedBox(width: 6),
+              Flexible(
+                child: StatusLine(
+                  [
+                    ctl.provider!.label,
+                    if (widget.tab.dc.serverLabel.isNotEmpty) widget.tab.dc.serverLabel,
+                    if (t != null) 'aggiornato alle ${two(t.hour)}:${two(t.minute)}:${two(t.second)}',
+                  ].join(' · '),
+                  maxLines: 1,
+                ),
               ),
-            ),
+            ],
           ),
-          const Spacer(),
-          StatusDot(ctl.paused ? c.textTertiary : c.success, size: 7),
-          const SizedBox(width: 6),
-          Text(
-            [
-              ctl.provider!.label,
-              if (widget.tab.dc.serverLabel.isNotEmpty) widget.tab.dc.serverLabel,
-              if (t != null) 'aggiornato alle ${two(t.hour)}:${two(t.minute)}:${two(t.second)}',
-            ].join(' · '),
-            style: TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textSecondary, fontFeatures: kTabular),
-          ),
-          const SizedBox(width: Gap.sm),
-        ],
-      ),
+        ),
+        const SizedBox(width: Gap.xs),
+      ],
     );
   }
 
@@ -540,14 +515,13 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
         k.help ?? k.label,
         if (buf != null && buf.max != null) 'min ${_kpiText(k, buf.min)} · max ${_kpiText(k, buf.max)}',
       ].join('\n'),
-      waitDuration: const Duration(milliseconds: 500),
       child: Container(
         width: 184,
         padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.md, Gap.sm),
         decoration: BoxDecoration(
-          color: c.chrome,
+          color: c.content,
           borderRadius: BorderRadius.circular(Radii.panel),
-          border: Border.all(color: c.separator),
+          border: Border.all(color: c.separator, width: 0.5),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -556,16 +530,16 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
               k.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textSecondary),
+              style: uiText(TypeSize.caption, color: c.textSecondary),
             ),
             const SizedBox(height: 2),
             Text(
               _kpiText(k, v),
-              style: TextStyle(
-                fontSize: TypeSize.title + 2,
-                fontWeight: FontWeight.w600,
+              style: uiText(
+                TypeSize.sheetTitle,
+                weight: FontWeight.w600,
                 color: warn ? c.warning : c.text,
-                fontFeatures: kTabular,
+                features: kTabular,
               ),
             ),
             const SizedBox(height: Gap.xs),
@@ -616,19 +590,19 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
       out.add(
         Tooltip(
           message: t.help!,
-          child: Icon(AppIcons.help, size: 15, color: DbColors.of(context).textTertiary),
+          child: Icon(AppIcons.help, size: 16, color: DbColors.of(context).textTertiary),
         ),
       );
       out.add(const SizedBox(width: Gap.sm));
     }
     if (t.idleColumn != null) {
       out.addAll([
-        Text(
-          'Mostra inattive',
-          style: TextStyle(fontSize: TypeSize.small, color: DbColors.of(context).textSecondary),
+        CheckboxRow(
+          small: true,
+          label: 'Mostra inattive',
+          value: _showIdle,
+          onChanged: (v) => setState(() => _showIdle = v),
         ),
-        const SizedBox(width: 6),
-        DbSwitch(value: _showIdle, onChanged: (v) => setState(() => _showIdle = v)),
         const ToolSeparator(),
       ]);
     }
@@ -718,48 +692,24 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
     final c = DbColors.of(context);
     final st = ctl.tables[t.id];
     if (st == null || (st.loading && st.rows.isEmpty && st.error == null && st.hint == null)) {
-      if (st == null && !t.live) {
-        // Static tables are loaded with the first full refresh.
-        return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
-      }
-      return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
+      // Static tables are loaded with the first full refresh.
+      return const Center(child: Spinner(size: Spinner.large));
     }
     if (st.hint != null) {
       return EmptyState(icon: AppIcons.extension, title: 'Funzione non disponibile', message: st.hint);
     }
     if (st.error != null) {
-      return Padding(
-        padding: const EdgeInsets.all(Gap.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(AppIcons.lock, size: 16, color: c.danger),
-                const SizedBox(width: Gap.sm),
-                Text(
-                  'Impossibile leggere "${t.title}"',
-                  style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600, color: c.text),
-                ),
-              ],
-            ),
-            const SizedBox(height: Gap.xs),
-            Text(
-              'Spesso dipende dai permessi dell\'utente sulle viste di sistema. Il resto della dashboard continua a funzionare.',
-              style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-            ),
-            const SizedBox(height: Gap.sm),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(Gap.md),
-              decoration: BoxDecoration(
-                color: c.chrome,
-                borderRadius: BorderRadius.circular(Radii.panel),
-                border: Border.all(color: c.separator),
-              ),
-              child: SelectableText(st.error!, style: monoStyle(context, size: TypeSize.small)),
-            ),
-          ],
+      return Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.all(Gap.lg),
+          child: Notice(
+            kind: NoticeKind.danger,
+            icon: AppIcons.lock,
+            title: 'Impossibile leggere "${t.title}"',
+            message: 'Spesso dipende dai permessi dell\'utente sulle viste di sistema. Il resto della dashboard continua a funzionare.',
+            child: CodeBox(st.error!, wrap: true, maxLines: 12),
+          ),
         ),
       );
     }
@@ -800,25 +750,26 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
               child: depth[r] == 0
                   ? Tooltip(
                       message: 'Blocca ${blocked[r]} sessioni',
-                      child: Icon(AppIcons.lock, size: 13, color: c.danger),
+                      child: Icon(AppIcons.lock, size: 14, color: c.danger),
                     )
-                  : Icon(AppIcons.subdirectory, size: 13, color: c.textTertiary),
+                  : Icon(AppIcons.subdirectory, size: 14, color: c.textTertiary),
             ),
     );
   }
 
   Future<void> _contextMenu(TableSpec t, TableState st, List<Object?> row, Offset pos) async {
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final qi = st.columns.indexWhere((c) => columnKind(c) == ColKind.query);
-    final v = await showMenu<int>(
-      context: context,
-      position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & overlay.size),
-      items: [
-        const PopupMenuItem(value: 0, child: Text('Copia riga')),
-        if (qi >= 0 && row[qi] != null) const PopupMenuItem(value: 1, child: Text('Copia query')),
-        if (qi >= 0 && row[qi] != null) const PopupMenuItem(value: 2, child: Text('Apri query nell\'editor SQL')),
-        if (t.actions?.cancel != null) const PopupMenuItem(value: 3, child: Text('Annulla query…')),
-        if (t.actions != null) const PopupMenuItem(value: 4, child: Text('Termina sessione…')),
+    final hasQuery = qi >= 0 && row[qi] != null;
+    final v = await showMacMenu<int>(
+      context,
+      position: pos,
+      entries: [
+        const MenuEntry('Copia riga', value: 0),
+        if (hasQuery) const MenuEntry('Copia query', value: 1),
+        if (hasQuery) const MenuEntry('Apri query nell\'editor SQL', value: 2),
+        if (t.actions != null) const MenuEntry.divider(),
+        if (t.actions?.cancel != null) const MenuEntry('Annulla query…', value: 3),
+        if (t.actions != null) const MenuEntry('Termina sessione…', value: 4),
       ],
     );
     if (v == null || !mounted) return;

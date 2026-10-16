@@ -215,7 +215,7 @@ void main() {
         // Stacked bars and areas.
         await tester.tap(find.byTooltip(ChartKind.bar.label));
         await tester.pump();
-        await tester.tap(find.byType(DbSwitch).first);
+        await tester.tap(find.byType(CheckboxRow).first);
         await tester.pump();
         expect(tester.takeException(), isNull);
       });

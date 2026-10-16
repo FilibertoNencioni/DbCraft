@@ -210,6 +210,89 @@ void main() {
     expect(ctrl.text, 'latin1');
   });
 
+  testWidgets('PopUpButton type-to-select picks items with the menu closed', (tester) async {
+    var value = 'pg';
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => PopUpButton<String>(
+        value: value,
+        focusNode: focus,
+        items: const [('pg', 'PostgreSQL', null), ('my', 'MySQL', null), ('ma', 'MariaDB', null), ('li', 'SQLite', null)],
+        onChanged: (v) => set(() => value = v),
+      ),
+    )));
+    focus.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+    await tester.pump();
+    expect(value, 'my');
+    // The same letter again cycles to the next item starting with it.
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+    await tester.pump();
+    expect(value, 'ma');
+    expect(find.text('PostgreSQL'), findsNothing, reason: 'the menu stays closed');
+    // After a pause a new prefix starts over.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+    await tester.pump();
+    expect(value, 'li');
+  });
+
+  testWidgets('ComboField completes inline and narrows the list', (tester) async {
+    final ctrl = TextEditingController();
+    addTearDown(ctrl.dispose);
+    await tester.pumpWidget(_app(SizedBox(
+      width: 220,
+      child: ComboField(controller: ctrl, options: () => const ['utf8mb4', 'utf16', 'latin1']),
+    )));
+    await tester.enterText(find.byType(TextField), 'utf8');
+    await tester.pump();
+    expect(ctrl.text, 'utf8mb4');
+    expect(ctrl.selection, const TextSelection(baseOffset: 4, extentOffset: 7));
+    // Deleting the completion does not bring it back.
+    await tester.enterText(find.byType(TextField), 'utf');
+    await tester.pump();
+    expect(ctrl.text, 'utf');
+    await tester.tap(find.bySemanticsLabel('Suggerimenti'));
+    await tester.pumpAndSettle();
+    expect(find.text('utf16'), findsOneWidget);
+    expect(find.text('latin1'), findsNothing);
+  });
+
+  testWidgets('NumberField brings a typed value back into range on blur', (tester) async {
+    final ctrl = TextEditingController(text: '5');
+    final other = FocusNode();
+    addTearDown(ctrl.dispose);
+    addTearDown(other.dispose);
+    await tester.pumpWidget(_app(Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        NumberField(controller: ctrl, min: 1, max: 65535),
+        Focus(focusNode: other, child: const SizedBox(width: 10, height: 10)),
+      ],
+    )));
+    await tester.enterText(find.byType(TextField), '70000');
+    await tester.pump();
+    expect(ctrl.text, '70000');
+    other.requestFocus();
+    await tester.pump();
+    expect(ctrl.text, '65535');
+  });
+
+  testWidgets('DateField clears with backspace', (tester) async {
+    DateTime? value = DateTime(2024, 3, 5);
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => DateField(value: value, onChanged: (v) => set(() => value = v)),
+    )));
+    await tester.tap(find.text('05'));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+    expect(value, isNull);
+    expect(find.text('gg'), findsOneWidget);
+  });
+
   testWidgets('Popover opens at its anchor and closes with Esc', (tester) async {
     await tester.pumpWidget(_app(Builder(
       builder: (context) => PushButton(

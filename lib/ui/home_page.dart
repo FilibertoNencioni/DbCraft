@@ -92,7 +92,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Height of the title-bar bands (the sidebar's and the content toolbar).
-  double get _barHeight => _mac ? kUnifiedToolbarHeight : 44;
+  double get _barHeight => _mac ? BarHeight.toolbar : 44;
 
   /// Full-height sidebar beside the content column (toolbar, tabs, editor,
   /// status bar). The sidebar toggle stays put right of the traffic lights,
@@ -126,7 +126,8 @@ class _HomePageState extends State<HomePage> {
         child: Center(
           child: ToolButton(
             icon: AppIcons.sidebar,
-            tooltip: '${_showSidebar ? 'Nascondi' : 'Mostra'} barra laterale (${_mac ? '⌘0' : 'Ctrl+0'})',
+            tooltip: '${_showSidebar ? 'Nascondi' : 'Mostra'} barra laterale '
+                '(${shortcutLabel(_a(LogicalKeyboardKey.digit0))})',
             extent: ControlSize.toolbar,
             onPressed: () => _toggleSidebar(animate: true),
           ),
@@ -489,7 +490,7 @@ class _HomePageState extends State<HomePage> {
         },
         trailing: ToolButton(
           icon: AppIcons.add,
-          tooltip: 'Nuovo editor SQL (${_mac ? '⌘N' : 'Ctrl+N'})',
+          tooltip: 'Nuovo editor SQL (${shortcutLabel(_a(LogicalKeyboardKey.keyN))})',
           onPressed: () => openSqlEditor(context),
         ),
       ),
@@ -543,83 +544,52 @@ class _HomePageState extends State<HomePage> {
     ]);
   }
 
-  void _about() => showAboutDialog(
-        context: context,
-        applicationName: 'DbCraft',
-        applicationVersion: '1.0.0',
-        applicationIcon: const AppMark(size: 48),
-        children: const [
-          Text('Client database universale in Flutter. La connettività è basata su ODBC '
-              '(unixODBC / iODBC / Windows ODBC) tramite dart:ffi.'),
-        ],
+  void _about() => showAboutPanel(
+        context,
+        name: 'DbCraft',
+        version: '1.0.0',
+        description: 'Client database universale in Flutter. La connettività è basata su ODBC '
+            '(unixODBC / iODBC / Windows ODBC) tramite dart:ffi.',
       );
 
   void _shortcutsHelp() {
-    final m = _mac ? '⌘' : 'Ctrl+';
-    final groups = <(String, List<(String, String)>)>[
+    const h = ShortcutHelp.new;
+    showShortcutsSheet(context, [
       ('Generale', [
-        ('${m}N', 'Nuovo editor SQL'),
-        ('$m⇧N', 'Nuova connessione'),
-        ('${m}O', 'Apri script'),
-        ('${m}W', 'Chiudi scheda'),
-        ('${m}0', 'Mostra/nascondi barra laterale'),
-        ('$m⇧H', 'Query Manager'),
-        ('F4', 'Modifica connessione'),
+        h('Nuovo editor SQL', [_a(LogicalKeyboardKey.keyN)]),
+        h('Nuova connessione', [_a(LogicalKeyboardKey.keyN, shift: true)]),
+        h('Apri script', [_a(LogicalKeyboardKey.keyO)]),
+        h('Chiudi scheda', [_a(LogicalKeyboardKey.keyW)]),
+        h('Mostra/nascondi barra laterale', [_a(LogicalKeyboardKey.digit0)]),
+        h('Query Manager', [_a(LogicalKeyboardKey.keyH, shift: true)]),
+        h('Modifica connessione', [const SingleActivator(LogicalKeyboardKey.f4)]),
       ]),
       ('Editor SQL', [
-        ('${m}Invio', 'Esegui istruzione o selezione'),
-        ('$m\\', 'Esegui in una nuova scheda'),
-        ('⌥X / F5', 'Esegui script'),
-        ('$m⇧E', 'Piano di esecuzione'),
-        ('$m.', 'Interrompi esecuzione'),
-        ('$m⇧F', 'Formatta SQL'),
-        ('$m/', 'Commenta righe'),
-        ('${m}F', 'Trova e sostituisci'),
+        h('Esegui istruzione o selezione', [_a(LogicalKeyboardKey.enter)]),
+        h('Esegui in una nuova scheda', [_a(LogicalKeyboardKey.backslash)]),
+        h('Esegui script', [
+          const SingleActivator(LogicalKeyboardKey.keyX, alt: true),
+          const SingleActivator(LogicalKeyboardKey.f5),
+        ]),
+        h('Piano di esecuzione', [_a(LogicalKeyboardKey.keyE, shift: true)]),
+        h('Interrompi esecuzione', [_a(LogicalKeyboardKey.period)]),
+        h('Formatta SQL', [_a(LogicalKeyboardKey.keyF, shift: true)]),
+        h('Commenta righe', [_a(LogicalKeyboardKey.slash)]),
+        h('Trova e sostituisci', [_a(LogicalKeyboardKey.keyF)]),
       ]),
       ('Griglia dati', [
-        ('Invio / F2', 'Modifica cella'),
-        ('⇧Invio', 'Editor del valore'),
-        ('Ins / Canc', 'Aggiungi / elimina riga'),
-        ('${m}C · $m⇧C', 'Copia · con intestazioni'),
-        ('${m}S', 'Salva modifiche'),
+        h('Modifica cella', [
+          const SingleActivator(LogicalKeyboardKey.enter),
+          const SingleActivator(LogicalKeyboardKey.f2),
+        ]),
+        h('Editor del valore', [const SingleActivator(LogicalKeyboardKey.enter, shift: true)]),
+        h('Aggiungi riga', [const SingleActivator(LogicalKeyboardKey.insert)]),
+        h('Elimina riga', [const SingleActivator(LogicalKeyboardKey.delete)]),
+        h('Copia', [_a(LogicalKeyboardKey.keyC)]),
+        h('Copia con intestazioni', [_a(LogicalKeyboardKey.keyC, shift: true)]),
+        h('Salva modifiche', [_a(LogicalKeyboardKey.keyS)]),
       ]),
-    ];
-    showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        final c = DbColors.of(ctx);
-        return AlertDialog(
-          title: const Text('Scorciatoie da tastiera'),
-          content: SizedBox(
-            width: 460,
-            child: SingleChildScrollView(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                for (final (title, rows) in groups) ...[
-                  SectionLabel(title, padding: const EdgeInsets.only(top: Gap.md, bottom: Gap.xs)),
-                  for (final (k, v) in rows)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Row(children: [
-                        Expanded(child: Text(v)),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: c.chrome,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: c.separator),
-                          ),
-                          child: Text(k, style: monoStyle(ctx, size: 11.5, color: c.textSecondary)),
-                        ),
-                      ]),
-                    ),
-                ],
-              ]),
-            ),
-          ),
-          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Chiudi'))],
-        );
-      },
-    );
+    ]);
   }
 }
 
@@ -721,6 +691,8 @@ class _AppToolbar extends StatelessWidget {
     final dc = app.activeConnection;
     final connected = dc?.isConnected ?? false;
     final mac = Platform.isMacOS;
+    String keys(LogicalKeyboardKey k, {bool shift = false}) =>
+        shortcutLabel(SingleActivator(k, meta: mac, control: !mac, shift: shift));
     return _TitleBarGestures(
       child: AnimatedContainer(
         duration: Motion.of(context, slide),
@@ -734,13 +706,13 @@ class _AppToolbar extends StatelessWidget {
         child: Row(children: [
           ToolButton(
             icon: AppIcons.addLink,
-            tooltip: 'Nuova connessione (${mac ? '⌘⇧N' : 'Ctrl+Shift+N'})',
+            tooltip: 'Nuova connessione (${keys(LogicalKeyboardKey.keyN, shift: true)})',
             extent: ControlSize.toolbar,
             onPressed: () => newConnection(context),
           ),
           ToolButton(
             icon: AppIcons.script,
-            tooltip: 'Nuovo editor SQL (${mac ? '⌘N' : 'Ctrl+N'})',
+            tooltip: 'Nuovo editor SQL (${keys(LogicalKeyboardKey.keyN)})',
             extent: ControlSize.toolbar,
             onPressed: () => openSqlEditor(context),
           ),
@@ -768,7 +740,7 @@ class _AppToolbar extends StatelessWidget {
           ],
           ToolButton(
             icon: AppIcons.history,
-            tooltip: 'Query Manager (${mac ? '⌘⇧H' : 'Ctrl+Shift+H'})',
+            tooltip: 'Query Manager (${keys(LogicalKeyboardKey.keyH, shift: true)})',
             extent: ControlSize.toolbar,
             onPressed: () => showHistoryDialog(context),
           ),
@@ -913,7 +885,8 @@ class _Welcome extends StatelessWidget {
     final app = AppScope.of(context);
     final c = DbColors.of(context);
     final mac = Platform.isMacOS;
-    final m = mac ? '⌘' : 'Ctrl+';
+    SingleActivator key(LogicalKeyboardKey k, {bool shift = false}) =>
+        SingleActivator(k, meta: mac, control: !mac, shift: shift);
     return ColoredBox(
       color: c.content,
       child: Center(
@@ -927,7 +900,7 @@ class _Welcome extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     const AppMark(),
                     const SizedBox(height: Gap.lg),
-                    Text('DbCraft', style: Theme.of(context).textTheme.displaySmall),
+                    Text('DbCraft', style: uiText(TypeSize.display, weight: FontWeight.w700, color: c.text)),
                     const SizedBox(height: 2),
                     Text('Scegli da cosa partire',
                         style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary)),
@@ -936,21 +909,21 @@ class _Welcome extends StatelessWidget {
                       icon: AppIcons.addLink,
                       title: 'Nuova connessione',
                       detail: 'Driver ODBC, DSN o stringa di connessione',
-                      shortcut: '$m⇧N',
+                      shortcut: key(LogicalKeyboardKey.keyN, shift: true),
                       onTap: () => newConnection(context),
                     ),
                     _WelcomeAction(
                       icon: AppIcons.script,
                       title: 'Nuovo editor SQL',
                       detail: 'Scrivi ed esegui query sulla connessione attiva',
-                      shortcut: '${m}N',
+                      shortcut: key(LogicalKeyboardKey.keyN),
                       onTap: () => openSqlEditor(context),
                     ),
                     _WelcomeAction(
                       icon: AppIcons.folderOpen,
                       title: 'Apri script',
                       detail: 'Riprendi un file .sql salvato',
-                      shortcut: '${m}O',
+                      shortcut: key(LogicalKeyboardKey.keyO),
                       onTap: onOpenScript,
                     ),
                   ]),
@@ -965,7 +938,7 @@ class _Welcome extends StatelessWidget {
                         child: Text(
                           'Le connessioni che crei compariranno qui. Servono un Driver Manager ODBC '
                           '(unixODBC su macOS e Linux) e il driver del tuo database.',
-                          style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary, height: 1.45),
+                          style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, height: 1.45),
                         ),
                       )
                     else
@@ -981,57 +954,22 @@ class _Welcome extends StatelessWidget {
   }
 }
 
-class _WelcomeAction extends StatefulWidget {
+class _WelcomeAction extends StatelessWidget {
   const _WelcomeAction({required this.icon, required this.title, required this.detail, required this.onTap, this.shortcut});
   final IconData icon;
   final String title;
   final String detail;
-  final String? shortcut;
+  final SingleActivator? shortcut;
   final VoidCallback onTap;
 
   @override
-  State<_WelcomeAction> createState() => _WelcomeActionState();
-}
-
-class _WelcomeActionState extends State<_WelcomeAction> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 2),
-          padding: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: Gap.sm),
-          decoration: BoxDecoration(
-            color: _hover ? c.hover : Colors.transparent,
-            borderRadius: BorderRadius.circular(Radii.panel),
-          ),
-          child: Row(children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(color: c.chrome, borderRadius: BorderRadius.circular(Radii.panel)),
-              child: Icon(widget.icon, size: 18, color: c.textSecondary),
-            ),
-            const SizedBox(width: Gap.md),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(widget.title, style: const TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600)),
-                Text(widget.detail, style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary)),
-              ]),
-            ),
-            if (widget.shortcut != null)
-              Text(widget.shortcut!, style: TextStyle(fontSize: TypeSize.small, color: c.textTertiary)),
-          ]),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ListRow(
+        icon: icon,
+        title: title,
+        subtitle: detail,
+        trailing: shortcut == null ? null : ShortcutText(shortcut!, size: TypeSize.small),
+        onTap: onTap,
+      );
 }
 
 class _RecentConnection extends StatefulWidget {
@@ -1045,51 +983,36 @@ class _RecentConnection extends StatefulWidget {
 class _RecentConnectionState extends State<_RecentConnection> {
   bool _hover = false;
 
+  Future<void> _open() async {
+    final app = AppScope.read(context);
+    app.select(widget.dc);
+    if (await ensureConnected(context, widget.dc)) {
+      await app.openSqlEditor(widget.dc);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final c = DbColors.of(context);
     final cfg = widget.dc.config;
-    final t = cfg.template;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: () async {
-          final app = AppScope.read(context);
-          app.select(widget.dc);
-          if (await ensureConnected(context, widget.dc)) {
-            await app.openSqlEditor(widget.dc);
-          }
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: 7),
-          decoration: BoxDecoration(
-            color: _hover ? c.hover : Colors.transparent,
-            borderRadius: BorderRadius.circular(Radii.panel),
-          ),
-          child: Row(children: [
-            Icon(t.icon, size: 18, color: c.textSecondary),
-            const SizedBox(width: Gap.md),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Flexible(
-                    child: Text(cfg.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w500)),
-                  ),
-                  const SizedBox(width: 6),
-                  EnvDot(cfg.type.color, show: cfg.type != ConnectionType.development, size: 6),
-                ]),
-                Text(cfg.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary)),
-              ]),
+      child: ListRow(
+        icon: cfg.template.icon,
+        title: cfg.name,
+        subtitle: cfg.subtitle,
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          EnvDot(cfg.type.color, show: cfg.type != ConnectionType.development, tooltip: cfg.type.label),
+          // Keeps the row height steady while the link comes and goes.
+          Visibility.maintain(
+            visible: _hover,
+            child: Padding(
+              padding: const EdgeInsets.only(left: Gap.sm),
+              child: LinkButton(label: 'Apri', small: true, onPressed: _open),
             ),
-            if (_hover) Text('Apri', style: TextStyle(fontSize: TypeSize.small, color: c.accent)),
-          ]),
-        ),
+          ),
+        ]),
+        onTap: _open,
       ),
     );
   }

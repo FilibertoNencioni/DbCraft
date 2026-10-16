@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../ui/theme/tokens.dart';
+
 /// Minimal sparkline: a line with a soft fill, null samples are gaps.
 class Sparkline extends StatelessWidget {
   const Sparkline({super.key, required this.values, required this.color, this.capacity = 120, this.height = 28});
@@ -53,7 +55,10 @@ class SparklinePainter extends CustomPainter {
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [color.withValues(alpha: 0.22), color.withValues(alpha: 0.02)],
+        colors: [
+          color.withValues(alpha: Tint.strong),
+          color.withValues(alpha: 0),
+        ],
       ).createShader(Offset.zero & size);
 
     // Contiguous segments.

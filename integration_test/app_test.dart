@@ -17,7 +17,7 @@ import 'package:dbcraft/state/editor_tabs.dart';
 import 'package:dbcraft/ui/dialogs/app_dialogs.dart';
 import 'package:dbcraft/ui/editors/sql_code_editor.dart';
 import 'package:dbcraft/ui/home_page.dart';
-import 'package:dbcraft/ui/theme/app_icons.dart';
+import 'package:dbcraft/ui/widgets/sheets.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -150,7 +150,7 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester, 400);
     await shot(tester, '05_table_edit_pending');
-    await tester.tap(find.text('Salva (⌘S)'));
+    await tester.tap(find.text('Salva'));
     await settle(tester, 1500);
     await shot(tester, '05b_after_save');
     final check = await OdbcSession.open('Driver=$sqliteOdbc;Database=${db.path}').timeout(const Duration(seconds: 20));
@@ -278,11 +278,11 @@ void main() {
     );
 
     // Query manager.
-    await tester.tap(find.byTooltip('Query Manager (⌘⇧H)'));
+    await tester.tap(find.byTooltip('Query Manager (⇧⌘H)'));
     await waitFor(tester, find.text('Query Manager'));
     await settle(tester);
     await shot(tester, '10f_history');
-    await tester.tap(find.byIcon(AppIcons.close).last);
+    await tester.tap(find.text('Fine').last);
     await settle(tester);
 
     // Autocomplete helper data & ER diagram.
@@ -299,7 +299,7 @@ void main() {
     await settle(tester, 1500);
     await shot(tester, '12_connection_dialog');
     await tester.tap(find.text('Produzione').last);
-    final form = find.descendant(of: find.byType(Dialog), matching: find.byType(Scrollable)).first;
+    final form = find.descendant(of: find.byType(SheetScaffold), matching: find.byType(Scrollable)).first;
     await tester.scrollUntilVisible(find.text('Avanzate'), 120, scrollable: form);
     await tester.tap(find.text('Avanzate'));
     await settle(tester, 400);
@@ -315,7 +315,7 @@ void main() {
     await waitFor(tester, find.text('Aspetto'));
     await settle(tester, 500);
     await shot(tester, '12c_settings');
-    await tester.tap(find.byTooltip('Chiudi').last);
+    await tester.tap(find.text('Fine').last);
     await settle(tester);
 
     // Dark theme.

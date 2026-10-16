@@ -45,11 +45,7 @@ Future<void> showMockDataDialog(BuildContext context, DbConnection dc, DbTable t
     return;
   }
   if (!context.mounted) return;
-  await showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => _MockDataDialog(dc: dc, details: details),
-  );
+  await showSheet<void>(context, size: SheetSize.xlarge, builder: (_) => _MockDataDialog(dc: dc, details: details));
 }
 
 class _MockDataDialog extends StatefulWidget {
@@ -453,78 +449,64 @@ class _MockDataDialogState extends State<_MockDataDialog> {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final readOnly = dc.config.readOnly;
-    return AlertDialog(
-      title: Row(
+    return SheetScaffold(
+      title: 'Genera dati di test · ${table.name}',
+      leading: [
+        PushButton(label: 'Esporta CSV…', onPressed: _running ? null : _csv),
+        PushButton(label: 'Genera script SQL', onPressed: _running ? null : _script),
+      ],
+      actions: [
+        if (_running)
+          PushButton(
+            label: 'Interrompi',
+            kind: PushButtonKind.destructive,
+            onPressed: () => setState(() => _cancel = true),
+          )
+        else
+          PushButton(label: 'Chiudi', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(
+          label: 'Inserisci ${_rowCount > 0 ? _rowCount : ''} righe',
+          tooltip: readOnly ? 'Connessione in sola lettura' : 'Inserisce le righe con una sessione dedicata',
+          onPressed: _running || readOnly ? null : _insert,
+        ),
+      ],
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: Text('Genera dati di test · ${table.name}', overflow: TextOverflow.ellipsis)),
-          Segmented<int>(
+          PageSwitcher<int>(
             value: _page,
+            background: c.windowBackground,
             items: const [(0, 'Colonne', null), (1, 'Opzioni', null), (2, 'Anteprima', null)],
             onChanged: (v) => setState(() {
               _page = v;
               if (v == 2) _buildPreview();
             }),
           ),
+          const SizedBox(height: Gap.md),
+          Expanded(
+            child: AbsorbPointer(
+              absorbing: _running,
+              child: switch (_page) {
+                0 => _columnsPage(c),
+                1 => _optionsPage(c),
+                _ => _previewPage(c),
+              },
+            ),
+          ),
+          if (_running) ...[
+            const SizedBox(height: Gap.md),
+            ProgressBar(value: _total > 0 && _done > 0 ? _done / _total : null),
+            const SizedBox(height: Gap.xs),
+            Text(_status, style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular)),
+          ] else if (readOnly) ...[
+            const SizedBox(height: Gap.sm),
+            const StatusLine(
+              'La connessione è in sola lettura: puoi generare uno script SQL o un file CSV.',
+              kind: StatusKind.warning,
+            ),
+          ],
         ],
       ),
-      content: SizedBox(
-        width: 940,
-        height: 540,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: AbsorbPointer(
-                absorbing: _running,
-                child: switch (_page) {
-                  0 => _columnsPage(c),
-                  1 => _optionsPage(c),
-                  _ => _previewPage(c),
-                },
-              ),
-            ),
-            if (_running) ...[
-              const SizedBox(height: Gap.md),
-              LinearProgressIndicator(value: _total > 0 && _done > 0 ? _done / _total : null),
-              const SizedBox(height: Gap.xs),
-              Text(
-                _status,
-                style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular),
-              ),
-            ] else if (readOnly) ...[
-              const SizedBox(height: Gap.sm),
-              Text(
-                'La connessione è in sola lettura: puoi generare uno script SQL o un file CSV.',
-                style: TextStyle(fontSize: TypeSize.small, color: c.warning),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        if (_running)
-          OutlinedButton(onPressed: () => setState(() => _cancel = true), child: const Text('Interrompi'))
-        else
-          OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
-        OutlinedButton.icon(
-          onPressed: _running ? null : _csv,
-          icon: const Icon(AppIcons.table, size: 16),
-          label: const Text('Esporta CSV…'),
-        ),
-        OutlinedButton.icon(
-          onPressed: _running ? null : _script,
-          icon: const Icon(AppIcons.document, size: 16),
-          label: const Text('Genera script SQL'),
-        ),
-        Tooltip(
-          message: readOnly ? 'Connessione in sola lettura' : 'Inserisce le righe con una sessione dedicata',
-          child: FilledButton.icon(
-            onPressed: _running || readOnly ? null : _insert,
-            icon: const Icon(AppIcons.addList, size: 16),
-            label: Text('Inserisci ${_rowCount > 0 ? _rowCount : ''} righe'),
-          ),
-        ),
-      ],
     );
   }
 
@@ -532,15 +514,20 @@ class _MockDataDialogState extends State<_MockDataDialog> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Inset list box.
         Container(
-          width: 360,
+          width: 340,
           decoration: BoxDecoration(
             color: c.content,
             borderRadius: BorderRadius.circular(Radii.panel),
-            border: Border.all(color: c.separator),
+            border: Border.all(color: c.separator, width: 0.5),
           ),
           clipBehavior: Clip.antiAlias,
-          child: ListView.builder(itemCount: _configs.length, itemExtent: 44, itemBuilder: (_, i) => _columnTile(c, i)),
+          child: ListView.builder(
+            itemCount: _configs.length,
+            itemExtent: ListRow.doubleHeight,
+            itemBuilder: (_, i) => _columnTile(c, i),
+          ),
         ),
         const SizedBox(width: Gap.lg),
         Expanded(child: SingleChildScrollView(child: _detail(c, _configs[_selected]))),
@@ -550,63 +537,31 @@ class _MockDataDialogState extends State<_MockDataDialog> {
 
   Widget _columnTile(DbColors c, int i) {
     final cfg = _configs[i];
-    final sel = i == _selected;
     final k = cfg.effectiveKind;
-    final muted = k == MockKind.skip;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _selected = i),
-      child: Container(
-        color: sel ? c.selection : (i.isOdd ? c.zebra : c.content),
-        padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 18,
-              child: cfg.isPrimaryKey
-                  ? Icon(AppIcons.key, size: 13, color: c.warning)
-                  : (cfg.fkSample != null ? Icon(AppIcons.link, size: 13, color: c.textTertiary) : null),
-            ),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          cfg.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: TypeSize.body,
-                            fontWeight: FontWeight.w500,
-                            color: muted ? c.textTertiary : c.text,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: Gap.xs),
-                      Text(
-                        cfg.column.fullType.toLowerCase(),
-                        style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    [
-                      cfg.kind == MockKind.auto ? '${k.label} (auto)' : k.label,
-                      if (cfg.summary.isNotEmpty) cfg.summary,
-                    ].join(' · '),
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: TypeSize.caption, color: c.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-            if (_warning(cfg) != null) Icon(AppIcons.warning, size: 14, color: c.warning),
+    return ListRow(
+      title: cfg.name,
+      titleColor: k == MockKind.skip ? c.textTertiary : null,
+      subtitle: [
+        cfg.kind == MockKind.auto ? '${k.label} (auto)' : k.label,
+        if (cfg.summary.isNotEmpty) cfg.summary,
+      ].join(' · '),
+      leading: cfg.isPrimaryKey
+          ? Icon(AppIcons.key, size: 14, color: c.keyIcon)
+          : (cfg.fkSample != null ? Icon(AppIcons.link, size: 14, color: c.foreignKeyIcon) : const SizedBox()),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TypeLabel(cfg.column.fullType.toLowerCase()),
+          if (_warning(cfg) != null) ...[
+            const SizedBox(width: Gap.xs),
+            Icon(AppIcons.warning, size: 14, color: c.warning),
           ],
-        ),
+        ],
       ),
+      selected: i == _selected,
+      zebra: true,
+      index: i,
+      onTap: () => setState(() => _selected = i),
     );
   }
 
@@ -630,14 +585,26 @@ class _MockDataDialogState extends State<_MockDataDialog> {
     return null;
   }
 
-  Widget _num(String key, String label, num value, ValueChanged<String> onChanged, {String? help}) => FormRow(
+  Widget _num(
+    String key,
+    String label,
+    num value,
+    ValueChanged<String> onChanged, {
+    String? help,
+    num? min,
+    int decimals = 0,
+  }) => FormRow(
     label: label,
     help: help,
-    child: TextFormField(
+    child: _OwnController(
       key: ValueKey('$_selected:$key'),
-      initialValue: '$value',
-      style: const TextStyle(fontSize: TypeSize.body, fontFeatures: kTabular),
-      onChanged: (v) => setState(() => onChanged(v)),
+      initial: '$value',
+      builder: (ctrl) => NumberField(
+        controller: ctrl,
+        min: min,
+        decimals: decimals,
+        onChanged: (v) => setState(() => onChanged(v)),
+      ),
     ),
   );
 
@@ -645,12 +612,15 @@ class _MockDataDialogState extends State<_MockDataDialog> {
       FormRow(
         label: label,
         help: help,
-        child: TextFormField(
+        child: _OwnController(
           key: ValueKey('$_selected:$key'),
-          initialValue: value,
-          decoration: InputDecoration(hintText: hint),
-          style: monoStyle(context),
-          onChanged: (v) => setState(() => onChanged(v)),
+          initial: value,
+          builder: (ctrl) => MacTextField(
+            controller: ctrl,
+            hint: hint,
+            mono: true,
+            onChanged: (v) => setState(() => onChanged(v)),
+          ),
         ),
       );
 
@@ -673,18 +643,25 @@ class _MockDataDialogState extends State<_MockDataDialog> {
         _num('intMax', 'Massimo', cfg.intMax, (v) => cfg.intMax = int.tryParse(v) ?? cfg.intMax),
       ],
       if (k == MockKind.decimal) ...[
-        _num('decMin', 'Minimo', cfg.decMin, (v) => cfg.decMin = double.tryParse(v.replaceAll(',', '.')) ?? cfg.decMin),
+        _num(
+          'decMin',
+          'Minimo',
+          cfg.decMin,
+          (v) => cfg.decMin = double.tryParse(v.replaceAll(',', '.')) ?? cfg.decMin,
+          decimals: 2,
+        ),
         _num(
           'decMax',
           'Massimo',
           cfg.decMax,
           (v) => cfg.decMax = double.tryParse(v.replaceAll(',', '.')) ?? cfg.decMax,
+          decimals: 2,
         ),
-        _num('scale', 'Decimali', cfg.scale, (v) => cfg.scale = (int.tryParse(v) ?? cfg.scale).clamp(0, 10)),
+        _num('scale', 'Decimali', cfg.scale, (v) => cfg.scale = (int.tryParse(v) ?? cfg.scale).clamp(0, 10), min: 0),
       ],
       if (k == MockKind.lorem) ...[
-        _num('minWords', 'Parole (minimo)', cfg.minWords, (v) => cfg.minWords = max(1, int.tryParse(v) ?? 1)),
-        _num('maxWords', 'Parole (massimo)', cfg.maxWords, (v) => cfg.maxWords = max(1, int.tryParse(v) ?? 1)),
+        _num('minWords', 'Parole (minimo)', cfg.minWords, (v) => cfg.minWords = max(1, int.tryParse(v) ?? 1), min: 1),
+        _num('maxWords', 'Parole (massimo)', cfg.maxWords, (v) => cfg.maxWords = max(1, int.tryParse(v) ?? 1), min: 1),
       ],
       if (k == MockKind.pattern)
         _text(
@@ -724,18 +701,12 @@ class _MockDataDialogState extends State<_MockDataDialog> {
       if (k == MockKind.boolean)
         FormRow(
           label: 'Valori veri',
-          child: Row(
-            children: [
-              Expanded(
-                child: Slider(
-                  value: cfg.truePercent,
-                  max: 100,
-                  divisions: 20,
-                  onChanged: (v) => setState(() => cfg.truePercent = v),
-                ),
-              ),
-              SizedBox(width: 40, child: Text('${cfg.truePercent.round()}%', textAlign: TextAlign.right)),
-            ],
+          child: MacSlider(
+            value: cfg.truePercent,
+            max: 100,
+            divisions: 20,
+            valueLabel: '${cfg.truePercent.round()}%',
+            onChanged: (v) => setState(() => cfg.truePercent = v),
           ),
         ),
       if (k == MockKind.constant) _text('const', 'Valore', cfg.constant, (v) => cfg.constant = v),
@@ -745,7 +716,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
           child: Text(
             '${cfg.fkSample!.refTable} (${cfg.fkSample!.refColumns.join(', ')})\n'
             '${!cfg.fkSample!.loaded ? 'Lettura dei valori…' : '${cfg.fkSample!.tuples.length} valori distinti campionati (max $_fkSampleSize)'}',
-            style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
+            style: uiText(TypeSize.small, color: c.textSecondary),
           ),
         ),
     ];
@@ -772,81 +743,38 @@ class _MockDataDialogState extends State<_MockDataDialog> {
           children: [
             FormRow(
               label: 'Generatore',
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<MockKind>(
-                  value: cfg.kind,
-                  isExpanded: true,
-                  isDense: true,
-                  style: TextStyle(fontSize: TypeSize.body, color: c.text),
-                  items: [
-                    for (final x in kinds)
-                      DropdownMenuItem(
-                        value: x,
-                        child: Text(x == MockKind.auto ? 'Automatico (${cfg.autoKind.label})' : x.label),
-                      ),
-                  ],
-                  onChanged: (v) => setState(() => cfg.kind = v ?? cfg.kind),
-                ),
+              child: PopUpButton<MockKind>(
+                value: cfg.kind,
+                items: [for (final x in kinds) (x, x == MockKind.auto ? 'Automatico (${cfg.autoKind.label})' : x.label, null)],
+                onChanged: (v) => setState(() => cfg.kind = v),
               ),
             ),
             ...params,
             if (canNull)
               FormRow(
                 label: 'Valori NULL',
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Slider(
-                        value: cfg.nullPercent,
-                        max: 100,
-                        divisions: 20,
-                        onChanged: (v) => setState(() => cfg.nullPercent = v),
-                      ),
-                    ),
-                    SizedBox(width: 40, child: Text('${cfg.nullPercent.round()}%', textAlign: TextAlign.right)),
-                  ],
+                child: MacSlider(
+                  value: cfg.nullPercent,
+                  max: 100,
+                  divisions: 20,
+                  valueLabel: '${cfg.nullPercent.round()}%',
+                  onChanged: (v) => setState(() => cfg.nullPercent = v),
                 ),
               ),
             if (canUnique)
               FormRow(
                 label: 'Univoco',
                 help: cfg.isPrimaryKey ? 'Chiave primaria' : 'Scarta i valori già generati',
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: DbSwitch(value: cfg.unique, onChanged: (v) => setState(() => cfg.unique = v)),
-                ),
+                child: DbSwitch(value: cfg.unique, onChanged: (v) => setState(() => cfg.unique = v)),
               ),
           ],
         ),
         if (warn != null)
           Padding(
             padding: const EdgeInsets.only(bottom: Gap.md),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(AppIcons.warning, size: 15, color: c.warning),
-                const SizedBox(width: Gap.xs),
-                Expanded(
-                  child: Text(
-                    warn,
-                    style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-                  ),
-                ),
-              ],
-            ),
+            child: Notice(message: warn),
           ),
-        if (sample.isNotEmpty) ...[
-          const SectionLabel('Esempi', padding: EdgeInsets.only(left: 2, bottom: Gap.xs)),
-          Container(
-            padding: const EdgeInsets.all(Gap.sm),
-            decoration: BoxDecoration(
-              color: c.codeBackground,
-              borderRadius: BorderRadius.circular(Radii.panel),
-              border: Border.all(color: c.separator),
-            ),
-            child: SelectableText(sample.join('\n'), style: monoStyle(context, size: 12)),
-          ),
-        ],
+        if (sample.isNotEmpty) CodeBox(sample.join('\n'), label: 'Esempi'),
       ],
     );
   }
@@ -862,9 +790,11 @@ class _MockDataDialogState extends State<_MockDataDialog> {
               FormRow(
                 label: 'Numero di righe',
                 help: 'Massimo $_maxRows',
-                child: TextField(
+                child: NumberField(
                   controller: _rows,
-                  style: const TextStyle(fontFeatures: kTabular),
+                  min: 1,
+                  max: _maxRows,
+                  width: 110,
                   onChanged: (_) => setState(() {}),
                 ),
               ),
@@ -872,13 +802,14 @@ class _MockDataDialogState extends State<_MockDataDialog> {
                 label: 'Seme',
                 help: 'Stesso seme, stessi dati',
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _seed,
-                        style: const TextStyle(fontFeatures: kTabular),
-                        onChanged: (_) => setState(() {}),
-                      ),
+                    NumberField(
+                      controller: _seed,
+                      min: 0,
+                      stepper: false,
+                      width: 110,
+                      onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(width: Gap.xs),
                     ToolButton(
@@ -891,13 +822,10 @@ class _MockDataDialogState extends State<_MockDataDialog> {
               ),
               FormRow(
                 label: 'Lingua dei dati',
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Segmented<MockLocale>(
-                    value: _locale,
-                    items: [for (final l in MockLocale.values) (l, l.label, null)],
-                    onChanged: (v) => setState(() => _locale = v),
-                  ),
+                child: Segmented<MockLocale>(
+                  value: _locale,
+                  items: [for (final l in MockLocale.values) (l, l.label, null)],
+                  onChanged: (v) => setState(() => _locale = v),
                 ),
               ),
             ],
@@ -910,35 +838,26 @@ class _MockDataDialogState extends State<_MockDataDialog> {
             children: [
               FormRow(
                 label: 'Righe per commit',
-                child: TextField(
-                  controller: _batch,
-                  style: const TextStyle(fontFeatures: kTabular),
-                ),
+                child: NumberField(controller: _batch, min: 1, width: 110),
               ),
               FormRow(
                 label: 'Transazione',
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Segmented<_TxMode>(
-                    value: _txMode,
-                    items: const [
-                      (_TxMode.perBatch, 'Commit per blocco', null),
-                      (_TxMode.single, 'Transazione unica', null),
-                      (_TxMode.none, 'Auto-commit', null),
-                    ],
-                    onChanged: (v) => setState(() => _txMode = v),
-                  ),
+                child: Segmented<_TxMode>(
+                  value: _txMode,
+                  items: const [
+                    (_TxMode.perBatch, 'Commit per blocco', null),
+                    (_TxMode.single, 'Transazione unica', null),
+                    (_TxMode.none, 'Auto-commit', null),
+                  ],
+                  onChanged: (v) => setState(() => _txMode = v),
                 ),
               ),
               FormRow(
                 label: 'In caso di errore',
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Segmented<_OnError>(
-                    value: _onError,
-                    items: const [(_OnError.stop, 'Interrompi', null), (_OnError.skip, 'Salta la riga', null)],
-                    onChanged: (v) => setState(() => _onError = v),
-                  ),
+                child: Segmented<_OnError>(
+                  value: _onError,
+                  items: const [(_OnError.stop, 'Interrompi', null), (_OnError.skip, 'Salta la riga', null)],
+                  onChanged: (v) => setState(() => _onError = v),
                 ),
               ),
               FormRow(
@@ -946,26 +865,14 @@ class _MockDataDialogState extends State<_MockDataDialog> {
                 help: widget.details.referencedBy.isNotEmpty
                     ? 'DELETE: la tabella è referenziata da chiavi esterne'
                     : 'TRUNCATE: elimina tutte le righe esistenti',
-                labelWidth: 320,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: DbSwitch(value: _truncate, onChanged: (v) => setState(() => _truncate = v)),
-                ),
+                child: DbSwitch(value: _truncate, onChanged: (v) => setState(() => _truncate = v)),
               ),
             ],
           ),
           if (_truncate)
-            Row(
-              children: [
-                Icon(AppIcons.warning, size: 15, color: c.danger),
-                const SizedBox(width: Gap.xs),
-                Expanded(
-                  child: Text(
-                    'Tutte le righe di ${d.tableName(table)} verranno eliminate prima della generazione.',
-                    style: TextStyle(fontSize: TypeSize.small, color: c.danger),
-                  ),
-                ),
-              ],
+            Notice(
+              kind: NoticeKind.danger,
+              message: 'Tutte le righe di ${d.tableName(table)} verranno eliminate prima della generazione.',
             ),
         ],
       ),
@@ -974,14 +881,10 @@ class _MockDataDialogState extends State<_MockDataDialog> {
 
   Widget _previewPage(DbColors c) {
     if (_previewError != null) {
-      return EmptyState(
-        icon: AppIcons.error,
-        title: 'Impossibile generare i dati',
-        message: _previewError,
-      );
+      return EmptyState.error(_previewError!, title: 'Impossibile generare i dati');
     }
     final p = _preview;
-    if (p == null) return const Center(child: CircularProgressIndicator());
+    if (p == null) return const Center(child: Spinner(size: Spinner.large));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -990,7 +893,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
             Expanded(
               child: Text(
                 'Prime ${p.length} righe con il seme ${_seed.text}: l\'inserimento produrrà gli stessi valori.',
-                style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
+                style: uiText(TypeSize.small, color: c.textSecondary),
               ),
             ),
             ToolButton(
@@ -1014,4 +917,29 @@ class _MockDataDialogState extends State<_MockDataDialog> {
       ],
     );
   }
+}
+
+/// Owns the controller of a field built by [builder]; key it to reset the
+/// text (another column selected).
+class _OwnController extends StatefulWidget {
+  const _OwnController({super.key, required this.initial, required this.builder});
+
+  final String initial;
+  final Widget Function(TextEditingController controller) builder;
+
+  @override
+  State<_OwnController> createState() => _OwnControllerState();
+}
+
+class _OwnControllerState extends State<_OwnController> {
+  late final _ctrl = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(_ctrl);
 }

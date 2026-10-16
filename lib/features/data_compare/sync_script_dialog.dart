@@ -24,9 +24,9 @@ Future<void> showSyncScriptDialog(
   required List<String> targetColumns,
   required List<int?> targetTypes,
   VoidCallback? onExecuted,
-}) => showDialog<void>(
-  context: context,
-  barrierDismissible: false,
+}) => showSheet<void>(
+  context,
+  size: SheetSize.xlarge,
   builder: (_) => _SyncScriptDialog(
     target: target,
     table: targetTable,
@@ -184,15 +184,13 @@ class _SyncScriptDialogState extends State<_SyncScriptDialog> {
     String? help,
     bool danger = false,
   }) {
-    final c = DbColors.of(context);
     return FormRow(
       label: label,
       help: help,
-      labelWidth: 380,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Badge2('$count', color: danger ? c.danger : null),
+          CountBadge(count, prominent: danger && value && count > 0),
           const SizedBox(width: Gap.sm),
           DbSwitch(
             value: value,
@@ -214,12 +212,11 @@ class _SyncScriptDialogState extends State<_SyncScriptDialog> {
     final dc = widget.target;
     final readOnly = dc.config.readOnly;
     final empty = _statements.isEmpty;
-    return AlertDialog(
-      title: Text('Script di sincronizzazione · ${widget.table.name}'),
-      content: SizedBox(
-        width: 820,
-        height: 560,
-        child: Column(
+    return PopScope(
+      canPop: !_running,
+      child: SheetScaffold(
+        title: 'Script di sincronizzazione · ${widget.table.name}',
+        body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             FormGroup(
@@ -248,63 +245,52 @@ class _SyncScriptDialogState extends State<_SyncScriptDialog> {
               ],
             ),
             if (r.truncated)
-              Padding(
-                padding: const EdgeInsets.only(bottom: Gap.sm),
-                child: Text(
-                  'Il confronto è stato limitato dal numero massimo di righe: lo script non copre tutta la tabella.',
-                  style: TextStyle(fontSize: TypeSize.small, color: c.warning),
+              const Padding(
+                padding: EdgeInsets.only(bottom: Gap.sm),
+                child: Notice(
+                  message: 'Il confronto è stato limitato dal numero massimo di righe: lo script non copre tutta la tabella.',
                 ),
               ),
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: c.codeBackground,
-                  borderRadius: BorderRadius.circular(Radii.panel),
-                  border: Border.all(color: c.separator),
-                ),
-                child: empty
-                    ? const EmptyState(
-                        icon: AppIcons.checkCircle,
-                        title: 'Nessuna istruzione',
-                        message: 'Attiva almeno un tipo di modifica con righe da sincronizzare.',
-                      )
-                    : SingleChildScrollView(
-                        padding: const EdgeInsets.all(Gap.md),
-                        child: SelectableText(_preview(), style: monoStyle(context, size: 12)),
-                      ),
-              ),
+              child: empty
+                  ? const EmptyState(
+                      icon: AppIcons.checkCircle,
+                      title: 'Nessuna istruzione',
+                      message: 'Attiva almeno un tipo di modifica con righe da sincronizzare.',
+                    )
+                  : SingleChildScrollView(child: CodeBox(_preview(), copy: false)),
             ),
             if (_running) ...[
               const SizedBox(height: Gap.md),
-              LinearProgressIndicator(value: _statements.isEmpty ? null : _done / _statements.length),
+              ProgressBar(value: _statements.isEmpty ? null : _done / _statements.length),
               const SizedBox(height: Gap.xs),
               Text(
                 '$_done / ${_statements.length} istruzioni',
-                style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular),
+                style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular),
               ),
             ],
           ],
         ),
-      ),
-      actions: [
-        if (_running)
-          OutlinedButton(onPressed: () => setState(() => _cancel = true), child: const Text('Interrompi'))
-        else
-          OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
-        OutlinedButton(onPressed: _running || empty ? null : _copy, child: const Text('Copia')),
-        OutlinedButton(onPressed: _running || empty ? null : _save, child: const Text('Salva…')),
-        OutlinedButton(onPressed: _running || empty ? null : _openEditor, child: const Text('Apri nell\'editor SQL')),
-        Tooltip(
-          message: readOnly
-              ? 'La connessione di destinazione è in sola lettura'
-              : 'Esegue lo script in una transazione',
-          child: FilledButton(
-            style: _o.delete ? FilledButton.styleFrom(backgroundColor: c.danger, foregroundColor: Colors.white) : null,
+        leading: [
+          PushButton(label: 'Copia', onPressed: _running || empty ? null : _copy),
+          PushButton(label: 'Salva…', onPressed: _running || empty ? null : _save),
+          PushButton(label: 'Apri nell\'editor SQL', onPressed: _running || empty ? null : _openEditor),
+        ],
+        actions: [
+          if (_running)
+            PushButton(label: 'Interrompi', onPressed: () => setState(() => _cancel = true))
+          else
+            PushButton(label: 'Chiudi', onPressed: () => Navigator.pop(context)),
+          PushButton(
+            label: 'Esegui sulla destinazione',
+            kind: _o.delete ? PushButtonKind.destructive : PushButtonKind.defaultAction,
+            tooltip: readOnly
+                ? 'La connessione di destinazione è in sola lettura'
+                : 'Esegue lo script in una transazione',
             onPressed: _running || empty || readOnly ? null : _execute,
-            child: const Text('Esegui sulla destinazione'),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

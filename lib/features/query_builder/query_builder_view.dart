@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -18,8 +18,8 @@ import 'query_builder_tab.dart';
 import 'query_model.dart';
 
 // Box geometry (canvas coordinates).
-const double _headerH = 28;
-const double _rowH = 20;
+const double _headerH = 24;
+const double _rowH = 18;
 
 double _boxWidth(QbTable t) {
   final longest = t.columns.fold<int>(
@@ -344,97 +344,66 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
   }
 
   Widget _toolbar(DbColors c) {
-    final mod = Platform.isMacOS ? '⌘' : 'Ctrl+';
     final hasSql = _sql.isNotEmpty;
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(
-        color: c.chrome,
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          PrimaryButton(
-            label: 'Esegui',
-            icon: AppIcons.run,
-            tooltip: 'Esegui la query (${mod}Invio)',
-            onPressed: hasSql && !tab.running ? _run : null,
+    return PaneBar(
+      loading: tab.running,
+      children: [
+        PushButton.primary(
+          label: 'Esegui',
+          icon: AppIcons.run,
+          size: ControlScale.small,
+          tooltip: 'Esegui la query (${shortcutLabel(const SingleActivator(LogicalKeyboardKey.enter, meta: true))})',
+          onPressed: hasSql && !tab.running ? _run : null,
+        ),
+        const SizedBox(width: Gap.sm),
+        ToolButton(icon: AppIcons.script, tooltip: 'Apri nell\'editor SQL', onPressed: hasSql ? _openInEditor : null),
+        ToolButton(icon: AppIcons.copy, tooltip: 'Copia SQL', onPressed: hasSql ? _copySql : null),
+        ToolButton(icon: AppIcons.clearAll, tooltip: 'Cancella tutto', onPressed: _clearAll),
+        const ToolSeparator(),
+        CheckboxRow(
+          label: 'Distinct',
+          small: true,
+          value: model.distinct,
+          onChanged: (v) {
+            model.distinct = v;
+            _changed();
+          },
+        ),
+        const SizedBox(width: Gap.md),
+        Text('Limite', style: uiText(TypeSize.caption, color: c.textSecondary)),
+        const SizedBox(width: 6),
+        NumberField(
+          controller: _limit,
+          min: 1,
+          hint: 'nessuno',
+          small: true,
+          width: 64,
+          onChanged: (v) {
+            model.limit = int.tryParse(v);
+            _changed();
+          },
+        ),
+        const ToolSeparator(),
+        ToolButton(icon: AppIcons.zoomIn, tooltip: 'Zoom +', onPressed: () => _zoom(1.2)),
+        ToolButton(icon: AppIcons.zoomOut, tooltip: 'Zoom -', onPressed: () => _zoom(1 / 1.2)),
+        ToolButton(
+          icon: AppIcons.fitScreen,
+          tooltip: 'Zoom 100%',
+          onPressed: () => _transform.value = Matrix4.identity(),
+        ),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            '${tab.dc.config.name}${tab.schema != null
+                ? ' · ${tab.schema}'
+                : tab.catalog != null
+                ? ' · ${tab.catalog}'
+                : ''}',
+            overflow: TextOverflow.ellipsis,
+            style: uiText(TypeSize.small, color: c.textSecondary),
           ),
-          const SizedBox(width: Gap.sm),
-          ToolButton(
-            icon: AppIcons.script,
-            size: 18,
-            tooltip: 'Apri nell\'editor SQL',
-            onPressed: hasSql ? _openInEditor : null,
-          ),
-          ToolButton(icon: AppIcons.copy, tooltip: 'Copia SQL', onPressed: hasSql ? _copySql : null),
-          ToolButton(icon: AppIcons.clearAll, tooltip: 'Cancella tutto', onPressed: _clearAll),
-          const ToolSeparator(),
-          Text(
-            'Distinct',
-            style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary),
-          ),
-          const SizedBox(width: 6),
-          DbSwitch(
-            value: model.distinct,
-            onChanged: (v) {
-              model.distinct = v;
-              _changed();
-            },
-          ),
-          const SizedBox(width: Gap.md),
-          Text(
-            'Limite',
-            style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary),
-          ),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 72,
-            height: 26,
-            child: TextField(
-              controller: _limit,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: const TextStyle(fontSize: TypeSize.body, fontFeatures: kTabular),
-              decoration: const InputDecoration(
-                hintText: 'nessuno',
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              ),
-              onChanged: (v) {
-                model.limit = int.tryParse(v);
-                _changed();
-              },
-            ),
-          ),
-          const ToolSeparator(),
-          ToolButton(icon: AppIcons.zoomIn, tooltip: 'Zoom +', onPressed: () => _zoom(1.2)),
-          ToolButton(icon: AppIcons.zoomOut, tooltip: 'Zoom -', onPressed: () => _zoom(1 / 1.2)),
-          ToolButton(
-            icon: AppIcons.fitScreen,
-            tooltip: 'Zoom 100%',
-            onPressed: () => _transform.value = Matrix4.identity(),
-          ),
-          const Spacer(),
-          if (tab.running)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: Gap.sm),
-              child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5)),
-            ),
-          Flexible(
-            child: Text(
-              '${tab.dc.config.name}${tab.schema != null
-                  ? ' · ${tab.schema}'
-                  : tab.catalog != null
-                  ? ' · ${tab.catalog}'
-                  : ''}',
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -446,31 +415,13 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
   // Table list
   // -------------------------------------------------------------------------
 
-  Widget _selector(DbColors c, String hint, String? value, List<String> items, ValueChanged<String?> onChanged) =>
-      SizedBox(
-        child: DropdownButtonFormField<String>(
-          key: ValueKey('$hint:$value:${items.length}'),
-          initialValue: items.contains(value) ? value : null,
-          isExpanded: true,
-          isDense: true,
-          hint: Text(
-            hint,
-            style: TextStyle(fontSize: TypeSize.body, color: c.textTertiary),
-          ),
-          style: TextStyle(fontSize: TypeSize.body, color: c.text),
-          decoration: const InputDecoration(
-            isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          ),
-          items: [
-            for (final i in items)
-              DropdownMenuItem(
-                value: i,
-                child: Text(i, overflow: TextOverflow.ellipsis),
-              ),
-          ],
-          onChanged: onChanged,
-        ),
+  Widget _selector(String hint, String? value, List<String> items, ValueChanged<String?> onChanged) =>
+      PopUpButton<String?>(
+        value: items.contains(value) ? value : null,
+        items: [for (final i in items) (i, i, null)],
+        placeholder: hint,
+        expand: true,
+        onChanged: onChanged,
       );
 
   Widget _tableList(DbColors c) {
@@ -487,11 +438,11 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
             child: Column(
               children: [
                 if (md != null && md.supportsCatalogs && _catalogs.isNotEmpty) ...[
-                  _selector(c, md.catalogTerm, tab.catalog, _catalogs, _changeCatalog),
+                  _selector(md.catalogTerm, tab.catalog, _catalogs, _changeCatalog),
                   const SizedBox(height: 6),
                 ],
                 if (md != null && md.supportsSchemas && _schemas.isNotEmpty) ...[
-                  _selector(c, md.schemaTerm, tab.schema, _schemas, (s) {
+                  _selector(md.schemaTerm, tab.schema, _schemas, (s) {
                     tab.schema = s;
                     _loadTables();
                   }),
@@ -509,7 +460,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
             _loadingTables ? 'Caricamento…' : '${list.length} ${list.length == 1 ? 'oggetto' : 'oggetti'}',
             trailing: ToolButton(
               icon: AppIcons.refresh,
-              size: 14,
+              extent: 18,
               tooltip: 'Ricarica elenco',
               onPressed: () {
                 tab.dc.metadata?.clearCache('tables:');
@@ -520,24 +471,21 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
           if (_loadError != null)
             Padding(
               padding: const EdgeInsets.all(Gap.sm),
-              child: Text(
-                _loadError!,
-                style: TextStyle(fontSize: TypeSize.small, color: c.danger),
-              ),
+              child: StatusLine(_loadError!, kind: StatusKind.danger, selectable: true, maxLines: 4),
             ),
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: Gap.sm),
+              padding: const EdgeInsets.fromLTRB(Gap.xs, 0, Gap.xs, Gap.sm),
               itemCount: list.length,
-              itemExtent: 26,
-              itemBuilder: (context, i) => _tableItem(c, list[i]),
+              itemExtent: ListRow.height,
+              itemBuilder: (context, i) => _tableItem(list[i]),
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(Gap.sm),
             child: Text(
               'Trascina una tabella nell\'area di lavoro o fai doppio clic per aggiungerla.',
-              style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
+              style: uiText(TypeSize.caption, color: c.textTertiary),
             ),
           ),
         ],
@@ -545,58 +493,17 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
     );
   }
 
-  Widget _tableItem(DbColors c, DbTable t) {
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-      child: Row(
-        children: [
-          Icon(t.isView ? AppIcons.erDiagram : AppIcons.table, size: 15, color: c.textSecondary),
-          const SizedBox(width: Gap.sm),
-          Expanded(
-            child: Text(
-              t.name,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.body, color: c.text),
-            ),
-          ),
-        ],
-      ),
-    );
-    return Draggable<DbTable>(
-      data: t,
-      dragAnchorStrategy: pointerDragAnchorStrategy,
-      feedback: Material(
-        color: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: c.raised,
-            borderRadius: BorderRadius.circular(Radii.control),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(AppIcons.table, size: 14, color: c.accent),
-              const SizedBox(width: 6),
-              Text(
-                t.name,
-                style: TextStyle(fontSize: TypeSize.body, color: c.text, decoration: TextDecoration.none),
-              ),
-            ],
-          ),
-        ),
-      ),
-      child: _Hover(
-        onDoubleTap: () => _addTable(t),
-        child: Tooltip(
-          message: '${t.displayPath}${t.remarks != null && t.remarks!.isNotEmpty ? '\n${t.remarks}' : ''}',
-          waitDuration: const Duration(milliseconds: 800),
-          child: row,
-        ),
-      ),
-    );
-  }
+  Widget _tableItem(DbTable t) => Draggable<DbTable>(
+    data: t,
+    dragAnchorStrategy: pointerDragAnchorStrategy,
+    feedback: _DragChip(label: t.name, icon: t.isView ? AppIcons.erDiagram : AppIcons.table),
+    child: ListRow(
+      title: t.name,
+      icon: t.isView ? AppIcons.erDiagram : AppIcons.table,
+      tooltip: '${t.displayPath}${t.remarks != null && t.remarks!.isNotEmpty ? '\n${t.remarks}' : ''}',
+      onDoubleTap: () => _addTable(t),
+    ),
+  );
 
   // -------------------------------------------------------------------------
   // Canvas
@@ -639,7 +546,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
         key: _canvasKey,
         decoration: BoxDecoration(
           color: c.content,
-          border: candidates.isNotEmpty ? Border.all(color: c.accent.withValues(alpha: 0.6), width: 2) : null,
+          border: candidates.isNotEmpty ? Border.all(color: c.focusRing, width: 2) : null,
         ),
         child: model.tables.isEmpty
             ? const EmptyState(
@@ -665,6 +572,19 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
 
   double get _scale => _transform.value.getMaxScaleOnAxis();
 
+  // Manual double click (onDoubleTap would delay the single click).
+  String? _lastTapId;
+  DateTime? _lastTapAt;
+
+  bool _isDoubleTap(String id) {
+    final now = DateTime.now();
+    final last = _lastTapAt;
+    final dbl = _lastTapId == id && last != null && now.difference(last) <= kDoubleTapTimeout;
+    _lastTapId = id;
+    _lastTapAt = dbl ? null : now;
+    return dbl;
+  }
+
   Widget _box(DbColors c, QbTable t) {
     final r = _boxRect(t);
     final selected = _selectedBox == t.id;
@@ -673,96 +593,88 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       top: r.top,
       width: r.width,
       height: r.height,
-      child: Container(
-        decoration: BoxDecoration(
-          color: c.raised,
-          border: Border.all(color: selected ? c.accent : c.separator, width: selected ? 1.5 : 1),
-          borderRadius: BorderRadius.circular(Radii.panel),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.10), blurRadius: 6, offset: const Offset(0, 2)),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            GestureDetector(
-              onTap: () => setState(() => _selectedBox = t.id),
-              onDoubleTap: () => _renameAlias(t),
-              onPanStart: (_) => setState(() => _selectedBox = t.id),
-              onPanUpdate: (d) => setState(() {
-                t.x = math.max(0, t.x + d.delta.dx / _scale);
-                t.y = math.max(0, t.y + d.delta.dy / _scale);
-              }),
-              child: MouseRegion(
-                cursor: SystemMouseCursors.move,
-                child: Container(
-                  height: _headerH - 1,
-                  padding: const EdgeInsets.only(left: Gap.sm, right: 2),
-                  decoration: BoxDecoration(
-                    color: c.accent.withValues(alpha: selected ? 0.16 : 0.09),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(Radii.panel - 1)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        t.table.isView ? AppIcons.erDiagram : AppIcons.table,
-                        size: 14,
-                        color: c.accent,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Tooltip(
-                          message: '${t.table.displayPath}\nDoppio clic per cambiare l\'alias',
-                          waitDuration: const Duration(milliseconds: 700),
-                          child: Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: t.table.name,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: TypeSize.small + 0.5,
-                                    color: c.text,
+      child: FocusRing(
+        visible: selected,
+        radius: Radii.menu,
+        child: Container(
+          decoration: BoxDecoration(
+            color: c.raised,
+            borderRadius: BorderRadius.circular(Radii.menu),
+            boxShadow: Elevation.node(Theme.of(context).brightness),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  setState(() => _selectedBox = t.id);
+                  if (_isDoubleTap('box:${t.id}')) _renameAlias(t);
+                },
+                onPanStart: (_) => setState(() => _selectedBox = t.id),
+                onPanUpdate: (d) => setState(() {
+                  t.x = math.max(0, t.x + d.delta.dx / _scale);
+                  t.y = math.max(0, t.y + d.delta.dy / _scale);
+                }),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.move,
+                  child: Container(
+                    height: _headerH,
+                    padding: const EdgeInsets.only(left: Gap.sm, right: 2),
+                    color: c.accent.withValues(alpha: selected ? Tint.regular : Tint.subtle),
+                    child: Row(
+                      children: [
+                        Icon(t.table.isView ? AppIcons.erDiagram : AppIcons.table, size: 14, color: c.accent),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Tooltip(
+                            message: '${t.table.displayPath}\nDoppio clic per cambiare l\'alias',
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: t.table.name,
+                                    style: uiText(TypeSize.small, weight: FontWeight.w600, color: c.text),
                                   ),
-                                ),
-                                TextSpan(
-                                  text: '  ${t.alias}',
-                                  style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-                                ),
-                              ],
+                                  TextSpan(
+                                    text: '  ${t.alias}',
+                                    style: uiText(TypeSize.small, color: c.textSecondary),
+                                  ),
+                                ],
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ),
-                      ToolButton(
-                        icon: AppIcons.selectAll,
-                        size: 13,
-                        tooltip: 'Seleziona / deseleziona tutte le colonne',
-                        onPressed: () {
-                          final all = t.columns.every((col) => model.isSelected(t.id, col.name));
-                          for (final col in t.columns) {
-                            if (model.isSelected(t.id, col.name) == all) model.toggleColumn(t.id, col.name);
-                          }
-                          _changed();
-                        },
-                      ),
-                      ToolButton(
-                        icon: AppIcons.close,
-                        size: 13,
-                        tooltip: 'Rimuovi dalla query',
-                        onPressed: () {
-                          model.removeTable(t.id);
-                          _changed();
-                        },
-                      ),
-                    ],
+                        ToolButton(
+                          icon: AppIcons.selectAll,
+                          extent: 18,
+                          tooltip: 'Seleziona / deseleziona tutte le colonne',
+                          onPressed: () {
+                            final all = t.columns.every((col) => model.isSelected(t.id, col.name));
+                            for (final col in t.columns) {
+                              if (model.isSelected(t.id, col.name) == all) model.toggleColumn(t.id, col.name);
+                            }
+                            _changed();
+                          },
+                        ),
+                        ToolButton(
+                          icon: AppIcons.close,
+                          extent: 18,
+                          tooltip: 'Rimuovi dalla query',
+                          onPressed: () {
+                            model.removeTable(t.id);
+                            _changed();
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            for (final col in t.columns) _columnRow(c, t, col),
-          ],
+              for (final col in t.columns) _columnRow(c, t, col),
+            ],
+          ),
         ),
       ),
     );
@@ -771,42 +683,37 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
   Widget _columnRow(DbColors c, QbTable t, QbColumn col) {
     final selected = model.isSelected(t.id, col.name);
     final ref = _ColumnRef(t.id, col.name);
+    final name = col.name.toLowerCase();
+    final isFk = t.foreignKeys.any((fk) => fk.columns.any((x) => x.toLowerCase() == name));
+    void toggle() {
+      model.toggleColumn(t.id, col.name);
+      _changed();
+    }
+
     final row = SizedBox(
       height: _rowH,
       child: Row(
         children: [
           SizedBox(
             width: 24,
-            child: Transform.scale(
-              scale: 0.75,
-              child: Checkbox(
-                value: selected,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-                onChanged: (_) {
-                  model.toggleColumn(t.id, col.name);
-                  _changed();
-                },
-              ),
-            ),
+            child: Center(child: MacCheckbox(value: selected, onChanged: (_) => toggle())),
           ),
           SizedBox(
             width: 14,
-            child: col.isKey ? const Icon(AppIcons.key, size: 11, color: Color(0xFFE8A200)) : null,
+            child: col.isKey
+                ? Icon(AppIcons.key, size: 11, color: c.keyIcon)
+                : (isFk ? Icon(AppIcons.link, size: 11, color: c.foreignKeyIcon) : null),
           ),
           Expanded(
             child: Text(
               col.name,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.small, color: c.text, fontWeight: col.isKey ? FontWeight.w600 : null),
+              style: uiText(TypeSize.small, color: c.text, weight: col.isKey ? FontWeight.w600 : null),
             ),
           ),
           Padding(
             padding: const EdgeInsets.only(right: Gap.sm),
-            child: Text(
-              col.typeName.toLowerCase(),
-              style: TextStyle(fontSize: TypeSize.caption - 0.5, color: c.textTertiary),
-            ),
+            child: TypeLabel(col.typeName.toLowerCase()),
           ),
         ],
       ),
@@ -815,28 +722,17 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       onWillAcceptWithDetails: (d) => d.data.tableId != t.id,
       onAcceptWithDetails: (d) => _addJoin(d.data, t, col.name),
       builder: (context, cand, _) => Container(
-        color: cand.isNotEmpty ? c.accent.withValues(alpha: 0.18) : null,
+        color: cand.isNotEmpty ? c.accent.withValues(alpha: Tint.strong) : null,
         child: Draggable<_ColumnRef>(
           data: ref,
           dragAnchorStrategy: pointerDragAnchorStrategy,
-          feedback: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: c.accent, borderRadius: BorderRadius.circular(Radii.control)),
-              child: Text(
-                '${t.alias}.${col.name}',
-                style: TextStyle(fontSize: TypeSize.small, color: c.onAccent, decoration: TextDecoration.none),
-              ),
-            ),
-          ),
+          feedback: _DragChip(label: '${t.alias}.${col.name}', icon: AppIcons.link),
           child: Tooltip(
             message: 'Trascina su una colonna di un\'altra tabella per creare un join',
-            waitDuration: const Duration(milliseconds: 1200),
             child: GestureDetector(
-              onDoubleTap: () {
-                model.toggleColumn(t.id, col.name);
-                _changed();
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (_isDoubleTap('col:${t.id}.${col.name}')) toggle();
               },
               child: row,
             ),
@@ -858,23 +754,18 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       top: mid.dy - 10,
       width: 68,
       height: 20,
-      child: Builder(
-        builder: (ctx) => GestureDetector(
-          onTap: () => _joinMenu(ctx, j),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: Tooltip(
-              message: '${a.alias}.${j.leftColumn} ${j.op} ${b.alias}.${j.rightColumn}\nClic per modificare il join',
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: c.raised,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: c.accent.withValues(alpha: 0.6)),
-                ),
-                child: Text(
-                  text,
-                  style: TextStyle(fontSize: TypeSize.caption, color: c.accent, fontWeight: FontWeight.w600),
+      child: Center(
+        child: Builder(
+          builder: (ctx) => GestureDetector(
+            onTap: () => _joinMenu(ctx, j),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Tooltip(
+                message: '${a.alias}.${j.leftColumn} ${j.op} ${b.alias}.${j.rightColumn}\nClic per modificare il join',
+                child: Capsule(
+                  bordered: true,
+                  elevated: true,
+                  child: Text(text, style: uiText(TypeSize.caption, weight: FontWeight.w600, color: c.accent)),
                 ),
               ),
             ),
@@ -885,32 +776,15 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
   }
 
   Future<void> _joinMenu(BuildContext ctx, QbJoin j) async {
-    final box = ctx.findRenderObject() as RenderBox;
-    final overlay = Overlay.of(ctx).context.findRenderObject() as RenderBox;
-    final pos = box.localToGlobal(Offset(0, box.size.height), ancestor: overlay);
-    PopupMenuItem<VoidCallback> item(String label, bool checked, VoidCallback f, {Color? color}) => PopupMenuItem(
-      height: 28,
-      value: f,
-      child: Row(
-        children: [
-          SizedBox(width: 20, child: checked ? const Icon(AppIcons.check, size: 15) : null),
-          Text(
-            label,
-            style: TextStyle(fontSize: TypeSize.body, color: color),
-          ),
-        ],
-      ),
-    );
-    final c = DbColors.of(context);
-    final f = await showMenu<VoidCallback>(
-      context: context,
-      position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & overlay.size),
-      items: [
-        for (final t in JoinType.values) item(t.sql, j.type == t, () => j.type = t),
-        const PopupMenuDivider(height: 9),
-        for (final op in QbJoin.operators) item('Operatore $op', j.op == op, () => j.op = op),
-        const PopupMenuDivider(height: 9),
-        item('Elimina join', false, () => model.joins.remove(j), color: c.danger),
+    final f = await showMacMenu<VoidCallback>(
+      ctx,
+      anchor: anchorRect(ctx),
+      entries: [
+        for (final t in JoinType.values) MenuEntry(t.sql, value: () => j.type = t, checked: j.type == t),
+        const MenuEntry.divider(),
+        for (final op in QbJoin.operators) MenuEntry('Operatore $op', value: () => j.op = op, checked: j.op == op),
+        const MenuEntry.divider(),
+        MenuEntry('Elimina join', value: () => model.joins.remove(j), destructive: true),
       ],
     );
     if (f == null) return;
@@ -926,55 +800,47 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
     final r = tab.result;
     return Column(
       children: [
-        Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-          decoration: BoxDecoration(
-            color: c.chrome,
-            border: Border(
-              top: BorderSide(color: c.separator),
-              bottom: BorderSide(color: c.separator),
-            ),
-          ),
-          child: Row(
-            children: [
-              Segmented<QueryBuilderPane>(
-                value: tab.pane,
-                items: const [
-                  (QueryBuilderPane.columns, 'Colonne', AppIcons.column),
-                  (QueryBuilderPane.results, 'Risultati', AppIcons.rows),
-                ],
-                onChanged: (v) => setState(() => tab.pane = v),
-              ),
-              const SizedBox(width: Gap.sm),
-              if (tab.pane == QueryBuilderPane.columns) ...[
-                ToolButton(
-                  icon: AppIcons.function,
-                  tooltip: 'Aggiungi un\'espressione calcolata',
-                  label: 'Espressione',
-                  onPressed: () {
-                    model.fields.add(QbField(expression: ''));
-                    _changed();
-                  },
-                ),
-                ToolButton(
-                  icon: AppIcons.number,
-                  tooltip: 'Aggiungi COUNT(*)',
-                  label: 'Conteggio',
-                  onPressed: () {
-                    model.fields.add(QbField(expression: '*', aggregate: Aggregate.count, alias: 'conteggio'));
-                    _changed();
-                  },
-                ),
+        PaneBar(
+          children: [
+            Segmented<QueryBuilderPane>(
+              value: tab.pane,
+              items: const [
+                (QueryBuilderPane.columns, 'Colonne', AppIcons.column),
+                (QueryBuilderPane.results, 'Risultati', AppIcons.rows),
               ],
-              const Spacer(),
-              if (tab.pane == QueryBuilderPane.columns && model.fields.any((f) => f.aggregate != Aggregate.none))
-                Text(
-                  'Raggruppamento automatico sulle colonne non aggregate',
-                  style: TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textTertiary),
-                ),
+              onChanged: (v) => setState(() => tab.pane = v),
+            ),
+            const SizedBox(width: Gap.sm),
+            if (tab.pane == QueryBuilderPane.columns) ...[
+              ToolButton(
+                icon: AppIcons.function,
+                tooltip: 'Aggiungi un\'espressione calcolata',
+                label: 'Espressione',
+                onPressed: () {
+                  model.fields.add(QbField(expression: ''));
+                  _changed();
+                },
+              ),
+              ToolButton(
+                icon: AppIcons.number,
+                tooltip: 'Aggiungi COUNT(*)',
+                label: 'Conteggio',
+                onPressed: () {
+                  model.fields.add(QbField(expression: '*', aggregate: Aggregate.count, alias: 'conteggio'));
+                  _changed();
+                },
+              ),
             ],
-          ),
+            const Spacer(),
+            if (tab.pane == QueryBuilderPane.columns && model.fields.any((f) => f.aggregate != Aggregate.none))
+              Flexible(
+                child: Text(
+                  'Raggruppamento automatico sulle colonne non aggregate',
+                  overflow: TextOverflow.ellipsis,
+                  style: uiText(TypeSize.caption, color: c.textTertiary),
+                ),
+              ),
+          ],
         ),
         Expanded(
           child: tab.pane == QueryBuilderPane.columns
@@ -982,10 +848,12 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
               : tab.running && r == null
               ? const EmptyState(icon: AppIcons.hourglass, title: 'Esecuzione in corso…')
               : tab.error != null
-              ? Padding(
+              ? SingleChildScrollView(
                   padding: const EdgeInsets.all(Gap.lg),
-                  child: SingleChildScrollView(
-                    child: SelectableText(tab.error!, style: monoStyle(context, size: 12.5, color: c.danger)),
+                  child: Notice(
+                    kind: NoticeKind.danger,
+                    title: 'La query non è stata eseguita',
+                    child: CodeBox(tab.error!, wrap: true, color: c.danger),
                   ),
                 )
               : r != null
@@ -1007,19 +875,24 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SectionLabel('SQL generato', padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.sm, 2)),
+          PaneHeader(
+            title: 'SQL generato',
+            actions: [
+              ToolButton(icon: AppIcons.copy, extent: 18, tooltip: 'Copia SQL', onPressed: sql.isEmpty ? null : _copySql),
+            ],
+          ),
           Expanded(
             child: sql.isEmpty
                 ? Padding(
                     padding: const EdgeInsets.all(Gap.md),
                     child: Text(
                       'La query apparirà qui.',
-                      style: TextStyle(fontSize: TypeSize.small, color: c.textTertiary),
+                      style: uiText(TypeSize.small, color: c.textTertiary),
                     ),
                   )
                 : SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(Gap.md, Gap.xs, Gap.md, Gap.md),
-                    child: SelectableText(sql, style: monoStyle(context, size: 12.5)),
+                    padding: const EdgeInsets.all(Gap.md),
+                    child: SelectableText(sql, style: monoStyle(context, size: TypeSize.mono)),
                   ),
           ),
         ],
@@ -1030,18 +903,17 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
   static const _gridCols = <(String, double)>[
     ('Espressione', 210),
     ('Alias', 120),
-    ('Output', 52),
+    ('Output', 60),
     ('Aggregazione', 136),
-    ('Ordinamento', 106),
-    ('N.', 44),
+    ('Ordinamento', 116),
+    ('N.', 52),
     ('Filtro', 120),
     ('Valore', 150),
     ('Valore 2', 110),
-    ('', 32),
+    ('', 34),
   ];
 
   Widget _grid(DbColors c) {
-    final width = _gridCols.fold<double>(Gap.sm * 2, (t, e) => t + e.$2);
     if (model.fields.isEmpty) {
       return const EmptyState(
         icon: AppIcons.column,
@@ -1049,57 +921,84 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
         message: 'Spunta le colonne nelle tabelle o aggiungi un\'espressione: senza colonne la query restituisce *.',
       );
     }
-    final header = Container(
-      height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(
-        color: c.chrome,
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          for (final (h, w) in _gridCols)
-            SizedBox(
-              width: w,
-              child: Text(
-                h,
-                style: TextStyle(fontSize: TypeSize.small, fontWeight: FontWeight.w600, color: c.textSecondary),
-              ),
-            ),
-        ],
-      ),
+    return MacTable(
+      headers: [for (final (h, _) in _gridCols) h],
+      rowCount: model.fields.length,
+      width: (col) => _gridCols[col].$2,
+      mono: (col) => col == 0,
+      resizable: false,
+      cell: (r, col) => col == 0 ? _fieldLabel(model.fields[r]) : '',
+      cellBuilder: _gridCell,
     );
-    return Scrollbar(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          width: width,
-          child: Column(
-            children: [
-              header,
-              Expanded(
-                child: ListView.builder(
-                  itemCount: model.fields.length,
-                  itemBuilder: (context, i) => _FieldRow(
-                    key: ObjectKey(model.fields[i]),
-                    field: model.fields[i],
-                    model: model,
-                    index: i,
-                    widths: [for (final e in _gridCols) e.$2],
-                    label: _fieldLabel(model.fields[i]),
-                    onChanged: _changed,
-                    onRemove: () {
-                      model.fields.removeAt(i);
-                      _changed();
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+  }
+
+  /// Inline editor of a "Colonne" grid cell; null shows the label text.
+  Widget? _gridCell(BuildContext context, int r, int col) {
+    final f = model.fields[r];
+    void edit(VoidCallback change) {
+      change();
+      _changed();
+    }
+
+    Widget text(String initial, String hint, ValueChanged<String> onChanged, {bool mono = false}) =>
+        _GridText(key: ObjectKey(f), initial: initial, hint: hint, mono: mono, onChanged: (v) => edit(() => onChanged(v)));
+
+    Widget popUp<T>(T value, List<(T, String)> items, ValueChanged<T> onChanged) => PopUpButton<T>(
+      value: value,
+      items: [for (final (v, l) in items) (v, l, null)],
+      style: PopUpStyle.inline,
+      small: true,
+      expand: true,
+      onChanged: (v) => edit(() => onChanged(v)),
     );
+
+    final kind = f.isCustom ? ValueKind.text : model.byId(f.tableId)?.column(f.column ?? '')?.kind ?? ValueKind.text;
+    final ops = f.aggregate == Aggregate.none ? FilterOp.forKind(kind) : FilterOp.values;
+    final arity = f.filterOp?.arity ?? 0;
+    return switch (col) {
+      0 when f.isCustom => text(f.expression, 'espressione SQL, es. prezzo * qta', (v) => f.expression = v, mono: true),
+      0 => null,
+      1 => text(f.alias, 'alias', (v) => f.alias = v),
+      2 => Align(
+        alignment: Alignment.centerLeft,
+        child: MacCheckbox(value: f.output, onChanged: (v) => edit(() => f.output = v)),
+      ),
+      3 => popUp<Aggregate>(f.aggregate, [for (final a in Aggregate.values) (a, a.label)], (v) => f.aggregate = v),
+      4 => popUp<SortDir>(f.sort, const [
+        (SortDir.none, 'Nessuno'),
+        (SortDir.asc, 'Crescente'),
+        (SortDir.desc, 'Decrescente'),
+      ], (v) => f.sort = v),
+      5 when f.sort == SortDir.none => const SizedBox.shrink(),
+      5 => text(f.sortOrder == 0 ? '' : '${f.sortOrder}', '#', (v) => f.sortOrder = int.tryParse(v) ?? 0),
+      // Indices, not the operators: a menu cannot return null for "Nessuno".
+      6 => popUp<int>(
+        f.filterOp == null ? -1 : ops.indexOf(f.filterOp!),
+        [(-1, 'Nessuno'), for (final (i, o) in ops.indexed) (i, o.sql)],
+        (i) => f.filterOp = i < 0 ? null : ops[i],
+      ),
+      7 when arity == 0 => const SizedBox.shrink(),
+      7 => text(
+        f.value,
+        f.filterOp == FilterOp.inList
+            ? 'a, b, c'
+            : kind == ValueKind.date
+            ? 'aaaa-mm-gg'
+            : 'valore',
+        (v) => f.value = v,
+      ),
+      8 when arity == 2 => text(f.value2, 'e', (v) => f.value2 = v),
+      8 => const SizedBox.shrink(),
+      _ => ToolButton(
+        icon: AppIcons.removeCircle,
+        extent: 18,
+        tooltip: 'Rimuovi riga',
+        onPressed: () {
+          model.fields.removeAt(r);
+          _changed();
+        },
+      ),
+    };
   }
 
   String _fieldLabel(QbField f) {
@@ -1109,187 +1008,62 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
   }
 }
 
-/// One row of the "Colonne" grid (owns its text controllers).
-class _FieldRow extends StatefulWidget {
-  const _FieldRow({
-    super.key,
-    required this.field,
-    required this.model,
-    required this.index,
-    required this.widths,
-    required this.label,
-    required this.onChanged,
-    required this.onRemove,
-  });
+/// Small text field in a grid cell; owns its controller, so key it by the
+/// row's field to keep the text with its row.
+class _GridText extends StatefulWidget {
+  const _GridText({super.key, required this.initial, required this.hint, required this.onChanged, this.mono = false});
 
-  final QbField field;
-  final QueryModel model;
-  final int index;
-  final List<double> widths;
-  final String label;
-  final VoidCallback onChanged;
-  final VoidCallback onRemove;
+  final String initial;
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final bool mono;
 
   @override
-  State<_FieldRow> createState() => _FieldRowState();
+  State<_GridText> createState() => _GridTextState();
 }
 
-class _FieldRowState extends State<_FieldRow> {
-  QbField get f => widget.field;
-  late final _expr = TextEditingController(text: f.expression);
-  late final _alias = TextEditingController(text: f.alias);
-  late final _order = TextEditingController(text: f.sortOrder == 0 ? '' : '${f.sortOrder}');
-  late final _v1 = TextEditingController(text: f.value);
-  late final _v2 = TextEditingController(text: f.value2);
+class _GridTextState extends State<_GridText> {
+  late final _ctrl = TextEditingController(text: widget.initial);
 
   @override
   void dispose() {
-    for (final ctrl in [_expr, _alias, _order, _v1, _v2]) {
-      ctrl.dispose();
-    }
+    _ctrl.dispose();
     super.dispose();
   }
 
-  Widget _cell(int i, Widget child) => SizedBox(
-    width: widget.widths[i],
-    child: Padding(padding: const EdgeInsets.only(right: 6), child: child),
-  );
+  @override
+  Widget build(BuildContext context) =>
+      MacTextField(controller: _ctrl, hint: widget.hint, small: true, mono: widget.mono, onChanged: widget.onChanged);
+}
 
-  Widget _text(TextEditingController ctrl, String hint, ValueChanged<String> onChanged, {bool mono = false}) =>
-      SizedBox(
-        height: 24,
-        child: TextField(
-          controller: ctrl,
-          style: mono
-              ? monoStyle(context, size: 12)
-              : const TextStyle(fontSize: TypeSize.small + 0.5, fontFeatures: kTabular),
-          decoration: InputDecoration(
-            hintText: hint,
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-          ),
-          onChanged: (v) {
-            onChanged(v);
-            widget.onChanged();
-          },
-        ),
-      );
+/// Drag feedback: a raised capsule with an icon and a label.
+class _DragChip extends StatelessWidget {
+  const _DragChip({required this.label, this.icon});
 
-  Widget _menu<T>(T value, List<(T, String)> items, ValueChanged<T> onChanged) {
-    final c = DbColors.of(context);
-    final label = items.firstWhere((e) => e.$1 == value, orElse: () => items.first).$2;
-    return PopupMenuButton<T>(
-      tooltip: '',
-      position: PopupMenuPosition.under,
-      onSelected: (v) {
-        onChanged(v);
-        widget.onChanged();
-      },
-      itemBuilder: (_) => [for (final (v, l) in items) PopupMenuItem<T>(height: 28, value: v, child: Text(l))],
-      child: Container(
-        height: 24,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        decoration: BoxDecoration(color: c.hover, borderRadius: BorderRadius.circular(Radii.control)),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: TypeSize.small + 0.5,
-                  color: value == items.first.$1 ? c.textTertiary : c.text,
-                ),
-              ),
-            ),
-            Icon(AppIcons.chevronDown, size: 14, color: c.textTertiary),
-          ],
-        ),
-      ),
-    );
-  }
+  final String label;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final kind = f.isCustom
-        ? ValueKind.text
-        : widget.model.byId(f.tableId)?.column(f.column ?? '')?.kind ?? ValueKind.text;
-    final ops = f.aggregate == Aggregate.none ? FilterOp.forKind(kind) : FilterOp.values;
-    final arity = f.filterOp?.arity ?? 0;
-    return Container(
-      height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      color: widget.index.isOdd ? c.zebra : null,
-      child: Row(
-        children: [
-          _cell(
-            0,
-            f.isCustom
-                ? _text(_expr, 'espressione SQL, es. prezzo * qta', (v) => f.expression = v, mono: true)
-                : Text(widget.label, overflow: TextOverflow.ellipsis, style: monoStyle(context, size: 12)),
+    return Material(
+      type: MaterialType.transparency,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(ControlSize.regular / 2),
+          boxShadow: Elevation.menu(Theme.of(context).brightness),
+        ),
+        child: Capsule(
+          height: ControlSize.regular,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[Icon(icon, size: 14, color: c.accent), const SizedBox(width: 6)],
+              Text(label, style: uiText(TypeSize.small, color: c.text)),
+            ],
           ),
-          _cell(1, _text(_alias, 'alias', (v) => f.alias = v)),
-          _cell(
-            2,
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Checkbox(
-                value: f.output,
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                onChanged: (v) {
-                  setState(() => f.output = v ?? true);
-                  widget.onChanged();
-                },
-              ),
-            ),
-          ),
-          _cell(
-            3,
-            _menu<Aggregate>(f.aggregate, [for (final a in Aggregate.values) (a, a.label)], (v) => f.aggregate = v),
-          ),
-          _cell(
-            4,
-            _menu<SortDir>(f.sort, const [
-              (SortDir.none, 'Nessuno'),
-              (SortDir.asc, 'Crescente'),
-              (SortDir.desc, 'Decrescente'),
-            ], (v) => f.sort = v),
-          ),
-          _cell(
-            5,
-            f.sort == SortDir.none ? const SizedBox() : _text(_order, '#', (v) => f.sortOrder = int.tryParse(v) ?? 0),
-          ),
-          _cell(
-            6,
-            _menu<FilterOp?>(f.filterOp, [(null, 'Nessuno'), for (final o in ops) (o, o.sql)], (v) => f.filterOp = v),
-          ),
-          _cell(
-            7,
-            arity == 0
-                ? const SizedBox()
-                : _text(
-                    _v1,
-                    f.filterOp == FilterOp.inList
-                        ? 'a, b, c'
-                        : kind == ValueKind.date
-                        ? 'aaaa-mm-gg'
-                        : 'valore',
-                    (v) => f.value = v,
-                  ),
-          ),
-          _cell(8, arity == 2 ? _text(_v2, 'e', (v) => f.value2 = v) : const SizedBox()),
-          SizedBox(
-            width: widget.widths[9],
-            child: ToolButton(
-              icon: AppIcons.removeCircle,
-              size: 14,
-              tooltip: 'Rimuovi riga',
-              onPressed: widget.onRemove,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1317,9 +1091,10 @@ class _JoinPainter extends CustomPainter {
     for (final j in model.joins) {
       final a = model.byId(j.leftId), b = model.byId(j.rightId);
       if (a == null || b == null) continue;
+      // Neutral lines; the joins of the selected box take the accent.
       final hl = selected != null && j.involves(selected!);
       final paint = Paint()
-        ..color = hl ? color : color.withValues(alpha: 0.55)
+        ..color = hl ? color : muted
         ..strokeWidth = hl ? 2 : 1.4
         ..style = PaintingStyle.stroke;
       final (p1, p2) = endpoints(a, j.leftColumn, b, j.rightColumn);
@@ -1344,29 +1119,4 @@ class _JoinPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
-/// Row with hover tint and double tap (table list).
-class _Hover extends StatefulWidget {
-  const _Hover({required this.child, required this.onDoubleTap});
-  final Widget child;
-  final VoidCallback onDoubleTap;
-
-  @override
-  State<_Hover> createState() => _HoverState();
-}
-
-class _HoverState extends State<_Hover> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) => MouseRegion(
-    onEnter: (_) => setState(() => _hover = true),
-    onExit: (_) => setState(() => _hover = false),
-    child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onDoubleTap: widget.onDoubleTap,
-      child: ColoredBox(color: _hover ? DbColors.of(context).hover : Colors.transparent, child: widget.child),
-    ),
-  );
 }

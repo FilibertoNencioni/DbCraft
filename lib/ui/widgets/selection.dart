@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -576,87 +578,151 @@ class PopUpButton<T> extends StatelessWidget {
     final scale = style == PopUpStyle.toolbar ? ControlScale.toolbar : (small ? ControlScale.small : ControlScale.regular);
     final current = items.where((it) => it.$1 == value).firstOrNull;
     final enabled = onChanged != null && items.isNotEmpty;
-    return Builder(
-      builder: (anchor) => Pressable(
-        onPressed: enabled ? () => _open(anchor) : null,
-        focusNode: focusNode,
-        focusable: style != PopUpStyle.toolbar,
-        tooltip: tooltip,
-        semanticLabel: current?.$2 ?? placeholder,
-        shortcuts: const {
-          SingleActivator(LogicalKeyboardKey.arrowDown): ActivateIntent(),
-          SingleActivator(LogicalKeyboardKey.arrowUp): ActivateIntent(),
-        },
-        builder: (context, s) {
-          final disabled = s.contains(WidgetState.disabled);
-          final down = s.contains(WidgetState.pressed);
-          final fg = disabled ? c.textTertiary : (current == null ? c.textTertiary : c.text);
-          final label = Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (current?.$3 case (final icon, final color)) ...[
-                Icon(icon, size: scale.iconSize, color: disabled ? c.textTertiary : color),
-                const SizedBox(width: 6),
+    return _TypeSelect(
+      labels: [for (final it in items) it.$2],
+      current: items.indexWhere((it) => it.$1 == value),
+      onPick: enabled ? (i) => onChanged!(items[i].$1) : null,
+      child: Builder(
+        builder: (anchor) => Pressable(
+          onPressed: enabled ? () => _open(anchor) : null,
+          focusNode: focusNode,
+          focusable: style != PopUpStyle.toolbar,
+          tooltip: tooltip,
+          semanticLabel: current?.$2 ?? placeholder,
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.arrowDown): ActivateIntent(),
+            SingleActivator(LogicalKeyboardKey.arrowUp): ActivateIntent(),
+          },
+          builder: (context, s) {
+            final disabled = s.contains(WidgetState.disabled);
+            final down = s.contains(WidgetState.pressed);
+            final fg = disabled ? c.textTertiary : (current == null ? c.textTertiary : c.text);
+            final label = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (current?.$3 case (final icon, final color)) ...[
+                  Icon(icon, size: scale.iconSize, color: disabled ? c.textTertiary : color),
+                  const SizedBox(width: 6),
+                ],
+                Flexible(
+                  child: Text(
+                    current?.$2 ?? placeholder ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: uiText(style == PopUpStyle.form ? scale.fontSize : TypeSize.small, color: fg),
+                  ),
+                ),
               ],
-              Flexible(
-                child: Text(
-                  current?.$2 ?? placeholder ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: uiText(style == PopUpStyle.form ? scale.fontSize : TypeSize.small, color: fg),
-                ),
-              ),
-            ],
-          );
-          final Widget body;
-          switch (style) {
-            case PopUpStyle.form:
-              final fill = down ? pressedFill(context, c.controlBackground) : c.controlBackground;
-              body = Container(
-                height: scale.height,
-                padding: const EdgeInsets.only(left: 8, right: 2),
-                decoration: BoxDecoration(
-                  color: disabled ? c.controlBackground.withValues(alpha: 0.6) : fill,
-                  borderRadius: BorderRadius.circular(Radii.control),
-                  border: Border.all(color: c.controlBorder, width: 0.5),
-                  boxShadow: disabled ? null : Elevation.control(Theme.of(context).brightness),
-                ),
-                child: Row(
-                  mainAxisSize: expand || width != null ? MainAxisSize.max : MainAxisSize.min,
-                  children: [
-                    expand || width != null ? Expanded(child: label) : Flexible(child: label),
-                    const SizedBox(width: 6),
-                    _UpDownCapsule(height: scale.height - 4, enabled: !disabled),
-                  ],
-                ),
-              );
-            case PopUpStyle.inline:
-            case PopUpStyle.toolbar:
-              body = Container(
-                height: scale.height,
-                padding: const EdgeInsets.only(left: 6, right: 3),
-                decoration: BoxDecoration(
-                  color: down ? c.pressed : (s.contains(WidgetState.hovered) ? c.hover : null),
-                  borderRadius: BorderRadius.circular(Radii.control),
-                ),
-                child: Row(
-                  mainAxisSize: expand || width != null ? MainAxisSize.max : MainAxisSize.min,
-                  children: [
-                    expand || width != null ? Expanded(child: label) : Flexible(child: label),
-                    const SizedBox(width: 4),
-                    Icon(AppIcons.upDown, size: 11, color: disabled ? c.textTertiary : c.textSecondary),
-                  ],
-                ),
-              );
-          }
-          return FocusRing(
-            visible: s.contains(WidgetState.focused),
-            child: SizedBox(width: width, child: body),
-          );
-        },
+            );
+            final Widget body;
+            switch (style) {
+              case PopUpStyle.form:
+                final fill = down ? pressedFill(context, c.controlBackground) : c.controlBackground;
+                body = Container(
+                  height: scale.height,
+                  padding: const EdgeInsets.only(left: 8, right: 2),
+                  decoration: BoxDecoration(
+                    color: disabled ? c.controlBackground.withValues(alpha: 0.6) : fill,
+                    borderRadius: BorderRadius.circular(Radii.control),
+                    border: Border.all(color: c.controlBorder, width: 0.5),
+                    boxShadow: disabled ? null : Elevation.control(Theme.of(context).brightness),
+                  ),
+                  child: Row(
+                    mainAxisSize: expand || width != null ? MainAxisSize.max : MainAxisSize.min,
+                    children: [
+                      expand || width != null ? Expanded(child: label) : Flexible(child: label),
+                      const SizedBox(width: 6),
+                      _UpDownCapsule(height: scale.height - 4, enabled: !disabled),
+                    ],
+                  ),
+                );
+              case PopUpStyle.inline:
+              case PopUpStyle.toolbar:
+                body = Container(
+                  height: scale.height,
+                  padding: const EdgeInsets.only(left: 6, right: 3),
+                  decoration: BoxDecoration(
+                    color: down ? c.pressed : (s.contains(WidgetState.hovered) ? c.hover : null),
+                    borderRadius: BorderRadius.circular(Radii.control),
+                  ),
+                  child: Row(
+                    mainAxisSize: expand || width != null ? MainAxisSize.max : MainAxisSize.min,
+                    children: [
+                      expand || width != null ? Expanded(child: label) : Flexible(child: label),
+                      const SizedBox(width: 4),
+                      Icon(AppIcons.upDown, size: 11, color: disabled ? c.textTertiary : c.textSecondary),
+                    ],
+                  ),
+                );
+            }
+            return FocusRing(
+              visible: s.contains(WidgetState.focused),
+              child: SizedBox(width: width, child: body),
+            );
+          },
+        ),
       ),
     );
   }
+}
+
+/// Type-to-select on a closed pop-up, as NSPopUpButton: letters typed in
+/// quick succession pick the next item whose label starts with them; the same
+/// letter repeated cycles through the items starting with it.
+class _TypeSelect extends StatefulWidget {
+  const _TypeSelect({required this.labels, required this.current, required this.onPick, required this.child});
+  final List<String> labels;
+  final int current;
+  final ValueChanged<int>? onPick;
+  final Widget child;
+
+  @override
+  State<_TypeSelect> createState() => _TypeSelectState();
+}
+
+class _TypeSelectState extends State<_TypeSelect> {
+  String _typed = '';
+
+  /// Forgets the typed prefix after a pause.
+  Timer? _reset;
+
+  @override
+  void dispose() {
+    _reset?.cancel();
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (widget.onPick == null || e is KeyUpEvent) return KeyEventResult.ignored;
+    final ch = e.character;
+    final keys = HardwareKeyboard.instance;
+    if (ch == null || ch.isEmpty || ch.codeUnitAt(0) < 0x20 || keys.isMetaPressed || keys.isControlPressed) {
+      return KeyEventResult.ignored;
+    }
+    // Space opens the menu unless it continues a typed prefix.
+    if (ch == ' ' && _typed.isEmpty) return KeyEventResult.ignored;
+    _reset?.cancel();
+    _reset = Timer(const Duration(seconds: 1), () => _typed = '');
+    _typed += ch.toLowerCase();
+    final repeated = _typed.split('').every((x) => x == _typed[0]);
+    final prefix = repeated ? _typed[0] : _typed;
+    final n = widget.labels.length;
+    // A new or repeated letter searches after the current item; a longer
+    // prefix may still match the current one.
+    final start = widget.current < 0 ? 0 : (repeated ? widget.current + 1 : widget.current);
+    for (var i = 0; i < n; i++) {
+      final idx = (start + i) % n;
+      if (widget.labels[idx].toLowerCase().startsWith(prefix)) {
+        if (idx != widget.current) widget.onPick!(idx);
+        break;
+      }
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      Focus(canRequestFocus: false, skipTraversal: true, onKeyEvent: _onKey, child: widget.child);
 }
 
 /// The accent capsule with ⌃⌄ at the right end of a form pop-up.

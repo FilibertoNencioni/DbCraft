@@ -472,16 +472,21 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
               )
             else ...[
               for (final a in widget.accessories) Padding(padding: const EdgeInsets.only(left: 6), child: a),
+              // Shares the free space with the title, so a long detail ends
+              // in an ellipsis instead of overflowing the row.
               if (widget.detail != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: Gap.sm, right: 2),
-                  child: Text(
-                    widget.detail!,
-                    maxLines: 1,
-                    style: uiText(
-                      TypeSize.small,
-                      color: look.emphasized ? look.secondary : c.textTertiary,
-                      features: kTabular,
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: Gap.sm, right: 2),
+                    child: Text(
+                      widget.detail!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: uiText(
+                        TypeSize.small,
+                        color: look.emphasized ? look.secondary : c.textTertiary,
+                        features: kTabular,
+                      ),
                     ),
                   ),
                 ),

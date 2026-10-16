@@ -1,6 +1,5 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../drivers/native_driver.dart';
 import '../../drivers/native_registry.dart';
@@ -19,11 +18,7 @@ Future<ConnectionConfig?> showConnectionDialog(
   required AppState app,
   ConnectionConfig? existing,
 }) {
-  return showDialog<ConnectionConfig>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => ConnectionDialog(app: app, existing: existing),
-  );
+  return showSheet<ConnectionConfig>(context, builder: (_) => ConnectionDialog(app: app, existing: existing));
 }
 
 class ConnectionDialog extends StatefulWidget {
@@ -35,7 +30,7 @@ class ConnectionDialog extends StatefulWidget {
   State<ConnectionDialog> createState() => _ConnectionDialogState();
 }
 
-/// Outcome of "Prova connessione", shown inline in the footer on two lines.
+/// Outcome of "Prova connessione", shown inline in the footer.
 class _TestResult {
   const _TestResult.ok(this.summary, this.detail, this.details) : error = null;
   _TestResult.failed(Object this.error)
@@ -60,14 +55,9 @@ class _TestResult {
   }
 }
 
-/// Driver menu entry that opens the installer instead of picking a driver.
-const _installDriverItem = '\u0000install';
-
 class _ConnectionDialogState extends State<ConnectionDialog> {
   late final ConnectionConfig cfg =
       widget.existing?.copy() ?? ConnectionConfig(id: DateTime.now().microsecondsSinceEpoch.toString(), name: '');
-
-  final _form = GlobalKey<FormState>();
 
   late final _name = TextEditingController(text: cfg.name);
   late final _driver = TextEditingController(text: cfg.driver);
@@ -99,7 +89,6 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   Object? _loadError;
   bool _testing = false;
   _TestResult? _result;
-  bool _showPassword = false;
   late bool _showAdvanced = _hasAdvancedValues();
 
   /// Any edit makes a previous test result stale.
@@ -253,139 +242,57 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     if (mounted) await _loadOdbc();
   }
 
-  void _submit() {
-    if (_form.currentState?.validate() ?? true) Navigator.pop(context, _collect());
-  }
+  void _submit() => Navigator.pop(context, _collect());
 
   // -------------------------------------------------------------------------
 
   @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Dialog(
-      insetPadding: const EdgeInsets.all(Gap.xl),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 820),
-        child: Form(
-          key: _form,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg + 2, Gap.xl, Gap.md),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    widget.existing == null ? 'Nuova connessione' : 'Modifica connessione',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-              ),
-              Expanded(child: _body()),
-              Divider(height: 1, color: c.separator),
-              _footer(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SheetScaffold(
+    title: widget.existing == null ? 'Nuova connessione' : 'Modifica connessione',
+    body: _body(),
+    onSubmit: _submit,
+    leading: [
+      PushButton(label: 'Prova connessione', onPressed: _testing ? null : _test),
+      ConstrainedBox(constraints: const BoxConstraints(maxWidth: 230), child: _status()),
+    ],
+    actions: [
+      PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+      PushButton.primary(label: widget.existing == null ? 'Crea' : 'Salva', onPressed: _submit),
+    ],
+  );
 
-  Widget _footer() {
-    final c = DbColors.of(context);
+  /// Test outcome next to "Prova connessione": summary and DBMS (or error).
+  Widget _status() {
     final r = _result;
-    Widget status;
-    if (_testing) {
-      status = Row(children: [
-        const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5)),
-        const SizedBox(width: Gap.sm),
-        Text('Connessione in corso…', style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary)),
-      ]);
-    } else if (r == null) {
-      status = const SizedBox.shrink();
-    } else {
-      final text = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            r.summary,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: TypeSize.small,
-              fontWeight: FontWeight.w600,
-              color: r.ok ? c.text : c.danger,
-              fontFeatures: kTabular,
-            ),
-          ),
-          if (r.detail.isNotEmpty)
-            Text(
-              r.detail,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.caption, color: c.textSecondary),
-            ),
-        ],
-      );
-      final line = Row(children: [
-        Icon(r.ok ? AppIcons.checkCircleFill : AppIcons.errorFill, size: 15, color: r.ok ? c.success : c.danger),
-        const SizedBox(width: Gap.sm),
-        Flexible(child: r.details == null ? text : Tooltip(message: r.details!, child: text)),
-        if (!r.ok) ...[
-          const SizedBox(width: Gap.xs),
-          TextButton(
-            onPressed: () => showErrorDialog(context, r.error!, title: 'Connessione non riuscita'),
-            child: const Text('Dettagli…'),
-          ),
-        ],
-      ]);
-      status = line;
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.md, Gap.xl, Gap.md + 2),
-      child: Row(
-        children: [
-          OutlinedButton(
-            onPressed: _testing ? null : _test,
-            child: const Text('Prova connessione'),
-          ),
-          const SizedBox(width: Gap.md),
-          Expanded(child: status),
-          const SizedBox(width: Gap.md),
-          OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-          const SizedBox(width: Gap.sm),
-          FilledButton(onPressed: _submit, child: Text(widget.existing == null ? 'Crea' : 'Salva')),
-        ],
-      ),
+    if (_testing) return const StatusLine.busy('Connessione in corso…');
+    if (r == null) return const SizedBox.shrink();
+    final line = StatusLine(
+      r.detail.isEmpty ? r.summary : '${r.summary}\n${r.detail}',
+      kind: r.ok ? StatusKind.success : StatusKind.danger,
+      onDetails: r.ok ? null : () => showErrorDialog(context, r.error!, title: 'Connessione non riuscita'),
     );
+    return r.details == null ? line : Tooltip(message: r.details!, child: line);
   }
 
-  Widget _field(
-    TextEditingController ctrl,
-    String hint, {
-    bool obscure = false,
-    Widget? prefix,
-    Widget? suffix,
-    int maxLines = 1,
-    bool mono = false,
-  }) {
-    return TextFormField(
-      controller: ctrl,
-      obscureText: obscure,
-      maxLines: obscure ? 1 : maxLines,
-      minLines: 1,
-      style: mono ? monoStyle(context, size: 12.5) : const TextStyle(fontSize: TypeSize.body),
-      decoration: InputDecoration(
-        hintText: hint,
-        prefixIcon: prefix,
-        prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 20),
-        suffixIcon: suffix,
-      ),
-    );
-  }
+  Widget _field(TextEditingController ctrl, String hint, {int maxLines = 1, bool mono = false}) => MacTextField(
+    controller: ctrl,
+    hint: hint,
+    maxLines: maxLines,
+    minLines: 1,
+    mono: mono,
+  );
 
-  Widget _browseButton(VoidCallback onTap, String tooltip) =>
-      ToolButton(icon: AppIcons.folderOpen, tooltip: tooltip, onPressed: onTap);
+  /// A file path with "Scegli…".
+  Widget _pathField(TextEditingController ctrl, String hint, {void Function(String path)? onPicked}) => PathField(
+    controller: ctrl,
+    hint: hint,
+    onChoose: () async {
+      final f = await openFile();
+      if (f == null) return;
+      ctrl.text = f.path;
+      onPicked?.call(f.path);
+    },
+  );
 
   /// Pickers sit at their natural width on the left of a form row.
   Widget _leading(Widget child) => Align(alignment: Alignment.centerLeft, child: child);
@@ -401,7 +308,14 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
             const SizedBox(width: Gap.md),
             Text('Porta', style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary)),
             const SizedBox(width: Gap.sm),
-            SizedBox(width: 72, child: _field(_port, defaultPort.isEmpty ? '—' : defaultPort)),
+            NumberField(
+              controller: _port,
+              hint: defaultPort.isEmpty ? '—' : defaultPort,
+              min: 0,
+              max: 65535,
+              width: 64,
+              stepper: false,
+            ),
           ],
         ],
       ),
@@ -414,27 +328,26 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   // -------------------------------------------------------------------------
 
   Widget _body() {
-    final c = DbColors.of(context);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.xs, Gap.xl, Gap.sm),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _identityGroup(),
         if (_loadError case final Object e when cfg.mode != ConnectionMode.native)
-          InlineNotice(
-            color: c.danger,
-            icon: AppIcons.error,
-            title: 'Driver ODBC non disponibili',
-            message: canInstallDrivers
-                ? 'Manca il Driver Manager ODBC (unixODBC): si installa insieme a qualunque driver.'
-                : 'Manca il Driver Manager ODBC: installa unixODBC o indica la libreria in Preferenze › ODBC.',
-            action: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextButton(
+          Padding(
+            padding: const EdgeInsets.only(bottom: Gap.lg),
+            child: Notice(
+              kind: NoticeKind.danger,
+              title: 'Driver ODBC non disponibili',
+              message: canInstallDrivers
+                  ? 'Manca il Driver Manager ODBC (unixODBC): si installa insieme a qualunque driver.'
+                  : 'Manca il Driver Manager ODBC: installa unixODBC o indica la libreria in Preferenze › ODBC.',
+              actions: [
+                LinkButton(
+                  label: 'Dettagli…',
+                  small: true,
                   onPressed: () => showErrorDialog(context, e, title: 'Driver ODBC non disponibili'),
-                  child: const Text('Dettagli…'),
                 ),
-                if (canInstallDrivers) TextButton(onPressed: _openInstaller, child: const Text('Installa…')),
+                if (canInstallDrivers) LinkButton(label: 'Installa…', small: true, onPressed: _openInstaller),
               ],
             ),
           ),
@@ -507,78 +420,53 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         title: 'Connessione',
         footer: _drivers.isEmpty
             ? (canInstallDrivers
-                  ? 'Nessun driver ODBC registrato: installane uno dal menu del campo Driver o indica la libreria.'
+                  ? 'Nessun driver ODBC registrato: installane uno con «Installa driver…» o indica la libreria.'
                   : 'Nessun driver ODBC registrato: indica il percorso della libreria del driver.')
             : null,
         children: [
           _modeRow(),
           FormRow(
             label: 'Driver',
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: _field(
-                    _driver,
-                    'Nome o percorso del driver',
-                    prefix: Icon(t.icon, size: 15, color: generic ? c.textTertiary : t.color),
-                    suffix: PopupMenuButton<String>(
-                      tooltip: 'Driver installati',
-                      padding: EdgeInsets.zero,
-                      position: PopupMenuPosition.under,
-                      icon: Icon(AppIcons.upDown, size: 15, color: c.textSecondary),
-                      onSelected: (v) {
-                        if (v == _installDriverItem) {
-                          _openInstaller();
-                          return;
-                        }
-                        _driver.text = v;
-                        _port.clear();
-                        _applyTemplateDefaults();
-                      },
-                      itemBuilder: (_) => [
-                        if (_drivers.isEmpty)
-                          const PopupMenuItem(enabled: false, height: 28, child: Text('Nessun driver ODBC registrato')),
-                        for (final d in _drivers)
-                          PopupMenuItem(
-                            value: d.name,
-                            height: 28,
-                            child: Row(
-                              children: [
-                                Icon(
-                                  DriverTemplate.forDriver(d.name).icon,
-                                  size: 15,
-                                  color: DriverTemplate.forDriver(d.name).color,
-                                ),
-                                const SizedBox(width: Gap.sm),
-                                Text(d.name, style: const TextStyle(fontSize: TypeSize.body)),
-                              ],
-                            ),
-                          ),
-                        if (canInstallDrivers) ...[
-                          const PopupMenuDivider(height: 9),
-                          PopupMenuItem(
-                            value: _installDriverItem,
-                            height: 28,
-                            child: Row(
-                              children: [
-                                Icon(AppIcons.download, size: 15, color: c.textSecondary),
-                                const SizedBox(width: Gap.sm),
-                                const Text('Installa driver…', style: TextStyle(fontSize: TypeSize.body)),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
+                Row(
+                  children: [
+                    Icon(t.icon, size: 16, color: generic ? c.textTertiary : t.color),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: ComboField(
+                        controller: _driver,
+                        hint: 'Nome o percorso del driver',
+                        options: () => [for (final d in _drivers) d.name],
+                        // Picking (or typing) a registered driver resets the port to its default.
+                        onChanged: (v) {
+                          if (!_drivers.any((d) => d.name == v)) return;
+                          _port.clear();
+                          _applyTemplateDefaults();
+                        },
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 6),
+                    PushButton(
+                      label: 'Scegli…',
+                      tooltip: 'Scegli la libreria del driver',
+                      onPressed: () async {
+                        final f = await openFile();
+                        if (f != null) {
+                          _driver.text = f.path;
+                          _applyTemplateDefaults();
+                        }
+                      },
+                    ),
+                  ],
                 ),
-                _browseButton(() async {
-                  final f = await openFile();
-                  if (f != null) {
-                    _driver.text = f.path;
-                    _applyTemplateDefaults();
-                  }
-                }, 'Scegli la libreria del driver'),
+                if (canInstallDrivers)
+                  Padding(
+                    padding: const EdgeInsets.only(top: Gap.xs, left: 22),
+                    child: LinkButton(label: 'Installa driver…', small: true, onPressed: _openInstaller),
+                  ),
               ],
             ),
           ),
@@ -586,16 +474,9 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
           if (t.databaseKey != null)
             FormRow(
               label: t.fileBased ? 'File' : 'Database',
-              child: Row(
-                children: [
-                  Expanded(child: _field(_database, t.fileBased ? '/percorso/del/file.db' : 'Nome del database')),
-                  if (t.fileBased)
-                    _browseButton(() async {
-                      final f = await openFile();
-                      if (f != null) _database.text = f.path;
-                    }, 'Scegli il file'),
-                ],
-              ),
+              child: t.fileBased
+                  ? _pathField(_database, '/percorso/del/file.db')
+                  : _field(_database, 'Nome del database'),
             ),
         ],
       ),
@@ -603,46 +484,24 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     ];
   }
 
-  List<Widget> _dsnGroups() {
-    final c = DbColors.of(context);
-    return [
-      FormGroup(
-        title: 'Connessione',
-        footer: 'I DSN si configurano in odbc.ini (unixODBC) o nell\'Amministratore ODBC di Windows.',
-        children: [
-          _modeRow(),
-          FormRow(
-            label: 'Data Source',
-            child: _field(
-              _dsn,
-              'Nome del DSN',
-              suffix: PopupMenuButton<String>(
-                tooltip: 'DSN configurati',
-                padding: EdgeInsets.zero,
-                position: PopupMenuPosition.under,
-                icon: Icon(AppIcons.upDown, size: 15, color: c.textSecondary),
-                onSelected: (v) => _dsn.text = v,
-                itemBuilder: (_) => [
-                  if (_dsns.isEmpty)
-                    const PopupMenuItem(enabled: false, height: 28, child: Text('Nessun DSN configurato')),
-                  for (final d in _dsns)
-                    PopupMenuItem(
-                      value: d.name,
-                      height: 28,
-                      child: Text(
-                        '${d.name}  ·  ${d.driver}${d.system ? ' (sistema)' : ''}',
-                        style: const TextStyle(fontSize: TypeSize.body),
-                      ),
-                    ),
-                ],
+  List<Widget> _dsnGroups() => [
+        FormGroup(
+          title: 'Connessione',
+          footer: 'I DSN si configurano in odbc.ini (unixODBC) o nell\'Amministratore ODBC di Windows.',
+          children: [
+            _modeRow(),
+            FormRow(
+              label: 'Data Source',
+              child: ComboField(
+                controller: _dsn,
+                hint: _dsns.isEmpty ? 'Nome del DSN (nessuno configurato)' : 'Nome del DSN',
+                options: () => [for (final d in _dsns) d.name],
               ),
             ),
-          ),
-        ],
-      ),
-      _authFields(),
-    ];
-  }
+          ],
+        ),
+        _authFields(),
+      ];
 
   List<Widget> _connectionStringGroups() => [
         FormGroup(
@@ -661,32 +520,16 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
           title: 'Autenticazione',
           footer: 'Usata solo se la stringa non contiene già PWD.',
           children: [
-            FormRow(label: 'Password', child: _field(_password, 'Facoltativa', obscure: !_showPassword, suffix: _eye())),
+            FormRow(label: 'Password', child: SecureField(controller: _password, hint: 'Facoltativa')),
             _savePasswordRow(),
           ],
         ),
       ];
 
-  Widget _eye() => SizedBox(
-        width: 30,
-        child: Center(
-          child: ToolButton(
-            icon: _showPassword ? AppIcons.eyeOff : AppIcons.eye,
-            tooltip: _showPassword ? 'Nascondi' : 'Mostra',
-            size: 15,
-            onPressed: () => setState(() => _showPassword = !_showPassword),
-          ),
-        ),
-      );
-
   Widget _switchRow(String label, String? help, bool value, ValueChanged<bool> onChanged) => FormRow(
         label: label,
         help: help,
-        labelWidth: 380,
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: DbSwitch(value: value, onChanged: onChanged),
-        ),
+        child: DbSwitch(value: value, onChanged: onChanged),
       );
 
   Widget _savePasswordRow() => _switchRow(
@@ -722,10 +565,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         if (plain || m.usesUser)
           FormRow(label: 'Utente', child: _field(_user, m.isAzure ? 'utente@dominio.onmicrosoft.com' : 'Nome utente')),
         if (plain || m.usesPassword)
-          FormRow(
-            label: 'Password',
-            child: _field(_password, 'Password', obscure: !_showPassword, suffix: _eye()),
-          ),
+          FormRow(label: 'Password', child: SecureField(controller: _password, hint: 'Password')),
         for (final a in authParams(cfg, m)) _paramRow(a.key, a.label, a.hint, secret: a.secret, file: a.file, help: a.help),
         if (plain || m.usesPassword) _savePasswordRow(),
       ],
@@ -757,28 +597,15 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         ),
       );
     }
-    return FormRow(
-      label: label,
-      help: help,
-      child: Row(
-        children: [
-          Expanded(
-            child: _field(
-              ctrl,
-              hint,
-              obscure: secret && !_showPassword,
-              suffix: secret ? _eye() : null,
-              maxLines: multiline ? 4 : 1,
-            ),
-          ),
-          if (file)
-            _browseButton(() async {
-              final f = await openFile();
-              if (f != null) ctrl.text = f.path;
-            }, 'Scegli il file'),
-        ],
-      ),
-    );
+    final Widget field;
+    if (secret) {
+      field = SecureField(controller: ctrl, hint: hint);
+    } else if (file) {
+      field = _pathField(ctrl, hint);
+    } else {
+      field = _field(ctrl, hint, maxLines: multiline ? 4 : 1);
+    }
+    return FormRow(label: label, help: help, child: field);
   }
 
   void _fixAuthMethod() {
@@ -872,52 +699,23 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         ],
       );
 
-  Widget _advancedToggle() {
-    final c = DbColors.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: Gap.sm),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _showAdvanced = !_showAdvanced),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: Gap.xs),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedRotation(
-                    turns: _showAdvanced ? 0.25 : 0,
-                    duration: const Duration(milliseconds: 120),
-                    curve: Curves.easeOut,
-                    child: Icon(AppIcons.chevronRight, size: 16, color: c.textSecondary),
-                  ),
-                  const SizedBox(width: 2),
-                  Text(
-                    'Avanzate',
-                    style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600, color: c.text),
-                  ),
-                ],
-              ),
-            ),
+  Widget _advancedToggle() => Padding(
+        padding: const EdgeInsets.only(bottom: Gap.sm),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: DisclosureButton(
+            label: 'Avanzate',
+            expanded: _showAdvanced,
+            onChanged: (v) => setState(() => _showAdvanced = v),
           ),
         ),
-      ),
-    );
-  }
+      );
 
   List<Widget> _advancedGroups() {
     final c = DbColors.of(context);
     final preview = _collect().maskedConnectionString;
-    Widget seconds(TextEditingController ctrl, String hint) => Row(
-          children: [
-            SizedBox(width: 72, child: _field(ctrl, hint)),
-            const SizedBox(width: Gap.sm),
-            Text('secondi', style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary)),
-          ],
-        );
+    Widget seconds(TextEditingController ctrl, String hint) =>
+        NumberField(controller: ctrl, hint: hint, min: 0, max: 3600, unit: 'secondi');
     return [
       FormGroup(
         children: [
@@ -938,28 +736,23 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         footer: 'Eseguite subito dopo ogni connessione, separate da punto e virgola.',
         children: [_field(_bootstrap, 'SET search_path TO public;', maxLines: 5, mono: true)],
       ),
-      FormGroup(
-        title: 'Stringa risultante',
-        footer: 'La password non viene mai mostrata né copiata.',
+      // A code box, not a form group: the string is read-only output.
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: SelectableText(
-                    preview.isEmpty ? '—' : preview,
-                    style: monoStyle(context, size: 11.5, color: c.textSecondary),
-                  ),
-                ),
-              ),
-              ToolButton(
-                icon: AppIcons.copy,
-                tooltip: 'Copia',
-                onPressed: preview.isEmpty ? null : () => Clipboard.setData(ClipboardData(text: preview)),
-              ),
-            ],
+          CodeBox(
+            preview.isEmpty ? '—' : preview,
+            label: 'Stringa risultante',
+            copy: preview.isNotEmpty,
+            wrap: true,
+            color: c.textSecondary,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 2, top: 6, bottom: Gap.lg),
+            child: Text(
+              'La password non viene mai mostrata né copiata.',
+              style: uiText(TypeSize.caption, color: c.textSecondary, height: 1.3),
+            ),
           ),
         ],
       ),

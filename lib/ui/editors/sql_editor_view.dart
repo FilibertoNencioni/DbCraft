@@ -146,26 +146,14 @@ class _SqlEditorViewState extends State<SqlEditorView> {
 
   Future<DbConnection?> _chooseConnection() {
     final app = AppScope.read(context);
-    return showDialog<DbConnection>(
-      context: context,
-      builder: (ctx) {
-        final c = DbColors.of(ctx);
-        return SimpleDialog(
-          title: const Text('Su quale connessione eseguire?'),
-          contentPadding: const EdgeInsets.fromLTRB(Gap.sm, Gap.md, Gap.sm, Gap.md),
-          children: [
-            for (final x in app.connections)
-              ListTile(
-                onTap: () => Navigator.pop(ctx, x),
-                leading: StatusDot(x.config.type.color),
-                minLeadingWidth: 8,
-                title: Text(x.config.name),
-                subtitle: Text(x.config.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: x.isConnected ? Icon(AppIcons.check, size: 16, color: c.success) : null,
-              ),
-          ],
-        );
-      },
+    return showListPicker<DbConnection>(
+      context,
+      title: 'Su quale connessione eseguire?',
+      items: app.connections,
+      label: (x) => x.config.name,
+      detail: (x) => x.isConnected ? 'Connessa · ${x.config.subtitle}' : x.config.subtitle,
+      icon: (x) => x.isConnected ? AppIcons.connect : AppIcons.database,
+      choose: 'Esegui',
     );
   }
 
@@ -370,9 +358,10 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     final c = DbColors.of(context);
     final conn = tab.connection;
     final mac = Platform.isMacOS;
-    final mod = mac ? '⌘' : 'Ctrl+';
-    SingleActivator a(LogicalKeyboardKey k, {bool shift = false}) =>
-        SingleActivator(k, control: !mac, meta: mac, shift: shift);
+    SingleActivator a(LogicalKeyboardKey k, {bool shift = false, bool alt = false}) =>
+        SingleActivator(k, control: !mac, meta: mac, shift: shift, alt: alt);
+    String sc(LogicalKeyboardKey k, {bool shift = false, bool alt = false}) =>
+        shortcutLabel(a(k, shift: shift, alt: alt));
     return PaneBar(children: [
       if (tab.running)
         PushButton(
@@ -380,7 +369,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           icon: AppIcons.stop,
           kind: PushButtonKind.destructive,
           size: ControlScale.small,
-          tooltip: 'Interrompi esecuzione ($mod.)',
+          tooltip: 'Interrompi esecuzione (${sc(LogicalKeyboardKey.period)})',
           onPressed: tab.cancel,
         )
       else
@@ -388,32 +377,32 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           label: 'Esegui',
           icon: AppIcons.run,
           size: ControlScale.small,
-          tooltip: 'Esegui la selezione o, senza selezione, tutto lo script (${mod}Invio)',
+          tooltip: 'Esegui la selezione o, senza selezione, tutto lo script (${sc(LogicalKeyboardKey.enter)})',
           onPressed: _execute,
         ),
       const SizedBox(width: Gap.xs),
       ToolButton(
         icon: AppIcons.shortText,
-        tooltip: 'Esegui solo l\'istruzione sotto il cursore ($mod⇧Invio)',
+        tooltip: 'Esegui solo l\'istruzione sotto il cursore (${sc(LogicalKeyboardKey.enter, shift: true)})',
         onPressed: tab.running ? null : _executeCurrent,
       ),
       ToolButton(
         icon: AppIcons.scriptFromSelection,
-        tooltip: 'Esegui in una nuova scheda risultati ($mod\\)',
+        tooltip: 'Esegui in una nuova scheda risultati (${sc(LogicalKeyboardKey.backslash)})',
         onPressed: tab.running ? null : () => _execute(newTab: true),
       ),
       ToolButton(
         icon: AppIcons.tree,
-        tooltip: 'Piano di esecuzione ($mod⇧E)',
+        tooltip: 'Piano di esecuzione (${sc(LogicalKeyboardKey.keyE, shift: true)})',
         onPressed: tab.running ? null : _explain,
       ),
       ToolButton(
         icon: AppIcons.schema,
-        tooltip: 'Piano visuale ($mod⌥E)',
+        tooltip: 'Piano visuale (${sc(LogicalKeyboardKey.keyE, alt: true)})',
         onPressed: tab.running || conn == null ? null : _visualPlan,
       ),
       const ToolSeparator(),
-      ToolButton(icon: AppIcons.format, tooltip: 'Formatta SQL ($mod⇧F)', onPressed: _format),
+      ToolButton(icon: AppIcons.format, tooltip: 'Formatta SQL (${sc(LogicalKeyboardKey.keyF, shift: true)})', onPressed: _format),
       if (app.settings.aiEnabled) _aiMenu(app),
       ToolButton(
         icon: AppIcons.join,
@@ -422,7 +411,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
             ? null
             : () => app.openFeatureTab(QueryBuilderTab(conn)),
       ),
-      ToolButton(icon: AppIcons.search, tooltip: 'Trova e sostituisci (${mod}F)', onPressed: _find.findMode),
+      ToolButton(icon: AppIcons.search, tooltip: 'Trova e sostituisci (${sc(LogicalKeyboardKey.keyF)})', onPressed: _find.findMode),
       PulldownButton(
         icon: AppIcons.more,
         tooltip: 'Altre azioni',
@@ -453,7 +442,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       const SizedBox(width: Gap.xs),
       ToolButton(
         icon: AppIcons.palettePanel,
-        tooltip: _showResults ? 'Nascondi risultati ($mod⇧R)' : 'Mostra risultati ($mod⇧R)',
+        tooltip: '${_showResults ? 'Nascondi' : 'Mostra'} risultati (${sc(LogicalKeyboardKey.keyR, shift: true)})',
         active: _showResults,
         onPressed: () => setState(() => _showResults = !_showResults),
       ),
@@ -534,7 +523,9 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     final c = DbColors.of(context);
     final results = tab.results;
     final sel = _bottomTab;
-    final mod = Platform.isMacOS ? '⌘Invio' : 'Ctrl+Invio';
+    final mac = Platform.isMacOS;
+    final run = shortcutLabel(SingleActivator(LogicalKeyboardKey.enter, meta: mac, control: !mac));
+    final runCurrent = shortcutLabel(SingleActivator(LogicalKeyboardKey.enter, meta: mac, control: !mac, shift: true));
     Widget body;
     if (sel == -1) {
       body = _outputView();
@@ -546,8 +537,8 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           : EmptyState(
               icon: AppIcons.runCircle,
               title: 'Nessun risultato',
-              message: 'Premi Esegui o $mod per eseguire la selezione o tutto lo script; '
-                  '${Platform.isMacOS ? '⌘⇧Invio' : 'Ctrl+Shift+Invio'} esegue solo l\'istruzione sotto il cursore.',
+              message: 'Premi Esegui o $run per eseguire la selezione o tutto lo script; '
+                  '$runCurrent esegue solo l\'istruzione sotto il cursore.',
             );
     } else {
       final r = results[sel.clamp(0, results.length - 1)];
@@ -563,50 +554,42 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         body = _statsView(r);
       }
     }
+    final current = sel < 0 || results.isEmpty ? sel : sel.clamp(0, results.length - 1);
     return Material(
       color: c.content,
       child: Column(children: [
-        Container(
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
-          decoration: BoxDecoration(color: c.chrome, border: Border(bottom: BorderSide(color: c.separator))),
-          child: Row(children: [
-            Expanded(
-              child: ListView(scrollDirection: Axis.horizontal, children: [
-                for (var i = 0; i < results.length; i++)
-                  _ResultTabChip(
-                    label: results[i].title,
-                    icon: results[i].error != null
-                        ? AppIcons.error
-                        : results[i].model != null
-                            ? AppIcons.rows
-                            : AppIcons.insights,
-                    iconColor: results[i].error != null ? c.danger : null,
-                    selected: sel == i,
-                    onTap: () => setState(() {
-                      _bottomTab = i;
-                      tab.selectedResult = i;
-                    }),
-                    onClose: () => tab.closeResult(i),
-                  ),
-              ]),
-            ),
-            _ResultTabChip(
-              label: 'Output',
-              icon: AppIcons.terminal,
-              badge: tab.serverOutput.isEmpty ? null : '${tab.serverOutput.length}',
-              selected: sel == -1,
-              onTap: () => setState(() => _bottomTab = -1),
-            ),
-            _ResultTabChip(
-              label: 'Log',
-              icon: AppIcons.history,
-              selected: sel == -2,
-              onTap: () => setState(() => _bottomTab = -2),
-            ),
-          ]),
-        ),
-        if (tab.running) const LinearProgressIndicator(minHeight: 2),
+        Stack(children: [
+          PaneTabs<int>(
+            value: current,
+            onChanged: (i) => setState(() {
+              _bottomTab = i;
+              if (i >= 0) tab.selectedResult = i;
+            }),
+            tabs: [
+              for (var i = 0; i < results.length; i++)
+                PaneTab(
+                  i,
+                  results[i].title,
+                  icon: results[i].error != null
+                      ? AppIcons.error
+                      : results[i].model != null
+                          ? AppIcons.rows
+                          : AppIcons.insights,
+                  onClose: () => tab.closeResult(i),
+                ),
+              PaneTab(-1, 'Output', icon: AppIcons.terminal, count: tab.serverOutput.isEmpty ? null : tab.serverOutput.length),
+              const PaneTab(-2, 'Log', icon: AppIcons.history),
+            ],
+            trailing: sel == -1 && tab.serverOutput.isNotEmpty
+                ? ToolButton(
+                    icon: AppIcons.clearAll,
+                    tooltip: 'Pulisci l\'output',
+                    onPressed: () => setState(tab.serverOutput.clear),
+                  )
+                : null,
+          ),
+          if (tab.running) const Positioned(left: 0, right: 0, bottom: 0, child: LoadingLine()),
+        ]),
         Expanded(child: body),
       ]),
     );
@@ -617,42 +600,18 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(Gap.lg),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(
-          padding: const EdgeInsets.all(Gap.md),
-          decoration: BoxDecoration(
-            color: c.danger.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(Radii.panel),
-            border: Border.all(color: c.danger.withValues(alpha: 0.3)),
-          ),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(AppIcons.error, size: 18, color: c.danger),
-            const SizedBox(width: Gap.sm),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('L\'istruzione non è stata eseguita',
-                    style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600, color: c.text)),
-                const SizedBox(height: Gap.xs),
-                SelectableText(r.error!, style: monoStyle(context, size: 12.5)),
-                if (r.sql != null && AppScope.read(context).settings.aiEnabled) ...[
-                  const SizedBox(height: Gap.md),
-                  OutlinedButton.icon(
-                    onPressed: () => _aiFix(r),
-                    icon: const Icon(AppIcons.ai, size: 15),
-                    label: const Text('Correggi con AI'),
-                  ),
-                ],
-              ]),
-            ),
-            ToolButton(
-              icon: AppIcons.copy,
-              tooltip: 'Copia messaggio',
-              onPressed: () => Clipboard.setData(ClipboardData(text: r.error!)),
-            ),
-          ]),
+        Notice(
+          kind: NoticeKind.danger,
+          title: 'L\'istruzione non è stata eseguita',
+          actions: [
+            if (r.sql != null && AppScope.read(context).settings.aiEnabled)
+              PushButton(label: 'Correggi con AI', icon: AppIcons.ai, size: ControlScale.small, onPressed: () => _aiFix(r)),
+          ],
+          child: CodeBox(r.error!, label: 'Messaggio del server', wrap: true),
         ),
         if (r.sql != null) ...[
           const SectionLabel('Query', padding: EdgeInsets.only(top: Gap.lg, bottom: Gap.xs)),
-          SelectableText(r.sql!, style: monoStyle(context, size: 12.5, color: c.textSecondary)),
+          CodeBox(r.sql!, color: c.textSecondary, wrap: true),
         ],
       ]),
     );
@@ -665,7 +624,6 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 620),
             child: PropertyTable(
-              labelWidth: 150,
               entries: [for (final e in (r.stats ?? {'Messaggio': r.message ?? ''}).entries) (e.key, e.value)],
             ),
           ),
@@ -681,22 +639,14 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         message: 'Qui compaiono PRINT, RAISE NOTICE e gli avvisi del driver.',
       );
     }
-    return Column(children: [
-      Align(
-        alignment: Alignment.centerRight,
-        child: TextButton(onPressed: () => setState(tab.serverOutput.clear), child: const Text('Pulisci')),
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: Gap.lg, vertical: Gap.sm),
+      itemCount: tab.serverOutput.length,
+      itemBuilder: (_, i) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: SelectableText(tab.serverOutput[i], style: monoStyle(context, size: TypeSize.mono, color: c.text)),
       ),
-      Expanded(
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
-          itemCount: tab.serverOutput.length,
-          itemBuilder: (_, i) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 1),
-            child: SelectableText(tab.serverOutput[i], style: monoStyle(context, size: 12.5, color: c.text)),
-          ),
-        ),
-      ),
-    ]);
+    );
   }
 
   Widget _logView() {
@@ -718,100 +668,19 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           LogLevel.warning => (AppIcons.warning, c.warning),
           LogLevel.info => (AppIcons.info, c.textTertiary),
         };
-        return InkWell(
+        return ListRow(
+          zebra: true,
+          index: i,
+          mono: true,
+          icon: icon,
+          iconColor: color,
+          title: e.message,
+          subtitle: e.sql?.replaceAll(RegExp(r'\s+'), ' '),
+          tooltip: e.sql == null ? e.message : '${e.message}\nClic per copiare l\'SQL',
+          trailing: Text(hms(e.time), style: monoStyle(context, size: TypeSize.monoSmall, color: c.textTertiary)),
           onTap: e.sql == null ? null : () => Clipboard.setData(ClipboardData(text: e.sql!)),
-          child: Container(
-            color: i.isOdd ? c.zebra : null,
-            padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: 5),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(hms(e.time), style: monoStyle(context, size: 11.5, color: c.textTertiary)),
-              const SizedBox(width: Gap.md),
-              Icon(icon, color: color, size: 15),
-              const SizedBox(width: Gap.sm),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(e.message, maxLines: 3, overflow: TextOverflow.ellipsis),
-                  if (e.sql != null)
-                    Text(
-                      e.sql!.replaceAll(RegExp(r'\s+'), ' '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: monoStyle(context, size: 11.5, color: c.textSecondary),
-                    ),
-                ]),
-              ),
-            ]),
-          ),
         );
       },
-    );
-  }
-}
-
-class _ResultTabChip extends StatefulWidget {
-  const _ResultTabChip({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-    this.iconColor,
-    this.onClose,
-    this.badge,
-  });
-
-  final String label;
-  final IconData icon;
-  final Color? iconColor;
-  final bool selected;
-  final VoidCallback onTap;
-  final VoidCallback? onClose;
-  final String? badge;
-
-  @override
-  State<_ResultTabChip> createState() => _ResultTabChipState();
-}
-
-class _ResultTabChipState extends State<_ResultTabChip> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    final sel = widget.selected;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        onTertiaryTapUp: widget.onClose == null ? null : (_) => widget.onClose!(),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-          decoration: BoxDecoration(
-            color: sel ? c.content : (_hover ? c.hover : Colors.transparent),
-            borderRadius: BorderRadius.circular(Radii.control),
-            border: sel ? Border.all(color: c.separator) : null,
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(widget.icon, size: 13, color: widget.iconColor ?? (sel ? c.accent : c.textSecondary)),
-            const SizedBox(width: 5),
-            Text(widget.label,
-                style: TextStyle(
-                  fontSize: TypeSize.small,
-                  fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
-                  color: sel ? c.text : c.textSecondary,
-                )),
-            if (widget.badge != null) ...[const SizedBox(width: 5), Badge2(widget.badge!)],
-            if (widget.onClose != null && (_hover || sel)) ...[
-              const SizedBox(width: 4),
-              GestureDetector(
-                onTap: widget.onClose,
-                child: Icon(AppIcons.close, size: 12, color: c.textTertiary),
-              ),
-            ],
-          ]),
-        ),
-      ),
     );
   }
 }
