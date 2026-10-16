@@ -78,28 +78,61 @@ class _HomePageState extends State<HomePage> {
           backgroundColor: c.content,
           body: Column(children: [
             if (!_mac) _windowsMenuBar(app),
-            _AppToolbar(
-              showSidebar: _showSidebar,
-              onToggleSidebar: () => _toggleSidebar(animate: true),
-              onToggleAutoCommit: _toggleAutoCommit,
-            ),
             Expanded(
-              child: SplitView(
-                initialFraction: 0.21,
-                minFirst: 220,
-                minSecond: 480,
-                collapsedFirst: !_showSidebar,
-                collapseDuration: _sidebarSlide,
-                first: _sidebar(app),
-                second: _editorArea(app),
+              child: ValueListenableBuilder<bool>(
+                valueListenable: WindowBridge.instance.fullScreen,
+                builder: (context, fullScreen, _) => _shell(app, trafficLightInset(fullScreen)),
               ),
             ),
-            _statusBar(app),
           ]),
         ),
       ),
     );
     return _mac ? PlatformMenuBar(menus: _macMenus(app), child: body) : body;
+  }
+
+  /// Height of the title-bar bands (the sidebar's and the content toolbar).
+  double get _barHeight => _mac ? kUnifiedToolbarHeight : 44;
+
+  /// Full-height sidebar beside the content column (toolbar, tabs, editor,
+  /// status bar). The sidebar toggle stays put right of the traffic lights,
+  /// over the sidebar band or, with the sidebar hidden, over the toolbar,
+  /// which then makes room for both.
+  Widget _shell(AppState app, double inset) {
+    final toggleLeft = inset + Gap.sm;
+    return Stack(children: [
+      SplitView(
+        initialFraction: 0.21,
+        minFirst: 220,
+        minSecond: 480,
+        collapsedFirst: !_showSidebar,
+        collapseDuration: _sidebarSlide,
+        first: _sidebar(app),
+        second: Column(children: [
+          _AppToolbar(
+            height: _barHeight,
+            leadingInset: _showSidebar ? Gap.sm : toggleLeft + ControlSize.toolbar + Gap.md,
+            slide: _sidebarSlide,
+            onToggleAutoCommit: _toggleAutoCommit,
+          ),
+          Expanded(child: _editorArea(app)),
+          _statusBar(app),
+        ]),
+      ),
+      Positioned(
+        left: toggleLeft,
+        top: 0,
+        height: _barHeight,
+        child: Center(
+          child: ToolButton(
+            icon: AppIcons.sidebar,
+            tooltip: '${_showSidebar ? 'Nascondi' : 'Mostra'} barra laterale (${_mac ? '⌘0' : 'Ctrl+0'})',
+            extent: ControlSize.toolbar,
+            onPressed: () => _toggleSidebar(animate: true),
+          ),
+        ),
+      ),
+    ]);
   }
 
   /// Pointer toggles slide the sidebar; keyboard and menu toggles cut instantly.
@@ -369,6 +402,8 @@ class _HomePageState extends State<HomePage> {
     return Material(
       color: c.sidebar,
       child: Column(children: [
+        // Title-bar band of the sidebar: traffic lights and the toggle sit over it.
+        _TitleBarGestures(child: SizedBox(height: _barHeight, width: double.infinity)),
         SidebarTabs<int>(
           value: _leftTab,
           items: const [
@@ -416,46 +451,47 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _tabMenu(AppState app, EditorTab t, Offset pos) => showMacMenu<void>(
+        context,
+        position: pos,
+        entries: [
+          MenuEntry('Chiudi', onSelected: () => _closeTab(t), shortcut: _a(LogicalKeyboardKey.keyW)),
+          MenuEntry('Chiudi le altre', onSelected: () => app.closeOtherTabs(t), enabled: app.tabs.length > 1),
+          MenuEntry('Chiudi tutte', onSelected: () => _closeAll(app)),
+        ],
+      );
+
   Widget _editorArea(AppState app) {
-    final c = DbColors.of(context);
     if (app.tabs.isEmpty) return _Welcome(onOpenScript: () => openScriptFile(context));
     final active = app.activeTab.clamp(0, app.tabs.length - 1);
     return Column(children: [
-      Container(
-        height: 34,
-        decoration: BoxDecoration(
-          color: c.chrome,
-          border: Border(bottom: BorderSide(color: c.separator)),
+      WindowTabBar(
+        itemCount: app.tabs.length,
+        itemKey: (i) => ValueKey(app.tabs[i].id),
+        onReorder: app.moveTab,
+        itemBuilder: (context, i) {
+          final t = app.tabs[i];
+          final cfg = t.connection?.config;
+          return WindowTab(
+            title: t.title.replaceAll(RegExp(r' <.*>$'), ''),
+            active: i == active,
+            icon: t.icon,
+            dirty: t.isDirty,
+            busy: t is SqlEditorTab && t.running,
+            accessory: cfg == null || cfg.type == ConnectionType.development
+                ? null
+                : EnvDot(cfg.type.color, show: true, size: 6, tooltip: '${cfg.name} · ${cfg.type.label}'),
+            tooltip: t.tooltip,
+            onSelect: () => app.activate(t),
+            onClose: () => _closeTab(t),
+            onMenu: (pos) => _tabMenu(app, t, pos),
+          );
+        },
+        trailing: ToolButton(
+          icon: AppIcons.add,
+          tooltip: 'Nuovo editor SQL (${_mac ? '⌘N' : 'Ctrl+N'})',
+          onPressed: () => openSqlEditor(context),
         ),
-        child: Row(children: [
-          Expanded(
-            child: ReorderableListView.builder(
-              scrollDirection: Axis.horizontal,
-              buildDefaultDragHandles: false,
-              itemCount: app.tabs.length,
-              onReorderItem: app.moveTab,
-              proxyDecorator: (child, _, _) => Material(color: Colors.transparent, child: child),
-              itemBuilder: (context, i) => ReorderableDragStartListener(
-                key: ValueKey(app.tabs[i].id),
-                index: i,
-                child: _EditorTabChip(
-                  tab: app.tabs[i],
-                  active: i == app.activeTab,
-                  onSelect: () => app.activate(app.tabs[i]),
-                  onClose: () => _closeTab(app.tabs[i]),
-                  onCloseOthers: () => app.closeOtherTabs(app.tabs[i]),
-                  onCloseAll: () => _closeAll(app),
-                ),
-              ),
-            ),
-          ),
-          ToolButton(
-            icon: AppIcons.add,
-            tooltip: 'Nuovo editor SQL (${_mac ? '⌘N' : 'Ctrl+N'})',
-            onPressed: () => openSqlEditor(context),
-          ),
-          const SizedBox(width: Gap.xs),
-        ]),
       ),
       Expanded(
         child: IndexedStack(
@@ -483,35 +519,28 @@ class _HomePageState extends State<HomePage> {
     final c = DbColors.of(context);
     final dc = app.activeConnection;
     final connectedCount = app.connections.where((e) => e.isConnected).length;
-    final style = TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textSecondary);
-    return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-      decoration: BoxDecoration(color: c.chrome, border: Border(top: BorderSide(color: c.separator))),
-      child: DefaultTextStyle(
-        style: style,
-        child: Row(children: [
-          if (dc != null) ...[
-            StatusDot(dc.isConnected ? c.success : c.textTertiary, size: 7, ring: !dc.isConnected),
-            const SizedBox(width: 6),
-            Text(dc.config.name, style: style.copyWith(color: c.text, fontWeight: FontWeight.w500)),
-            const SizedBox(width: Gap.sm),
-            if (dc.isConnected)
-              Text('${dc.config.type.label} · ${dc.autoCommit ? 'auto-commit' : 'commit manuale'}'
-                  '${dc.config.readOnly ? ' · sola lettura' : ''}'),
-            if (dc.status == ConnectionStatus.connecting) const Text('Connessione in corso…'),
-            if (dc.status == ConnectionStatus.error)
-              Flexible(
-                child: Text('Errore: ${dc.error?.split('\n').first ?? ''}',
-                    overflow: TextOverflow.ellipsis, style: style.copyWith(color: c.danger)),
-              ),
-          ] else
-            const Text('Nessuna connessione selezionata'),
-          const Spacer(),
-          Text('$connectedCount di ${app.connections.length} connessioni attive'),
-        ]),
-      ),
-    );
+    return StatusBar(children: [
+      if (dc != null) ...[
+        StatusDot(dc.isConnected ? c.success : c.textTertiary, size: 7, ring: !dc.isConnected),
+        const SizedBox(width: 6),
+        Text(dc.config.name, style: uiText(TypeSize.caption, color: c.text, weight: FontWeight.w500)),
+        const SizedBox(width: Gap.sm),
+        if (dc.isConnected)
+          Flexible(
+            child: Text('${dc.config.type.label} · ${dc.autoCommit ? 'auto-commit' : 'commit manuale'}'
+                '${dc.config.readOnly ? ' · sola lettura' : ''}'),
+          ),
+        if (dc.status == ConnectionStatus.connecting) const Text('Connessione in corso…'),
+        if (dc.status == ConnectionStatus.error)
+          Flexible(
+            child: Text('Errore: ${dc.error?.split('\n').first ?? ''}',
+                style: uiText(TypeSize.caption, color: c.danger)),
+          ),
+      ] else
+        const Text('Nessuna connessione selezionata'),
+      const Spacer(),
+      Text('$connectedCount di ${app.connections.length} connessioni attive'),
+    ]);
   }
 
   void _about() => showAboutDialog(
@@ -666,11 +695,23 @@ class _TitleBarGesturesState extends State<_TitleBarGestures> {
       );
 }
 
+/// The window toolbar over the content column: creation actions on the left,
+/// the active connection in the middle, transaction and history on the right.
 class _AppToolbar extends StatelessWidget {
-  const _AppToolbar({required this.showSidebar, required this.onToggleSidebar, required this.onToggleAutoCommit});
+  const _AppToolbar({
+    required this.height,
+    required this.leadingInset,
+    required this.slide,
+    required this.onToggleAutoCommit,
+  });
 
-  final bool showSidebar;
-  final VoidCallback onToggleSidebar;
+  final double height;
+
+  /// Room on the left: the toggle and the traffic lights while the sidebar is hidden.
+  final double leadingInset;
+
+  /// Matches the sidebar slide, so the toolbar content moves with it.
+  final Duration slide;
   final void Function(DbConnection) onToggleAutoCommit;
 
   @override
@@ -680,180 +721,142 @@ class _AppToolbar extends StatelessWidget {
     final dc = app.activeConnection;
     final connected = dc?.isConnected ?? false;
     final mac = Platform.isMacOS;
-    return ValueListenableBuilder<bool>(
-      valueListenable: WindowBridge.instance.fullScreen,
-      builder: (context, fullScreen, _) => _TitleBarGestures(
-        child: Container(
-          height: mac ? kUnifiedToolbarHeight : 44,
-          padding: EdgeInsets.only(left: trafficLightInset(fullScreen) + Gap.sm, right: Gap.md),
-          decoration: BoxDecoration(color: c.chrome, border: Border(bottom: BorderSide(color: c.separator))),
-          child: Row(children: [
-            ToolButton(
-              icon: AppIcons.sidebar,
-              tooltip: '${showSidebar ? 'Nascondi' : 'Mostra'} barra laterale (${mac ? '⌘0' : 'Ctrl+0'})',
-              size: 19,
-              extent: 32,
-              onPressed: onToggleSidebar,
-            ),
-            const SizedBox(width: Gap.md),
-            ToolButton(
-              icon: AppIcons.addLink,
-              tooltip: 'Nuova connessione (${mac ? '⌘⇧N' : 'Ctrl+Shift+N'})',
-              size: 19,
-              extent: 32,
-              onPressed: () => newConnection(context),
-            ),
-            ToolButton(
-              icon: AppIcons.script,
-              tooltip: 'Nuovo editor SQL (${mac ? '⌘N' : 'Ctrl+N'})',
-              size: 21,
-              extent: 32,
-              onPressed: () => openSqlEditor(context),
-            ),
-            const Spacer(),
-            _ConnectionPill(dc: dc),
-            const SizedBox(width: Gap.sm),
-            if (dc != null)
-              ToolButton(
-                icon: connected ? AppIcons.power : AppIcons.connect,
-                tooltip: connected ? 'Disconnetti' : 'Connetti',
-                color: connected ? c.success : null,
-                size: 19,
-                extent: 32,
-                onPressed: () => connected ? disconnectWithCheck(context, dc) : ensureConnected(context, dc),
-              ),
-            const Spacer(),
-            if (connected) _TransactionControl(dc: dc!, onToggle: () => onToggleAutoCommit(dc)),
-            const SizedBox(width: Gap.sm),
-            ToolButton(
-              icon: AppIcons.history,
-              tooltip: 'Query Manager (${mac ? '⌘⇧H' : 'Ctrl+Shift+H'})',
-              size: 19,
-              extent: 32,
-              onPressed: () => showHistoryDialog(context),
-            ),
-            if (!mac)
-              ToolButton(
-                icon: AppIcons.settings,
-                tooltip: 'Preferenze',
-                size: 19,
-                extent: 32,
-                onPressed: () => showSettingsDialog(context),
-              ),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-/// Xcode-like activity pill: active connection, environment and state.
-class _ConnectionPill extends StatelessWidget {
-  const _ConnectionPill({required this.dc});
-  final DbConnection? dc;
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppScope.of(context);
-    final c = DbColors.of(context);
-    final d = dc;
-    String status;
-    Color statusColor = c.textSecondary;
-    if (d == null) {
-      status = 'Scegli una connessione';
-    } else {
-      switch (d.status) {
-        case ConnectionStatus.connected:
-          status = d.serverLabel.isEmpty ? 'Connesso' : d.serverLabel;
-        case ConnectionStatus.connecting:
-          status = 'Connessione in corso…';
-        case ConnectionStatus.error:
-          status = 'Errore di connessione';
-          statusColor = c.danger;
-        case ConnectionStatus.disconnected:
-          status = 'Non connesso';
-      }
-    }
-    return PopupMenuButton<DbConnection>(
-      tooltip: 'Connessione attiva',
-      position: PopupMenuPosition.under,
-      offset: const Offset(0, 6),
-      constraints: const BoxConstraints(minWidth: 320),
-      onSelected: (x) async {
-        final tab = app.currentTab;
-        if (tab is SqlEditorTab && !tab.running) tab.connection = x;
-        app.select(x);
-        await ensureConnected(context, x);
-      },
-      itemBuilder: (_) => [
-        if (app.connections.isEmpty)
-          const PopupMenuItem(enabled: false, child: Text('Nessuna connessione configurata')),
-        for (final x in app.connections)
-          PopupMenuItem(
-            value: x,
-            height: 40,
-            child: Row(children: [
-              StatusDot(x.isConnected ? c.success : c.textTertiary, size: 8, ring: !x.isConnected),
-              const SizedBox(width: Gap.sm),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                  Row(children: [
-                    Text(x.config.name, style: const TextStyle(fontWeight: FontWeight.w500)),
-                    if (x.config.type != ConnectionType.development) ...[
-                      const SizedBox(width: 6),
-                      Badge2(x.config.type.label, color: x.config.type.color),
-                    ],
-                  ]),
-                  Text(x.config.subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: TypeSize.caption, color: c.textSecondary)),
-                ]),
-              ),
-            ]),
-          ),
-      ],
-      child: Container(
-        constraints: const BoxConstraints(minWidth: 260, maxWidth: 420),
-        height: 30,
-        padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+    return _TitleBarGestures(
+      child: AnimatedContainer(
+        duration: Motion.of(context, slide),
+        curve: Curves.easeOutCubic,
+        height: height,
+        padding: EdgeInsets.only(left: leadingInset, right: Gap.md),
         decoration: BoxDecoration(
-          color: c.hover,
-          borderRadius: BorderRadius.circular(Radii.control + 1),
-          border: Border.all(color: c.separator),
+          color: c.chrome,
+          border: Border(bottom: BorderSide(color: c.separator, width: 0.5)),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (d != null) ...[
-            StatusDot(d.isConnected ? c.success : c.textTertiary, size: 8, ring: !d.isConnected),
-            const SizedBox(width: Gap.sm),
-            Flexible(
-              child: Text(d.config.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600, color: c.text)),
-            ),
-            if (d.config.type != ConnectionType.development) ...[
-              const SizedBox(width: 6),
-              Badge2(d.config.type.label, color: d.config.type.color),
-            ],
-            Text('  ·  ', style: TextStyle(color: c.textTertiary)),
-          ],
-          if (d?.status == ConnectionStatus.connecting) ...[
-            const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5)),
-            const SizedBox(width: 6),
-          ],
-          Flexible(
-            child: Text(status,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: TypeSize.small, color: statusColor)),
+        child: Row(children: [
+          ToolButton(
+            icon: AppIcons.addLink,
+            tooltip: 'Nuova connessione (${mac ? '⌘⇧N' : 'Ctrl+Shift+N'})',
+            extent: ControlSize.toolbar,
+            onPressed: () => newConnection(context),
           ),
-          const SizedBox(width: 6),
-          Icon(AppIcons.upDown, size: 14, color: c.textTertiary),
+          ToolButton(
+            icon: AppIcons.script,
+            tooltip: 'Nuovo editor SQL (${mac ? '⌘N' : 'Ctrl+N'})',
+            extent: ControlSize.toolbar,
+            onPressed: () => openSqlEditor(context),
+          ),
+          // Centered between the side groups; the activity view gives way first.
+          Expanded(
+            child: Center(
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Flexible(child: _ActiveConnection(dc: dc)),
+                if (dc != null) ...[
+                  const SizedBox(width: Gap.xs),
+                  ToolButton(
+                    icon: connected ? AppIcons.power : AppIcons.connect,
+                    tooltip: connected ? 'Disconnetti' : 'Connetti',
+                    color: connected ? c.success : null,
+                    extent: ControlSize.toolbar,
+                    onPressed: () => connected ? disconnectWithCheck(context, dc) : ensureConnected(context, dc),
+                  ),
+                ],
+              ]),
+            ),
+          ),
+          if (connected) ...[
+            _TransactionControl(dc: dc!, onToggle: () => onToggleAutoCommit(dc)),
+            const SizedBox(width: Gap.sm),
+          ],
+          ToolButton(
+            icon: AppIcons.history,
+            tooltip: 'Query Manager (${mac ? '⌘⇧H' : 'Ctrl+Shift+H'})',
+            extent: ControlSize.toolbar,
+            onPressed: () => showHistoryDialog(context),
+          ),
+          if (!mac)
+            ToolButton(
+              icon: AppIcons.settings,
+              tooltip: 'Preferenze',
+              extent: ControlSize.toolbar,
+              onPressed: () => showSettingsDialog(context),
+            ),
         ]),
       ),
     );
   }
 }
 
+/// The active connection as an Xcode activity view; it opens the connection
+/// menu (status dot, name, environment).
+class _ActiveConnection extends StatelessWidget {
+  const _ActiveConnection({required this.dc});
+  final DbConnection? dc;
+
+  Future<void> _menu(BuildContext context) async {
+    final app = AppScope.read(context);
+    final c = DbColors.of(context);
+    final x = await showMacMenu<DbConnection>(
+      context,
+      anchor: anchorRect(context),
+      minWidth: 320,
+      alignInitial: false,
+      initial: dc,
+      entries: [
+        if (app.connections.isEmpty) const MenuEntry('Nessuna connessione configurata', enabled: false),
+        for (final x in app.connections)
+          MenuEntry.connection(
+            name: x.config.name,
+            status: x.isConnected ? c.success : c.textTertiary,
+            environment: x.config.type == ConnectionType.development ? null : x.config.type.label,
+            environmentColor: x.config.type.color,
+            value: x,
+            checked: x == dc,
+          ),
+        const MenuEntry.divider(),
+        MenuEntry('Nuova connessione…', onSelected: () => newConnection(context)),
+      ],
+    );
+    if (x == null || !context.mounted) return;
+    final tab = app.currentTab;
+    if (tab is SqlEditorTab && !tab.running) tab.connection = x;
+    app.select(x);
+    await ensureConnected(context, x);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    final d = dc;
+    if (d == null) {
+      return ActivityView(
+        title: 'Scegli una connessione',
+        tooltip: 'Connessione attiva',
+        minWidth: 200,
+        onPressed: () => _menu(context),
+      );
+    }
+    final (status, color) = switch (d.status) {
+      ConnectionStatus.connected => (d.serverLabel.isEmpty ? 'Connesso' : d.serverLabel, null),
+      ConnectionStatus.connecting => ('Connessione in corso…', null),
+      ConnectionStatus.error => ('Errore di connessione', c.danger),
+      ConnectionStatus.disconnected => ('Non connesso', null),
+    };
+    final env = d.config.type;
+    return ActivityView(
+      title: d.config.name,
+      status: status,
+      statusColor: color,
+      dot: d.isConnected ? c.success : c.textTertiary,
+      busy: d.status == ConnectionStatus.connecting,
+      environment: env == ConnectionType.development ? null : env.label,
+      environmentColor: env.color,
+      tooltip: d.config.subtitle,
+      minWidth: 200,
+      onPressed: () => _menu(context),
+    );
+  }
+}
+
+/// Auto / manual commit, then Commit and Rollback while a transaction is open.
 class _TransactionControl extends StatelessWidget {
   const _TransactionControl({required this.dc, required this.onToggle});
   final DbConnection dc;
@@ -870,6 +873,7 @@ class _TransactionControl extends StatelessWidget {
             : 'Auto-commit: ogni istruzione è confermata subito',
         child: Segmented<bool>(
           value: manual,
+          small: true,
           items: const [(false, 'Auto', null), (true, 'Manuale', null)],
           onChanged: (v) {
             if (v != manual) onToggle();
@@ -877,14 +881,14 @@ class _TransactionControl extends StatelessWidget {
         ),
       ),
       if (manual) ...[
-        const SizedBox(width: Gap.xs),
-        ToolButton(
-          icon: AppIcons.check,
-          tooltip: 'Commit',
-          color: c.success,
+        const SizedBox(width: Gap.sm),
+        PushButton(
           label: dc.pendingStatements > 0 ? 'Commit (${dc.pendingStatements})' : 'Commit',
+          size: ControlScale.small,
+          tooltip: 'Conferma la transazione',
           onPressed: () => guarded(context, dc.commit),
         ),
+        const SizedBox(width: 2),
         ToolButton(
           icon: AppIcons.undo,
           tooltip: 'Rollback',
@@ -893,132 +897,6 @@ class _TransactionControl extends StatelessWidget {
         ),
       ],
     ]);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Editor tabs
-// ---------------------------------------------------------------------------
-
-class _EditorTabChip extends StatefulWidget {
-  const _EditorTabChip({
-    required this.tab,
-    required this.active,
-    required this.onSelect,
-    required this.onClose,
-    required this.onCloseOthers,
-    required this.onCloseAll,
-  });
-
-  final EditorTab tab;
-  final bool active;
-  final VoidCallback onSelect;
-  final VoidCallback onClose;
-  final VoidCallback onCloseOthers;
-  final VoidCallback onCloseAll;
-
-  @override
-  State<_EditorTabChip> createState() => _EditorTabChipState();
-}
-
-class _EditorTabChipState extends State<_EditorTabChip> {
-  bool _hover = false;
-  bool _closeHover = false;
-
-  Future<void> _menu(Offset pos) async {
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final r = await showMenu<int>(
-      context: context,
-      position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & overlay.size),
-      items: const [
-        PopupMenuItem(value: 0, height: 28, child: Text('Chiudi')),
-        PopupMenuItem(value: 1, height: 28, child: Text('Chiudi le altre')),
-        PopupMenuItem(value: 2, height: 28, child: Text('Chiudi tutte')),
-      ],
-    );
-    if (r == 0) widget.onClose();
-    if (r == 1) widget.onCloseOthers();
-    if (r == 2) widget.onCloseAll();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    final t = widget.tab;
-    final env = t.connection?.config.type.color;
-    final running = t is SqlEditorTab && t.running;
-    Widget trailing;
-    if (running) {
-      trailing = const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5));
-    } else if (_hover || widget.active || !t.isDirty) {
-      trailing = MouseRegion(
-        onEnter: (_) => setState(() => _closeHover = true),
-        onExit: (_) => setState(() => _closeHover = false),
-        child: GestureDetector(
-          onTap: widget.onClose,
-          child: Container(
-            width: 16,
-            height: 16,
-            decoration: BoxDecoration(
-              color: _closeHover ? c.pressed : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Icon(
-              t.isDirty && !_hover ? AppIcons.dot : AppIcons.close,
-              size: t.isDirty && !_hover ? 7 : 12,
-              color: (_hover || widget.active) ? c.textSecondary : Colors.transparent,
-            ),
-          ),
-        ),
-      );
-    } else {
-      trailing = SizedBox(width: 16, child: Icon(AppIcons.dot, size: 7, color: c.textSecondary));
-    }
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onSelect,
-        onTertiaryTapUp: (_) => widget.onClose(),
-        onSecondaryTapDown: (d) => _menu(d.globalPosition),
-        child: Tooltip(
-          message: t.tooltip,
-          waitDuration: const Duration(milliseconds: 900),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 240, minWidth: 110),
-            padding: const EdgeInsets.only(left: Gap.md, right: Gap.sm),
-            decoration: BoxDecoration(
-              color: widget.active ? c.content : (_hover ? c.hover : Colors.transparent),
-              border: Border(
-                right: BorderSide(color: c.separator),
-                bottom: BorderSide(color: widget.active ? c.content : Colors.transparent, width: 1),
-              ),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(t.icon, size: 14, color: widget.active ? c.accent : c.textSecondary),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  t.title.replaceAll(RegExp(r' <.*>$'), ''),
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: TypeSize.small + 0.5,
-                    fontWeight: widget.active ? FontWeight.w600 : FontWeight.w400,
-                    color: widget.active ? c.text : c.textSecondary,
-                  ),
-                ),
-              ),
-              if (env != null && t.connection!.config.type != ConnectionType.development) ...[
-                const SizedBox(width: 6),
-                EnvDot(env, show: true, size: 6, tooltip: '${t.connection!.config.name} · ${t.connection!.config.type.label}'),
-              ],
-              const SizedBox(width: 6),
-              trailing,
-            ]),
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -1229,6 +1107,11 @@ class _ScriptsPanel extends StatefulWidget {
 
 class _ScriptsPanelState extends State<_ScriptsPanel> {
   late Future<List<File>> _files = AppScope.read(context).workspace.listScripts();
+  bool _collapsed = false;
+
+  /// Row picked with the arrows; follows the active editor's file otherwise.
+  String? _picked;
+  String? _lastCurrent;
 
   void _reload() => setState(() {
         _files = AppScope.read(context).workspace.listScripts();
@@ -1243,16 +1126,24 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
     return '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')}/${t.year}';
   }
 
+  void _open(File f) {
+    final app = AppScope.read(context);
+    setState(() => _picked = null);
+    for (final t in app.tabs) {
+      if (t is SqlEditorTab && t.file?.path == f.path) {
+        app.activate(t);
+        return;
+      }
+    }
+    app.openSqlEditor(app.activeConnection, file: f);
+  }
+
   Future<void> _menu(File f, Offset pos) async {
     final app = AppScope.read(context);
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final v = await showMenu<int>(
-      context: context,
-      position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & overlay.size),
-      items: const [
-        PopupMenuItem(value: 0, height: 28, child: Text('Rinomina…')),
-        PopupMenuItem(value: 1, height: 28, child: Text('Elimina')),
-      ],
+    final v = await showMacMenu<int>(
+      context,
+      position: pos,
+      entries: const [MenuEntry('Rinomina…', value: 0), MenuEntry('Elimina', value: 1)],
     );
     if (v == null || !mounted) return;
     if (v == 0) {
@@ -1281,9 +1172,16 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
   Widget build(BuildContext context) {
     final app = AppScope.read(context);
     final c = DbColors.of(context);
+    final current = app.currentTab is SqlEditorTab ? (app.currentTab as SqlEditorTab).file?.path : null;
+    if (current != _lastCurrent) {
+      _lastCurrent = current;
+      _picked = null;
+    }
     return Column(children: [
       SectionLabel('Script nel workspace',
           padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
+          expanded: !_collapsed,
+          onToggle: (v) => setState(() => _collapsed = !v),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             ToolButton(
               icon: AppIcons.add,
@@ -1296,50 +1194,42 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
             ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', onPressed: _reload),
           ])),
       Expanded(
-        child: FutureBuilder<List<File>>(
-          future: _files,
-          builder: (context, snap) {
-            final files = snap.data ?? const <File>[];
-            if (files.isEmpty) {
-              return const EmptyState(
-                icon: AppIcons.document,
-                title: 'Nessuno script',
-                message: 'Gli editor SQL vengono salvati qui automaticamente.',
-              );
-            }
-            final current = app.currentTab is SqlEditorTab ? (app.currentTab as SqlEditorTab).file?.path : null;
-            return ListView.builder(
-              padding: const EdgeInsets.fromLTRB(Gap.sm, 0, Gap.sm, Gap.md),
-              itemCount: files.length,
-              itemExtent: kSidebarRowHeight + 2,
-              itemBuilder: (context, i) {
-                final f = files[i];
-                final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 1),
-                  child: SidebarRow(
-                    icon: AppIcons.document,
-                    iconColor: open ? c.accent : null,
-                    title: p.basenameWithoutExtension(f.path),
-                    detail: _ago(f.lastModifiedSync()),
-                    selected: f.path == current,
-                    tooltip: f.path,
-                    onTap: () {
-                      for (final t in app.tabs) {
-                        if (t is SqlEditorTab && t.file?.path == f.path) {
-                          app.activate(t);
-                          return;
-                        }
-                      }
-                      app.openSqlEditor(app.activeConnection, file: f);
+        child: _collapsed
+            ? const SizedBox.shrink()
+            : FutureBuilder<List<File>>(
+                future: _files,
+                builder: (context, snap) {
+                  final files = snap.data ?? const <File>[];
+                  if (files.isEmpty) {
+                    return const EmptyState(
+                      icon: AppIcons.document,
+                      title: 'Nessuno script',
+                      message: 'Gli editor SQL vengono salvati qui automaticamente.',
+                    );
+                  }
+                  final sel = files.indexWhere((f) => f.path == (_picked ?? current));
+                  return SourceList(
+                    itemCount: files.length,
+                    selectedIndex: sel < 0 ? null : sel,
+                    onSelect: (i) => setState(() => _picked = files[i].path),
+                    onActivate: (i) => _open(files[i]),
+                    itemBuilder: (context, i) {
+                      final f = files[i];
+                      final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
+                      return OutlineRow(
+                        icon: AppIcons.document,
+                        iconColor: open ? c.accent : null,
+                        title: p.basenameWithoutExtension(f.path),
+                        detail: _ago(f.lastModifiedSync()),
+                        selected: i == sel,
+                        tooltip: f.path,
+                        onTap: () => _open(f),
+                        onMenu: (pos) => _menu(f, pos),
+                      );
                     },
-                    onMenu: (pos) => _menu(f, pos),
-                  ),
-                );
-              },
-            );
-          },
-        ),
+                  );
+                },
+              ),
       ),
     ]);
   }

@@ -371,137 +371,114 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     final conn = tab.connection;
     final mac = Platform.isMacOS;
     final mod = mac ? '⌘' : 'Ctrl+';
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(color: c.content, border: Border(bottom: BorderSide(color: c.separator))),
-      child: Row(children: [
-        if (tab.running)
-          PrimaryButton(
-            label: 'Interrompi',
-            icon: AppIcons.stop,
-            color: c.danger,
-            tooltip: 'Interrompi esecuzione ($mod.)',
-            onPressed: tab.cancel,
-          )
-        else
-          PrimaryButton(
-            label: 'Esegui',
-            icon: AppIcons.run,
-            tooltip: 'Esegui la selezione o, senza selezione, tutto lo script (${mod}Invio)',
-            onPressed: _execute,
-          ),
-        const SizedBox(width: Gap.xs),
-        ToolButton(
-          icon: AppIcons.shortText,
-          size: 19,
-          tooltip: 'Esegui solo l\'istruzione sotto il cursore ($mod⇧Invio)',
-          onPressed: tab.running ? null : _executeCurrent,
+    SingleActivator a(LogicalKeyboardKey k, {bool shift = false}) =>
+        SingleActivator(k, control: !mac, meta: mac, shift: shift);
+    return PaneBar(children: [
+      if (tab.running)
+        PushButton(
+          label: 'Interrompi',
+          icon: AppIcons.stop,
+          kind: PushButtonKind.destructive,
+          size: ControlScale.small,
+          tooltip: 'Interrompi esecuzione ($mod.)',
+          onPressed: tab.cancel,
+        )
+      else
+        PushButton.primary(
+          label: 'Esegui',
+          icon: AppIcons.run,
+          size: ControlScale.small,
+          tooltip: 'Esegui la selezione o, senza selezione, tutto lo script (${mod}Invio)',
+          onPressed: _execute,
         ),
-        ToolButton(
-          icon: AppIcons.scriptFromSelection,
-          tooltip: 'Esegui in una nuova scheda risultati ($mod\\)',
-          onPressed: tab.running ? null : () => _execute(newTab: true),
-        ),
-        ToolButton(
-          icon: AppIcons.tree,
-          tooltip: 'Piano di esecuzione ($mod⇧E)',
-          onPressed: tab.running ? null : _explain,
-        ),
-        ToolButton(
-          icon: AppIcons.schema,
-          tooltip: 'Piano visuale ($mod⌥E)',
-          onPressed: tab.running || conn == null ? null : _visualPlan,
-        ),
-        const ToolSeparator(),
-        ToolButton(icon: AppIcons.format, tooltip: 'Formatta SQL ($mod⇧F)', onPressed: _format),
-        if (app.settings.aiEnabled) _aiMenu(app),
-        ToolButton(
-          icon: AppIcons.join,
-          tooltip: 'Query builder visuale',
-          onPressed: conn == null || (conn.isConnected && !conn.dialect.isSql)
-              ? null
-              : () => app.openFeatureTab(QueryBuilderTab(conn)),
-        ),
-        ToolButton(icon: AppIcons.search, tooltip: 'Trova e sostituisci (${mod}F)', onPressed: _find.findMode),
-        PopupMenuButton<int>(
-          tooltip: 'Altre azioni',
-          position: PopupMenuPosition.under,
-          icon: Icon(AppIcons.more, size: 16, color: c.textSecondary),
-          onSelected: (v) {
-            switch (v) {
-              case 0:
-                _saveAs();
-              case 1:
-                _load();
-              case 2:
-                _toUpper(true);
-              case 3:
-                _toUpper(false);
-            }
-          },
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: 0, height: 28, child: Text('Salva come…')),
-            const PopupMenuItem(value: 1, height: 28, child: Text('Carica file SQL…')),
-            const PopupMenuDivider(height: 9),
-            PopupMenuItem(value: 2, height: 28, child: Text('Selezione in MAIUSCOLO   $mod⇧X')),
-            PopupMenuItem(value: 3, height: 28, child: Text('Selezione in minuscolo   $mod⇧Y')),
-          ],
-        ),
-        if (tab.running) ...[
-          const SizedBox(width: Gap.sm),
-          Text(_elapsed, style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular)),
+      const SizedBox(width: Gap.xs),
+      ToolButton(
+        icon: AppIcons.shortText,
+        tooltip: 'Esegui solo l\'istruzione sotto il cursore ($mod⇧Invio)',
+        onPressed: tab.running ? null : _executeCurrent,
+      ),
+      ToolButton(
+        icon: AppIcons.scriptFromSelection,
+        tooltip: 'Esegui in una nuova scheda risultati ($mod\\)',
+        onPressed: tab.running ? null : () => _execute(newTab: true),
+      ),
+      ToolButton(
+        icon: AppIcons.tree,
+        tooltip: 'Piano di esecuzione ($mod⇧E)',
+        onPressed: tab.running ? null : _explain,
+      ),
+      ToolButton(
+        icon: AppIcons.schema,
+        tooltip: 'Piano visuale ($mod⌥E)',
+        onPressed: tab.running || conn == null ? null : _visualPlan,
+      ),
+      const ToolSeparator(),
+      ToolButton(icon: AppIcons.format, tooltip: 'Formatta SQL ($mod⇧F)', onPressed: _format),
+      if (app.settings.aiEnabled) _aiMenu(app),
+      ToolButton(
+        icon: AppIcons.join,
+        tooltip: 'Query builder visuale',
+        onPressed: conn == null || (conn.isConnected && !conn.dialect.isSql)
+            ? null
+            : () => app.openFeatureTab(QueryBuilderTab(conn)),
+      ),
+      ToolButton(icon: AppIcons.search, tooltip: 'Trova e sostituisci (${mod}F)', onPressed: _find.findMode),
+      PulldownButton(
+        icon: AppIcons.more,
+        tooltip: 'Altre azioni',
+        entries: () => [
+          MenuEntry('Salva come…', onSelected: _saveAs, shortcut: a(LogicalKeyboardKey.keyS, shift: true)),
+          MenuEntry('Carica file SQL…', onSelected: _load),
+          const MenuEntry.divider(),
+          MenuEntry('Selezione in MAIUSCOLO',
+              onSelected: () => _toUpper(true), shortcut: a(LogicalKeyboardKey.keyX, shift: true)),
+          MenuEntry('Selezione in minuscolo',
+              onSelected: () => _toUpper(false), shortcut: a(LogicalKeyboardKey.keyY, shift: true)),
         ],
-        const Spacer(),
-        if (conn != null && conn.isConnected && (conn.metadata?.supportsCatalogs ?? false)) ...[
-          _catalogButton(conn),
-          const SizedBox(width: Gap.xs),
-        ],
-        _connectionButton(app, conn),
-        if (conn != null && !conn.isConnected)
-          TextButton(onPressed: () => ensureConnected(context, conn), child: const Text('Connetti')),
+      ),
+      if (tab.running) ...[
+        const SizedBox(width: Gap.sm),
+        Text(_elapsed, style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular)),
+      ],
+      const Spacer(),
+      if (conn != null && conn.isConnected && (conn.metadata?.supportsCatalogs ?? false)) ...[
+        _catalogButton(conn),
         const SizedBox(width: Gap.xs),
-        ToolButton(
-          icon: AppIcons.palettePanel,
-          tooltip: _showResults ? 'Nascondi risultati ($mod⇧R)' : 'Mostra risultati ($mod⇧R)',
-          active: _showResults,
-          onPressed: () => setState(() => _showResults = !_showResults),
-        ),
-      ]),
-    );
+      ],
+      _connectionButton(app, conn),
+      if (conn != null && !conn.isConnected) ...[
+        const SizedBox(width: Gap.xs),
+        PushButton(label: 'Connetti', size: ControlScale.small, onPressed: () => ensureConnected(context, conn)),
+      ],
+      const SizedBox(width: Gap.xs),
+      ToolButton(
+        icon: AppIcons.palettePanel,
+        tooltip: _showResults ? 'Nascondi risultati ($mod⇧R)' : 'Mostra risultati ($mod⇧R)',
+        active: _showResults,
+        onPressed: () => setState(() => _showResults = !_showResults),
+      ),
+    ]);
   }
 
   Widget _aiMenu(AppState app) {
-    final c = DbColors.of(context);
     final failed = _lastError;
-    return PopupMenuButton<VoidCallback>(
+    return PulldownButton(
+      icon: AppIcons.ai,
       tooltip: 'Assistente AI',
-      position: PopupMenuPosition.under,
-      icon: Icon(AppIcons.ai, size: 17, color: c.textSecondary),
-      onSelected: (f) => f(),
-      itemBuilder: (_) => [
-        PopupMenuItem(value: _aiExplain, height: 28, child: const Text('Spiega la query')),
-        PopupMenuItem(
-          value: () => _aiFix(),
-          height: 28,
-          child: Text(failed == null ? 'Correggi la query' : 'Correggi l\'errore'),
-        ),
-        PopupMenuItem(value: _aiGenerate, height: 28, child: const Text('Genera SQL da una descrizione…')),
-        const PopupMenuDivider(height: 9),
-        PopupMenuItem(
-          value: () async {
-            if (await ensureAiReady(context)) app.openFeatureTab(AiChatTab(tab.connection));
-          },
-          height: 28,
-          child: const Text('Chat con l\'assistente'),
-        ),
+      entries: () => [
+        MenuEntry('Spiega la query', onSelected: _aiExplain),
+        MenuEntry(failed == null ? 'Correggi la query' : 'Correggi l\'errore', onSelected: () => _aiFix()),
+        MenuEntry('Genera SQL da una descrizione…', onSelected: _aiGenerate),
+        const MenuEntry.divider(),
+        MenuEntry('Chat con l\'assistente', onSelected: () async {
+          if (await ensureAiReady(context)) app.openFeatureTab(AiChatTab(tab.connection));
+        }),
       ],
     );
   }
 
   /// Database used by this editor (a `USE xxx` in the script overrides it).
   Widget _catalogButton(DbConnection conn) {
-    final c = DbColors.of(context);
     final md = conn.metadata!;
     final current = tab.catalog;
     if (_catalogsOf != md) {
@@ -512,46 +489,15 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       future: _catalogs,
       builder: (context, snap) {
         final cats = snap.data ?? [?current];
-        return PopupMenuButton<String>(
-          tooltip: '${md.catalogTerm} di questo editor',
-          position: PopupMenuPosition.under,
-          enabled: !tab.running && cats.isNotEmpty,
-          onSelected: (v) => tab.catalog = v,
-          itemBuilder: (_) => [
-            for (final x in cats)
-              PopupMenuItem(
-                value: x,
-                height: 28,
-                child: Row(children: [
-                  SizedBox(
-                    width: 18,
-                    child: x == current ? Icon(AppIcons.check, size: 14, color: c.accent) : null,
-                  ),
-                  Expanded(child: Text(x, overflow: TextOverflow.ellipsis)),
-                ]),
-              ),
-          ],
-          child: Container(
-            height: 26,
-            constraints: const BoxConstraints(maxWidth: 220),
-            padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(Radii.control),
-              border: Border.all(color: c.separator),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(AppIcons.database, size: 13, color: c.textSecondary),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  current ?? md.catalogTerm,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: TypeSize.small + 0.5, color: current == null ? c.textSecondary : c.text),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(AppIcons.chevronDown, size: 14, color: c.textTertiary),
-            ]),
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
+          child: PopUpButton<String?>(
+            style: PopUpStyle.toolbar,
+            value: current,
+            placeholder: md.catalogTerm,
+            tooltip: '${md.catalogTerm} di questo editor',
+            items: [for (final x in cats) (x, x, null)],
+            onChanged: tab.running || cats.isEmpty ? null : (v) => tab.catalog = v,
           ),
         );
       },
@@ -560,43 +506,26 @@ class _SqlEditorViewState extends State<SqlEditorView> {
 
   Widget _connectionButton(AppState app, DbConnection? conn) {
     final c = DbColors.of(context);
-    return PopupMenuButton<DbConnection>(
-      tooltip: 'Connessione di questo editor',
-      position: PopupMenuPosition.under,
-      enabled: !tab.running,
-      onSelected: (v) => tab.connection = v,
-      itemBuilder: (_) => [
-        for (final x in app.connections)
-          PopupMenuItem(
-            value: x,
-            height: 30,
-            child: Row(children: [
-              StatusDot(x.isConnected ? c.success : c.textTertiary, size: 7, ring: !x.isConnected),
-              const SizedBox(width: Gap.sm),
-              Expanded(child: Text(x.config.name)),
-              if (x.config.type != ConnectionType.development) Badge2(x.config.type.label, color: x.config.type.color),
-            ]),
-          ),
-      ],
-      child: Container(
-        height: 26,
-        padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(Radii.control),
-          border: Border.all(color: c.separator),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (conn != null) ...[
-            StatusDot(conn.isConnected ? c.success : c.textTertiary, size: 7, ring: !conn.isConnected),
-            const SizedBox(width: 6),
-          ],
-          Text(
-            conn?.config.name ?? 'Scegli connessione',
-            style: TextStyle(fontSize: TypeSize.small + 0.5, color: conn == null ? c.textSecondary : c.text),
-          ),
-          const SizedBox(width: 4),
-          Icon(AppIcons.chevronDown, size: 14, color: c.textTertiary),
-        ]),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: PopUpButton<DbConnection?>(
+        style: PopUpStyle.toolbar,
+        value: conn,
+        placeholder: 'Scegli connessione',
+        tooltip: 'Connessione di questo editor',
+        items: [for (final x in app.connections) (x, x.config.name, null)],
+        entries: () => [
+          for (final x in app.connections)
+            MenuEntry.connection(
+              name: x.config.name,
+              status: x.isConnected ? c.success : c.textTertiary,
+              environment: x.config.type == ConnectionType.development ? null : x.config.type.label,
+              environmentColor: x.config.type.color,
+              value: x,
+              checked: x == conn,
+            ),
+        ],
+        onChanged: tab.running ? null : (v) => tab.connection = v,
       ),
     );
   }

@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -41,8 +40,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   final _scroll = ScrollController();
   NavNode? _selected;
   final Map<DbConnection, ConnectionStatus> _lastStatus = {};
-  NavNode? _lastTapNode;
-  DateTime? _lastTapAt;
+  bool _collapsed = false;
 
   @override
   void dispose() {
@@ -105,19 +103,9 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
 
   void _toggle(NavNode n) => n.expanded ? _collapse(n) : _expand(n);
 
-  /// Selects at once; a second click on the same row within the double-tap
-  /// timeout opens it. `onDoubleTap` would instead hold every click on the
-  /// row, chevron included, for 300ms waiting for a second one.
-  void _onRowTap(NavNode n) {
-    final now = DateTime.now();
-    final last = _lastTapAt;
-    final isDouble = n == _lastTapNode && last != null && now.difference(last) <= kDoubleTapTimeout;
-    _lastTapNode = isDouble ? null : n;
-    _lastTapAt = now;
-    _focus.requestFocus();
+  void _select(NavNode n) {
     setState(() => _selected = n);
     if (n.connection != null) AppScope.read(context).select(n.connection);
-    if (isDouble) _open(n);
   }
 
   Future<void> _refresh(NavNode n) async {
@@ -185,11 +173,14 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     final roots = buildRoots(app.connections, _cache);
     final visible = _flatten(roots);
 
+    final sel = visible.indexWhere((v) => v.node == _selected);
     return Column(
       children: [
         SectionLabel(
           'Connessioni',
           padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
+          expanded: !_collapsed,
+          onToggle: (v) => setState(() => _collapsed = !v),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -215,59 +206,41 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.sm, 2, Gap.sm, Gap.sm),
-          child: SearchField(
-            controller: _filter,
-            hint: 'Filtra tabelle e procedure',
-            onChanged: (_) => setState(() {}),
+        if (!_collapsed) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gap.sm, 2, Gap.sm, Gap.sm),
+            child: SearchField(
+              controller: _filter,
+              hint: 'Filtra tabelle e procedure',
+              onChanged: (_) => setState(() {}),
+            ),
           ),
-        ),
-        Expanded(
-          child: app.connections.isEmpty
-              ? _empty()
-              : Focus(
-                  focusNode: _focus,
-                  onFocusChange: (_) => setState(() {}),
-                  onKeyEvent: (node, e) => _onKey(e, visible),
-                  child: ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.only(bottom: Gap.md),
-                    itemCount: visible.length,
-                    itemExtent: kSidebarRowHeight,
-                    itemBuilder: (context, i) => _row(context, visible[i]),
+          Expanded(
+            child: app.connections.isEmpty
+                ? _empty()
+                : CallbackShortcuts(
+                    bindings: {
+                      const SingleActivator(LogicalKeyboardKey.f5): () {
+                        if (_selected != null) _refresh(_selected!);
+                      },
+                    },
+                    child: SourceList(
+                      focusNode: _focus,
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, Gap.md),
+                      itemCount: visible.length,
+                      selectedIndex: sel < 0 ? null : sel,
+                      onSelect: (i) => setState(() => _selected = visible[i].node),
+                      onExpand: (i, expand) => expand ? _expand(visible[i].node) : _collapse(visible[i].node),
+                      onActivate: (i) => _open(visible[i].node),
+                      itemBuilder: (context, i) => _row(context, visible[i]),
+                    ),
                   ),
-                ),
-        ),
+          ),
+        ] else
+          const Spacer(),
       ],
     );
-  }
-
-  KeyEventResult _onKey(KeyEvent e, List<_VisibleNode> visible) {
-    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
-    final idx = visible.indexWhere((v) => v.node == _selected);
-    void sel(int i) {
-      if (i < 0 || i >= visible.length) return;
-      setState(() => _selected = visible[i].node);
-    }
-
-    switch (e.logicalKey) {
-      case LogicalKeyboardKey.arrowDown:
-        sel(idx + 1);
-      case LogicalKeyboardKey.arrowUp:
-        sel(idx - 1);
-      case LogicalKeyboardKey.arrowRight:
-        if (_selected != null) _expand(_selected!);
-      case LogicalKeyboardKey.arrowLeft:
-        if (_selected != null) _collapse(_selected!);
-      case LogicalKeyboardKey.enter:
-        if (_selected != null) _open(_selected!);
-      case LogicalKeyboardKey.f5:
-        if (_selected != null) _refresh(_selected!);
-      default:
-        return KeyEventResult.ignored;
-    }
-    return KeyEventResult.handled;
   }
 
   Widget _empty() => EmptyState(
@@ -280,7 +253,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   Color _iconColor(NavNode n, DbColors c) => switch (n) {
     ConnectionNode x => x.dc.config.template.color,
     TableNode _ || ProcedureNode _ => c.accent,
-    LeafNode l when l.color == const Color(0xFFFFB300) => const Color(0xFFE8A200),
+    LeafNode l when l.color == const Color(0xFFFFB300) => c.keyIcon,
     LeafNode _ => c.textTertiary,
     _ => c.textSecondary,
   };
@@ -288,123 +261,45 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   Widget _row(BuildContext context, _VisibleNode v) {
     final c = DbColors.of(context);
     final n = v.node;
-    final selected = n == _selected;
-    final strong = selected && _focus.hasFocus;
     final dc = n is ConnectionNode ? n.dc : null;
-    final fg = strong ? Colors.white : c.text;
-    final fgSecondary = strong ? Colors.white.withValues(alpha: 0.8) : c.textTertiary;
-    Widget leading = Icon(n.icon, size: 16, color: strong ? Colors.white : _iconColor(n, c));
-    if (dc != null && (dc.isConnected || dc.status == ConnectionStatus.error)) {
-      leading = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          leading,
-          Positioned(
-            right: -3,
-            bottom: -2,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: dc.isConnected ? c.success : c.danger,
-                shape: BoxShape.circle,
-                border: Border.all(color: strong ? c.accent : c.sidebar, width: 1.5),
-              ),
+    final expandable = n.expandable && !(n is TableNode && AppScope.read(context).settings.simpleMode);
+    return OutlineRow(
+      title: n.label,
+      icon: n.icon,
+      iconColor: _iconColor(n, c),
+      iconBadge: dc == null
+          ? null
+          : dc.isConnected
+          ? c.success
+          : (dc.status == ConnectionStatus.error ? c.danger : null),
+      depth: v.depth,
+      expanded: expandable ? n.expanded : null,
+      onExpand: (_) => _toggle(n),
+      busy: expandable && _busy(n),
+      reserveDisclosure: true,
+      detail: dc == null ? n.detail : null,
+      strong: (n is CatalogNode && n.current) || (dc?.isConnected ?? false),
+      titleColor: n.error != null ? c.danger : null,
+      accessories: [
+        if (dc != null && dc.config.type != ConnectionType.development)
+          EnvDot(dc.config.type.color, show: true, tooltip: dc.config.type.label),
+        if (n.error != null)
+          Builder(
+            builder: (context) => Icon(
+              AppIcons.warning,
+              size: 14,
+              color: RowTint.emphasizedOf(context) ? c.onSelectionEmphasized : c.danger,
             ),
           ),
-        ],
-      );
-    }
-    final isCount = n is ObjectFolderNode;
-    return GestureDetector(
-      onSecondaryTapDown: (d) {
+      ],
+      selected: n == _selected,
+      tooltip: n.error ?? (dc?.config.subtitle ?? n.label),
+      onTap: () => _select(n),
+      onDoubleTap: () => _open(n),
+      onMenu: (pos) {
         setState(() => _selected = n);
-        _contextMenu(context, n, d.globalPosition);
+        _contextMenu(context, n, pos);
       },
-      onTap: () => _onRowTap(n),
-      child: Tooltip(
-        message: n.error ?? (dc?.config.subtitle ?? n.label),
-        waitDuration: const Duration(milliseconds: 1000),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: 1),
-          decoration: BoxDecoration(
-            color: selected ? (strong ? c.accent : c.selectionMuted) : Colors.transparent,
-            borderRadius: BorderRadius.circular(Radii.control - 1),
-          ),
-          padding: EdgeInsets.only(left: 2.0 + v.depth * 14, right: Gap.sm),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 18,
-                child: n.expandable && !(n is TableNode && AppScope.read(context).settings.simpleMode)
-                    ? _busy(n)
-                          ? const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: CircularProgressIndicator(strokeWidth: 1.5),
-                            )
-                          : GestureDetector(
-                              onTap: () => _toggle(n),
-                              child: AnimatedRotation(
-                                turns: n.expanded ? 0.25 : 0,
-                                duration: const Duration(milliseconds: 120),
-                                curve: Curves.easeOut,
-                                child: Icon(AppIcons.chevronRight, size: 15, color: fgSecondary),
-                              ),
-                            )
-                    : null,
-              ),
-              leading,
-              const SizedBox(width: 7),
-              // Label and detail take all free space so trailing marks sit flush right
-              // and names only truncate when the row is actually full.
-              Expanded(
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        n.label,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: TypeSize.body,
-                          fontWeight:
-                              (n is CatalogNode && n.current) || (dc?.isConnected ?? false) ? FontWeight.w600 : null,
-                          color: n.error != null && !strong ? c.danger : fg,
-                        ),
-                      ),
-                    ),
-                    if (n.detail != null && !isCount && dc == null) ...[
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          n.detail!,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: TypeSize.small - 0.5, color: fgSecondary),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (isCount && n.detail != null) ...[
-                const SizedBox(width: 6),
-                Text(
-                  n.detail!,
-                  style: TextStyle(fontSize: TypeSize.small - 0.5, color: fgSecondary, fontFeatures: kTabular),
-                ),
-              ],
-              if (dc != null && dc.config.type != ConnectionType.development) ...[
-                const SizedBox(width: 6),
-                EnvDot(dc.config.type.color, show: true, tooltip: dc.config.type.label),
-              ],
-              if (n.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Icon(AppIcons.warning, size: 14, color: strong ? Colors.white : c.danger),
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

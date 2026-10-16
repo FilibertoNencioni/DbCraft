@@ -5,6 +5,7 @@ import 'lists.dart';
 
 export '../theme/app_theme.dart';
 export 'badges.dart';
+export 'bars.dart';
 export 'buttons.dart';
 export 'control_base.dart';
 export 'feedback.dart';

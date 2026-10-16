@@ -92,6 +92,7 @@ class _ControlGalleryState extends State<ControlGallery> {
     ('Selezione', _selection),
     ('Menu, popover, tooltip', _menus),
     ('Navigazione e tab', _navigation),
+    ('Barre', _bars),
     ('Righe e liste', _rows),
     ('Tabelle', _tables),
     ('Badge e marker', _badges),
@@ -746,6 +747,45 @@ class _ControlGalleryState extends State<ControlGallery> {
         ),
         ActivityView(title: 'erp_test', dot: c.textTertiary, status: 'Connessione in corso…', busy: true, onPressed: () {}),
       ]),
+    ];
+  }
+
+  List<Widget> _bars(BuildContext context) {
+    final c = DbColors.of(context);
+    return [
+      _Demo<bool>(
+        false,
+        (loading, set) => PaneBar(
+          loading: loading,
+          children: [
+            PushButton.primary(label: 'Esegui', icon: AppIcons.run, size: ControlScale.small, onPressed: () => set(!loading)),
+            const SizedBox(width: Gap.xs),
+            ToolButton(icon: AppIcons.tree, tooltip: 'Piano di esecuzione', onPressed: () {}),
+            const ToolSeparator(),
+            ToolButton(icon: AppIcons.format, tooltip: 'Formatta', onPressed: () {}),
+            PulldownButton(icon: AppIcons.more, tooltip: 'Altre azioni', entries: () => [MenuEntry('Salva come…', onSelected: () {})]),
+            const Spacer(),
+            PopUpButton<String>(style: PopUpStyle.toolbar, value: 'demo_pg', items: const [('demo_pg', 'demo_pg', null), ('erp_test', 'erp_test', null)], onChanged: (_) {}),
+          ],
+        ),
+      ),
+      const SizedBox(height: Gap.md),
+      PaneHeader(
+        title: 'Variabili',
+        actions: [ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', extent: 18, onPressed: () {})],
+      ),
+      const SizedBox(height: Gap.md),
+      StatusBar(
+        children: [
+          StatusDot(c.success, size: 7),
+          const SizedBox(width: 6),
+          Text('demo_pg', style: uiText(TypeSize.caption, color: c.text, weight: FontWeight.w500)),
+          const SizedBox(width: Gap.sm),
+          const Flexible(child: Text('PostgreSQL · auto-commit')),
+          const Spacer(),
+          const Text('1 di 3 connessioni attive'),
+        ],
+      ),
     ];
   }
 

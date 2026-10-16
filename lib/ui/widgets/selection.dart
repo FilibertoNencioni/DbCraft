@@ -523,12 +523,17 @@ class PopUpButton<T> extends StatelessWidget {
     this.placeholder,
     this.tooltip,
     this.focusNode,
+    this.entries,
   });
 
   final T value;
 
   /// Value, label and optional leading icon (with its color).
   final List<(T, String, (IconData, Color)?)> items;
+
+  /// Custom menu rows (`MenuEntry.connection`) in place of the ones built
+  /// from [items]; their values must be the [items] values.
+  final List<MenuEntry<T>> Function()? entries;
   final ValueChanged<T>? onChanged;
   final PopUpStyle style;
   final bool small;
@@ -550,15 +555,17 @@ class PopUpButton<T> extends StatelessWidget {
       initial: value,
       alignInitial: style != PopUpStyle.toolbar,
       minWidth: style == PopUpStyle.toolbar ? anchorRect(context).width : 0,
-      entries: [
-        for (final it in items)
-          MenuEntry<T>(
-            it.$2,
-            value: it.$1,
-            checked: it.$1 == value,
-            leading: hasIcons && it.$3 != null ? Icon(it.$3!.$1, size: 13, color: it.$3!.$2) : null,
-          ),
-      ],
+      entries:
+          entries?.call() ??
+          [
+            for (final it in items)
+              MenuEntry<T>(
+                it.$2,
+                value: it.$1,
+                checked: it.$1 == value,
+                leading: hasIcons && it.$3 != null ? Icon(it.$3!.$1, size: 13, color: it.$3!.$2) : null,
+              ),
+          ],
     );
     if (picked != null && picked != value) onChanged?.call(picked);
   }

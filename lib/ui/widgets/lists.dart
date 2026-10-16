@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import 'badges.dart';
 import 'buttons.dart';
+import 'progress.dart';
 import 'surfaces.dart';
 
 /// Height of a source-list row (macOS medium sidebar size).
@@ -316,12 +317,15 @@ class OutlineRow extends StatefulWidget {
     this.depth = 0,
     this.expanded,
     this.onExpand,
+    this.busy = false,
     this.reserveDisclosure = false,
     this.detail,
     this.accessories = const [],
     this.selected = false,
     this.dense = false,
     this.muted = false,
+    this.strong = false,
+    this.titleColor,
     this.onTap,
     this.onDoubleTap,
     this.onMenu,
@@ -343,6 +347,10 @@ class OutlineRow extends StatefulWidget {
   final bool? expanded;
   final ValueChanged<bool>? onExpand;
 
+  /// A small [Spinner] replaces the chevron (children loading, connecting);
+  /// the row still selects but does not toggle.
+  final bool busy;
+
   /// Keeps the chevron slot on a root leaf, to align with expandable rows.
   final bool reserveDisclosure;
   final String? detail;
@@ -352,6 +360,12 @@ class OutlineRow extends StatefulWidget {
 
   /// Secondary title (disconnected, unavailable).
   final bool muted;
+
+  /// Semibold title (the current catalog, an open connection).
+  final bool strong;
+
+  /// Title color when the row is not on the accent (`danger` for errors).
+  final Color? titleColor;
   final VoidCallback? onTap;
 
   /// Defaults to toggling [expanded] for parent rows.
@@ -378,7 +392,7 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
   VoidCallback? get _toggle {
     final e = widget.expanded;
     final f = widget.onExpand;
-    return e == null || f == null ? null : () => f(!e);
+    return e == null || f == null || widget.busy ? null : () => f(!e);
   }
 
   @override
@@ -388,7 +402,7 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
     final look = _rowColors(context, selected: widget.selected, hover: _hover);
     final listBg = scope?.background ?? c.sidebar;
     final showMenu = widget.onMenu != null && _hover;
-    final slot = widget.expanded != null || widget.reserveDisclosure || widget.depth > 0;
+    final slot = widget.expanded != null || widget.busy || widget.reserveDisclosure || widget.depth > 0;
 
     Widget? icon = widget.leading;
     if (icon == null && widget.icon != null) {
@@ -416,7 +430,11 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
                 child: SizedBox(
                   width: 16,
                   height: double.infinity,
-                  child: widget.expanded == null
+                  child: widget.busy
+                      ? Center(
+                          child: Spinner(size: Spinner.small, color: look.emphasized ? look.secondary : null),
+                        )
+                      : widget.expanded == null
                       ? null
                       : Center(
                           child: DisclosureChevron(
@@ -436,7 +454,8 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
                 overflow: TextOverflow.ellipsis,
                 style: uiText(
                   TypeSize.body,
-                  color: look.emphasized ? look.fg : (widget.muted ? c.textSecondary : c.text),
+                  weight: widget.strong ? FontWeight.w600 : null,
+                  color: look.emphasized ? look.fg : (widget.titleColor ?? (widget.muted ? c.textSecondary : c.text)),
                 ),
               ),
             ),
