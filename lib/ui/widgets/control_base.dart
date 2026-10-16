@@ -31,6 +31,7 @@ class FocusRing extends StatelessWidget {
     this.radius = Radii.control,
     this.inset = false,
     this.color,
+    this.animated = true,
   });
 
   final bool visible;
@@ -38,12 +39,19 @@ class FocusRing extends StatelessWidget {
   final double radius;
   final bool inset;
 
+  /// Fades the ring in and out. Grids turn it off so the cursor follows
+  /// clicks and arrow keys without lag.
+  final bool animated;
+
   /// Overrides the ring color (fields with an error use `danger`).
   final Color? color;
 
   @override
   Widget build(BuildContext context) {
     final ring = color ?? DbColors.of(context).focusRing;
+    if (!animated) {
+      return CustomPaint(foregroundPainter: visible ? _RingPainter(ring, radius, inset) : null, child: child);
+    }
     return TweenAnimationBuilder<double>(
       tween: Tween(end: visible ? 1 : 0),
       duration: Motion.of(context, Motion.fast),

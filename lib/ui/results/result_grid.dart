@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:two_dimensional_scrollables/two_dimensional_scrollables.dart';
@@ -60,6 +61,10 @@ class ResultGridState extends State<ResultGrid> {
   static const double _headH = GridMetrics.header;
 
   bool _hasFocus = false;
+
+  // Last primary click, for double-click detection without a gesture arena.
+  (int, int)? _lastClickCell;
+  Duration? _lastClickTime;
 
   ResultSetModel get m => widget.model;
 
@@ -444,6 +449,7 @@ class ResultGridState extends State<ResultGrid> {
     final cols = m.columns.length;
     final rows = m.view.length;
     final hairline = BorderSide(color: c.separator, width: 0.5);
+    final selRows = {for (final e in _sel) e.$1};
     return Focus(
       focusNode: _focus,
       onKeyEvent: _onKey,
@@ -476,7 +482,7 @@ class ResultGridState extends State<ResultGrid> {
                 cellBuilder: (context, v) {
                   if (v.row == 0 && v.column == 0) return TableViewCell(child: _corner(c));
                   if (v.row == 0) return TableViewCell(child: _header(c, v.column - 1));
-                  if (v.column == 0) return TableViewCell(child: _rowHeader(c, v.row - 1));
+                  if (v.column == 0) return TableViewCell(child: _rowHeader(c, v.row - 1, selRows.contains(v.row - 1)));
                   return TableViewCell(child: _cell(c, v.row - 1, v.column - 1));
                 },
               ),
@@ -526,9 +532,8 @@ class ResultGridState extends State<ResultGrid> {
     );
   }
 
-  Widget _rowHeader(DbColors c, int r) {
+  Widget _rowHeader(DbColors c, int r, bool selected) {
     final row = m.rowAt(r);
-    final selected = _sel.any((e) => e.$1 == r);
     Color? mark;
     if (row.deleted) {
       mark = c.diffRemoved;
@@ -611,21 +616,17 @@ class ResultGridState extends State<ResultGrid> {
 
     final isNull = v == null;
     final text = isNull ? widget.nullText : formatValue(v, maxLen: 300).replaceAll('\n', '↵');
-    return GestureDetector(
-      onTapDown: (_) {
-        _focus.requestFocus();
-        final hw = HardwareKeyboard.instance;
-        _select(r, i, extend: hw.isShiftPressed, toggle: hw.isControlPressed || hw.isMetaPressed);
-      },
-      onDoubleTap: () => startEdit(r, i),
-      onSecondaryTapDown: (d) {
-        if (!selected) _select(r, i);
-        _cellMenu(r, i, d.globalPosition);
-      },
+    // A raw Listener instead of a GestureDetector: with onDoubleTap in the
+    // arena, onTapDown only fires after the press timeout, so every click
+    // felt late. Opaque so the whole cell is clickable, not just the text.
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (e) => _onCellPointerDown(e, r, i),
       child: FocusRing(
         visible: isCursor && _hasFocus,
         inset: true,
         radius: 0,
+        animated: false,
         child: Container(
           color: bg,
           alignment: col.isNumeric && !isNull ? Alignment.centerRight : Alignment.centerLeft,
@@ -644,6 +645,28 @@ class ResultGridState extends State<ResultGrid> {
         ),
       ),
     );
+  }
+
+  void _onCellPointerDown(PointerDownEvent e, int r, int c) {
+    _focus.requestFocus();
+    if (e.buttons & kSecondaryMouseButton != 0) {
+      if (!_sel.contains((r, c))) _select(r, c);
+      _cellMenu(r, c, e.position);
+      return;
+    }
+    if (e.buttons & kPrimaryButton == 0) return;
+    final last = _lastClickTime;
+    final isDouble = _lastClickCell == (r, c) && last != null && e.timeStamp - last <= kDoubleTapTimeout;
+    if (isDouble) {
+      _lastClickCell = null;
+      _lastClickTime = null;
+      startEdit(r, c);
+      return;
+    }
+    _lastClickCell = (r, c);
+    _lastClickTime = e.timeStamp;
+    final hw = HardwareKeyboard.instance;
+    _select(r, c, extend: hw.isShiftPressed, toggle: hw.isControlPressed || hw.isMetaPressed);
   }
 
   // -------------------------------------------------------------------------
