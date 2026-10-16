@@ -23,6 +23,24 @@ class _FormLabelWidth extends InheritedWidget {
   bool updateShouldNotify(_FormLabelWidth old) => old.width != width;
 }
 
+/// Width of the widest of [labels] (text, point size) in the UI font, at
+/// most [max]: the label column of forms and property tables.
+double measureLabelWidth(BuildContext context, Iterable<(String, double)> labels, {double max = double.infinity}) {
+  final scaler = MediaQuery.textScalerOf(context);
+  var widest = 0.0;
+  for (final (text, size) in labels) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: uiText(size)),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    widest = math.max(widest, tp.width);
+    tp.dispose();
+  }
+  return math.min(widest.ceilToDouble() + 1, max);
+}
+
 /// Grouped settings box (System Settings form section) on a
 /// `windowBackground`: radius 8, `groupBackground` fill, 0.5 hairline, rows
 /// split by inset separators. Optional [title] above (13 semibold) and
@@ -38,26 +56,12 @@ class FormGroup extends StatelessWidget {
   final String? footer;
   final double? labelWidth;
 
-  double _measureLabels(BuildContext context, double max) {
-    final scaler = MediaQuery.textScalerOf(context);
-    var widest = 0.0;
-    void measure(String text, double size) {
-      final tp = TextPainter(
-        text: TextSpan(text: text, style: uiText(size)),
-        textDirection: TextDirection.ltr,
-        textScaler: scaler,
-        maxLines: 1,
-      )..layout();
-      widest = math.max(widest, tp.width);
-      tp.dispose();
-    }
-
-    for (final row in children.whereType<FormRow>()) {
-      measure(row.label, TypeSize.body);
-      if (row.help != null) measure(row.help!, TypeSize.caption);
-    }
-    return math.min(widest.ceilToDouble() + 1, max);
-  }
+  double _measureLabels(BuildContext context, double max) => measureLabelWidth(context, [
+    for (final row in children.whereType<FormRow>()) ...[
+      (row.label, TypeSize.body),
+      if (row.help != null) (row.help!, TypeSize.caption),
+    ],
+  ], max: max);
 
   @override
   Widget build(BuildContext context) {

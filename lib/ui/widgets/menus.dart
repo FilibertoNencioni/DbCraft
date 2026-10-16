@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import 'badges.dart';
 
 // ---------------------------------------------------------------------------
 // Shortcuts
@@ -15,7 +16,7 @@ import '../theme/app_theme.dart';
 /// sheets: "⌘⇧S", "⌘Invio" on macOS, "Ctrl+Shift+S" elsewhere.
 String shortcutLabel(SingleActivator a, {bool? mac}) {
   final isMac = mac ?? Platform.isMacOS;
-  final key = _keyName(a.trigger);
+  final key = _keyName(a.trigger, isMac);
   if (isMac) {
     return [
       if (a.control) '⌃',
@@ -33,13 +34,14 @@ String shortcutLabel(SingleActivator a, {bool? mac}) {
   ].join('+');
 }
 
-String _keyName(LogicalKeyboardKey k) {
+String _keyName(LogicalKeyboardKey k, bool mac) {
   if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) return 'Invio';
   if (k == LogicalKeyboardKey.escape) return 'Esc';
   if (k == LogicalKeyboardKey.space) return 'Spazio';
   if (k == LogicalKeyboardKey.tab) return 'Tab';
   if (k == LogicalKeyboardKey.backspace) return '⌫';
-  if (k == LogicalKeyboardKey.delete) return '⌦';
+  if (k == LogicalKeyboardKey.delete) return mac ? '⌦' : 'Canc';
+  if (k == LogicalKeyboardKey.insert) return 'Ins';
   if (k == LogicalKeyboardKey.arrowUp) return '↑';
   if (k == LogicalKeyboardKey.arrowDown) return '↓';
   if (k == LogicalKeyboardKey.arrowLeft) return '←';
@@ -125,8 +127,8 @@ class MenuEntry<T> {
     value: value,
     onSelected: onSelected,
     checked: checked,
-    leading: _Dot(status),
-    trailing: environment == null ? null : _EnvLabel(environment, environmentColor),
+    leading: StatusDot(status),
+    trailing: environment == null ? null : Tag(environment, color: environmentColor),
   );
 
   final _EntryKind _kind;
@@ -154,45 +156,6 @@ const double _kDividerHeight = 11;
 const double _kMenuPadding = 5;
 const double _kCheckColumn = 18;
 const double _kScreenMargin = 6;
-
-class _Dot extends StatelessWidget {
-  const _Dot(this.color);
-  final Color color;
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 8,
-    height: 8,
-    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-  );
-}
-
-class _EnvLabel extends StatelessWidget {
-  const _EnvLabel(this.text, this.color);
-  final String text;
-  final Color? color;
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    final on = _RowHighlight.of(context);
-    final col = on ? c.onAccent : (color ?? c.textSecondary);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5),
-      decoration: BoxDecoration(color: col.withValues(alpha: Tint.regular), borderRadius: BorderRadius.circular(Radii.small)),
-      child: Text(text, style: uiText(TypeSize.caption, weight: FontWeight.w500, color: col)),
-    );
-  }
-}
-
-/// Tells row accessories that their menu row is highlighted (accent fill).
-class _RowHighlight extends InheritedWidget {
-  const _RowHighlight({required this.on, required super.child});
-  final bool on;
-
-  static bool of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<_RowHighlight>()?.on ?? false;
-
-  @override
-  bool updateShouldNotify(_RowHighlight old) => old.on != on;
-}
 
 /// Global rect of the widget that owns [context] (anchor for menus and
 /// popovers).
@@ -651,8 +614,9 @@ class _MenuRow<T> extends StatelessWidget {
             color: on ? c.accent : null,
             borderRadius: BorderRadius.circular(Radii.small),
           ),
-          child: _RowHighlight(
-            on: on,
+          child: RowTint(
+            background: on ? c.accent : c.menuBackground,
+            emphasized: on,
             child: Row(
               children: [
                 SizedBox(

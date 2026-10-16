@@ -12,7 +12,6 @@ import '../../state/db_connection.dart';
 import '../../state/editor_tabs.dart';
 import '../../ui/actions.dart';
 import '../../ui/widgets/common.dart';
-import 'lite_table.dart';
 import 'perf_metrics.dart';
 import 'perf_providers.dart';
 import 'sparkline.dart';
@@ -783,7 +782,8 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
     }
 
     final numericCols = [for (var i = 0; i < st.columns.length; i++) numeric(i)];
-    return LiteTable(
+    return MacTable(
+      dense: true,
       headers: [for (final col in st.columns) columnLabel(col)],
       rowCount: rows.length,
       cell: (r, i) => formatCell(rows[r][i], kinds[i] == ColKind.text && numericCols[i] ? ColKind.number : kinds[i]),
@@ -792,7 +792,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
       tooltip: (r, i) => kinds[i] == ColKind.query ? rows[r][i]?.toString() : null,
       selected: _selected,
       onSelect: (r) => setState(() => _selected = r),
-      onContextMenu: (r, pos) => _contextMenu(t, st, rows[r], pos),
+      onContextMenu: (r, _, pos) => _contextMenu(t, st, rows[r], pos),
       leading: depth.isEmpty
           ? null
           : (r) => Padding(

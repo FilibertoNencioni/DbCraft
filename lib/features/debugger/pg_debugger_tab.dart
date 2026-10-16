@@ -14,7 +14,6 @@ import '../../state/editor_tabs.dart';
 import '../../ui/actions.dart';
 import '../../ui/widgets/common.dart';
 import '../../ui/widgets/split_view.dart';
-import '../performance/lite_table.dart';
 import 'pg_debug_controller.dart';
 import 'pg_debug_logic.dart';
 
@@ -782,7 +781,8 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
           flex: 2,
           child: stack.isEmpty
               ? _hint(context, 'Disponibile quando il debugger è fermo')
-              : LiteTable(
+              : MacTable(
+                  dense: true,
                   headers: const ['#', 'Funzione', 'Riga', 'Argomenti'],
                   rowCount: stack.length,
                   cell: (r, i) => switch (i) {
@@ -802,7 +802,8 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
           flex: 3,
           child: vars.isEmpty
               ? _hint(context, 'Doppio clic su un valore per modificarlo')
-              : LiteTable(
+              : MacTable(
+                  dense: true,
                   headers: const ['Nome', 'Tipo', 'Valore'],
                   rowCount: vars.length,
                   cell: (r, i) => switch (i) {
@@ -965,7 +966,8 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
       return _hint(context, r.rowsAffected >= 0 ? 'Righe modificate: ${r.rowsAffected}' : 'Esecuzione completata');
     }
     final nullText = AppScope.read(context).settings.nullText;
-    return LiteTable(
+    return MacTable(
+      dense: true,
       headers: [for (final col in r.columns) col.name],
       rowCount: r.rows.length,
       cell: (row, i) => formatValue(r.rows[row][i], nullText: nullText, maxLen: 500),

@@ -13,7 +13,6 @@ import '../../state/db_connection.dart';
 import '../../state/editor_tabs.dart';
 import '../../ui/actions.dart';
 import '../../ui/widgets/common.dart';
-import 'lite_table.dart';
 import 'plan_model.dart';
 import 'plan_runner.dart';
 
@@ -511,7 +510,8 @@ class _VisualPlanViewState extends State<VisualPlanView> {
       'Loop',
       'Avvisi',
     ];
-    return LiteTable(
+    return MacTable(
+      dense: true,
       headers: headers,
       rowCount: nodes.length,
       cell: (r, i) {

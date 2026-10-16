@@ -91,8 +91,11 @@ class _ControlGalleryState extends State<ControlGallery> {
     ('Campi', _fields),
     ('Selezione', _selection),
     ('Menu, popover, tooltip', _menus),
+    ('Navigazione e tab', _navigation),
     ('Righe e liste', _rows),
-    ('Badge e indicatori', _badges),
+    ('Tabelle', _tables),
+    ('Badge e marker', _badges),
+    ('Progresso e stato', _progress),
     ('Feedback', _feedback),
     ('Sheet e alert', _sheets),
     ('Codice e diff', _code),
@@ -472,38 +475,309 @@ class _ControlGalleryState extends State<ControlGallery> {
     ];
   }
 
-  List<Widget> _rows(BuildContext context) => [
-    SizedBox(
-      width: 280,
-      child: Column(
-        children: [
-          SidebarRow(icon: AppIcons.table, title: 'dipendenti', detail: '200', onTap: () {}),
-          SidebarRow(icon: AppIcons.table, title: 'reparti (selezionata)', selected: true, onTap: () {}),
-          SidebarRow(icon: AppIcons.view, title: 'v_dipendenti_reparto', onTap: () {}, onMenu: (_) {}),
-        ],
+  List<Widget> _navigation(BuildContext context) {
+    final c = DbColors.of(context);
+    return [
+      _Demo<(int, List<String>)>(
+        (1, const ['query.sql', 'dipendenti', 'Diagramma ER', 'Performance', 'Confronto dati']),
+        (v, set) => WindowTabBar(
+          itemCount: v.$2.length,
+          itemKey: (i) => ValueKey(v.$2[i]),
+          onReorder: (from, to) {
+            final l = [...v.$2];
+            final t = l.removeAt(from);
+            l.insert(to.clamp(0, l.length), t);
+            set((v.$1, l));
+          },
+          itemBuilder: (context, i) => WindowTab(
+            title: v.$2[i],
+            active: i == v.$1,
+            dirty: i == 0,
+            busy: i == 3,
+            accessory: i == 1 ? EnvDot(c.danger, show: true, size: 6) : null,
+            onSelect: () => set((i, v.$2)),
+            onClose: () => set((0, [...v.$2]..removeAt(i))),
+          ),
+          trailing: ToolButton(icon: AppIcons.add, tooltip: 'Nuovo editor SQL', onPressed: () {}),
+        ),
       ),
-    ),
-  ];
+      const SizedBox(height: Gap.md),
+      _Demo<int>(
+        0,
+        (v, set) => PaneTabs<int>(
+          value: v,
+          onChanged: set,
+          tabs: [
+            const PaneTab(0, 'Risultato 1', count: 200),
+            PaneTab(1, 'Risultato 2', count: 12, onClose: () {}),
+            const PaneTab(2, 'Output', count: 3),
+          ],
+          trailing: ToolButton(icon: AppIcons.more, tooltip: 'Altro', extent: ControlSize.small, onPressed: () {}),
+        ),
+      ),
+      const SizedBox(height: Gap.md),
+      _Row([
+        SizedBox(
+          width: 240,
+          child: _Demo<int>(
+            0,
+            (v, set) => ColoredBox(
+              color: c.sidebar,
+              child: SidebarTabs<int>(
+                value: v,
+                onChanged: set,
+                items: const [
+                  SidebarTab(0, 'Database', AppIcons.database, selectedIcon: AppIcons.databaseFill),
+                  SidebarTab(1, 'Script', AppIcons.document, selectedIcon: AppIcons.documentFill),
+                  SidebarTab(2, 'Cloud', AppIcons.cloud, selectedIcon: AppIcons.cloudFill),
+                  SidebarTab(3, 'Git', AppIcons.git, selectedIcon: AppIcons.gitFill),
+                ],
+              ),
+            ),
+          ),
+        ),
+        PathBar(
+          segments: [
+            PathSegment('demo_pg', icon: AppIcons.database, iconColor: c.accent, onTap: () {}),
+            PathSegment('public', icon: AppIcons.schema, menu: () => const [MenuEntry('public', checked: true), MenuEntry('hr')]),
+            const PathSegment('dipendenti', icon: AppIcons.table),
+          ],
+        ),
+      ]),
+      Container(
+        color: c.content,
+        padding: const EdgeInsets.symmetric(vertical: Gap.md),
+        child: _Demo<int>(
+          0,
+          (v, set) => PageSwitcher<int>(
+            value: v,
+            onChanged: set,
+            items: const [(0, 'Dati', null), (1, 'Colonne', null), (2, 'Indici', null), (3, 'DDL', null)],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _rows(BuildContext context) {
+    final c = DbColors.of(context);
+    return [
+      _Row([
+        SizedBox(
+          width: 260,
+          height: 236,
+          child: _Demo<(int, bool)>(
+            (2, true),
+            (v, set) {
+              final rows = <Widget Function(bool selected)>[
+                (s) => SectionLabel('Connessioni', padding: const EdgeInsets.fromLTRB(4, 10, 4, 2), expanded: v.$2, onToggle: (e) => set((v.$1, e))),
+                if (v.$2) ...[
+                  (s) => OutlineRow(title: 'demo_pg', icon: AppIcons.database, iconBadge: c.success, expanded: true, onExpand: (_) {}, selected: s, accessories: [Tag('Prod', color: c.danger)], onTap: () => set((1, v.$2))),
+                  (s) => OutlineRow(title: 'dipendenti', icon: AppIcons.table, depth: 1, detail: '200', selected: s, onTap: () => set((2, v.$2)), onMenu: (_) {}),
+                  (s) => OutlineRow(title: 'v_dipendenti_reparto', icon: AppIcons.view, depth: 1, selected: s, onTap: () => set((3, v.$2))),
+                  (s) => OutlineRow(title: 'erp_test', icon: AppIcons.database, iconBadge: c.danger, expanded: false, onExpand: (_) {}, muted: true, selected: s, onTap: () => set((4, v.$2))),
+                  (s) => OutlineRow(title: 'ordini.sql', icon: AppIcons.document, reserveDisclosure: true, accessories: [const DirtyDot(), StatusLetter('M', color: c.warning)], selected: s, onTap: () => set((5, v.$2))),
+                ],
+              ];
+              return SourceList(
+                itemCount: rows.length,
+                selectedIndex: v.$1 < rows.length ? v.$1 : null,
+                selectable: (i) => i > 0,
+                onSelect: (i) => set((i, v.$2)),
+                itemBuilder: (_, i) => rows[i](i == v.$1),
+              );
+            },
+          ),
+        ),
+        SizedBox(
+          width: 320,
+          child: _Demo<int>(
+            1,
+            (v, set) => Column(
+              children: [
+                ListRow(title: 'SELECT * FROM ordini', mono: true, subtitle: 'demo_pg · 12 ms · 200 righe', icon: AppIcons.history, selected: v == 0, onTap: () => set(0)),
+                ListRow(title: 'Demo SQLite', subtitle: '~/Library/demo.sqlite', icon: AppIcons.database, trailing: LinkButton(label: 'Apri', small: true, onPressed: () {}), selected: v == 1, onTap: () => set(1)),
+                for (var i = 0; i < 3; i++)
+                  ListRow(title: 'Riga $i del log', zebra: true, index: i, icon: AppIcons.info, trailing: Tag('INFO', color: c.accent), onTap: () {}),
+                SidebarRow(icon: AppIcons.view, title: 'SidebarRow (compatibilità)', onTap: () {}, onMenu: (_) {}),
+              ],
+            ),
+          ),
+        ),
+      ]),
+      SizedBox(
+        width: 520,
+        child: const RecordView(
+          fields: [
+            RecordField('id', '42', type: 'integer'),
+            RecordField('nome', 'Mario Rossi', type: 'varchar(80)', changed: true),
+            RecordField('reparto_id', null, type: 'integer'),
+            RecordField('note', 'Assunto il 12/01/2015.\nPart-time dal 2020.', type: 'text'),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _tables(BuildContext context) {
+    final c = DbColors.of(context);
+    const rows = [
+      ['1', 'Mario Rossi', 'Vendite', '1837.50'],
+      ['2', 'Anna Bianchi', 'Marketing', '2210.00'],
+      ['3', 'Luca Verdi', 'Vendite', '1650.25'],
+      ['4', 'Sara Neri', 'IT', '2580.00'],
+      ['5', 'Paolo Gialli', 'IT', '1990.75'],
+    ];
+    return [
+      SizedBox(
+        height: 24.0 + 24 * rows.length + 1,
+        child: _Demo<(int?, int?, bool)>(
+          (1, 3, false),
+          (v, set) {
+            final order = [for (var i = 0; i < rows.length; i++) i];
+            if (v.$2 != null) {
+              order.sort((a, b) {
+                final x = rows[a][v.$2!], y = rows[b][v.$2!];
+                final n = (double.tryParse(x) ?? 0).compareTo(double.tryParse(y) ?? 0);
+                final r = v.$2 == 0 || v.$2 == 3 ? n : x.compareTo(y);
+                return v.$3 ? r : -r;
+              });
+            }
+            return MacTable(
+              bordered: true,
+              headers: const ['id', 'nome', 'reparto', 'stipendio'],
+              types: (i) => const ['integer', 'varchar', 'varchar', 'numeric'][i],
+              rowCount: rows.length,
+              cell: (r, i) => rows[order[r]][i],
+              numeric: (i) => i == 0 || i == 3,
+              selected: v.$1,
+              onSelect: (r) => set((r, v.$2, v.$3)),
+              sortColumn: v.$2,
+              sortAscending: v.$3,
+              onSort: (i) => set((v.$1, i, v.$2 == i ? !v.$3 : true)),
+              rowStatus: (r) => switch (order[r]) {
+                1 => c.diffChanged,
+                4 => c.diffAdded,
+                _ => null,
+              },
+              cellBuilder: (context, r, i) => i == 2 && order[r] == 0
+                  ? PopUpButton<String>(
+                      value: 'Vendite',
+                      style: PopUpStyle.inline,
+                      small: true,
+                      items: const [('Vendite', 'Vendite', null), ('IT', 'IT', null)],
+                      onChanged: (_) {},
+                    )
+                  : null,
+            );
+          },
+        ),
+      ),
+      const SizedBox(height: Gap.md),
+      _Row([
+        SizedBox(
+          width: 380,
+          child: PropertyTable(
+            entries: const [('Motore', 'PostgreSQL 16.2'), ('Codifica', 'UTF8'), ('Dimensione', '1,2 GB'), ('Commento', '')],
+          ),
+        ),
+        SizedBox(
+          width: 300,
+          height: 150,
+          child: MacTable(
+            dense: true,
+            headers: const ['Operazione', 'Costo', 'Righe'],
+            rowCount: 4,
+            cell: (r, i) => const [
+              ['Hash Join', '1240.5', '12000'],
+              ['Seq Scan ordini', '820.0', '120000'],
+              ['Index Scan clienti', '12.3', '1'],
+              ['Sort', '40.1', '12000'],
+            ][r][i],
+            numeric: (i) => i > 0,
+            leading: (r) => SizedBox(width: (r == 0 ? 0 : 1) * 14.0),
+          ),
+        ),
+      ]),
+    ];
+  }
 
   List<Widget> _badges(BuildContext context) {
     final c = DbColors.of(context);
     return [
       _Row([
-        const Badge2('12'),
-        Badge2('Produzione', color: c.danger),
-        Badge2('3 modifiche', color: c.warning),
-        Badge2('nuova', color: c.success, filled: true),
+        const CountBadge(12),
+        const CountBadge('99+'),
+        const CountBadge(3, prominent: true),
+        Tag('Produzione', color: c.danger),
+        Tag('nuova', color: c.success),
+        Tag('modificata', color: c.warning),
+        const Tag('sola lettura'),
+        const Tag('sql', mono: true),
+        const TypeLabel('varchar(80)', mono: true),
+        const TypeLabel('numero'),
+      ]),
+      _Row([
         StatusDot(c.success),
         StatusDot(c.textTertiary, ring: true),
         EnvDot(c.warning, show: true),
+        IconBadge(color: c.success, child: Icon(AppIcons.database, size: 16, color: c.textSecondary)),
+        IconBadge(color: c.danger, child: Icon(AppIcons.database, size: 16, color: c.textSecondary)),
+        StatusLetter('M', color: c.warning),
+        StatusLetter('A', color: c.success),
+        StatusLetter('D', color: c.danger),
+        const DirtyDot(),
+        Capsule(elevated: true, bordered: true, child: Text('LEFT JOIN', style: uiText(TypeSize.small, weight: FontWeight.w500, color: c.text))),
       ]),
-      _Row(const [
-        SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-        SizedBox(width: 160, child: LinearProgressIndicator(value: 0.6)),
-        SizedBox(width: 160, child: LinearProgressIndicator()),
+      _Row([
+        const KeyCap('Esc'),
+        KeyCap.shortcut(const SingleActivator(LogicalKeyboardKey.enter, meta: true)),
+        const KeyCaps([SingleActivator(LogicalKeyboardKey.keyX, alt: true), SingleActivator(LogicalKeyboardKey.f5)]),
+        const ShortcutText(SingleActivator(LogicalKeyboardKey.keyN, meta: true, shift: true)),
+      ]),
+      _Row([
+        ActivityView(
+          title: 'demo_pg',
+          dot: c.success,
+          status: 'PostgreSQL 16.2',
+          environment: 'Produzione',
+          environmentColor: c.danger,
+          onPressed: () {},
+        ),
+        ActivityView(title: 'erp_test', dot: c.textTertiary, status: 'Connessione in corso…', busy: true, onPressed: () {}),
       ]),
     ];
   }
+
+  List<Widget> _progress(BuildContext context) => [
+    _Row(const [
+      Spinner(size: Spinner.small),
+      Spinner(),
+      Spinner(size: Spinner.large),
+      ProgressBar(value: 0.6, width: 160),
+      ProgressBar(width: 160),
+    ]),
+    _Row([
+      const LevelIndicator(value: 0.35, width: 120),
+      const LevelIndicator(value: 0.78, warningAt: 0.75, dangerAt: 0.9, width: 120),
+      const LevelIndicator(value: 0.95, warningAt: 0.75, dangerAt: 0.9, width: 120),
+      SizedBox(
+        width: 240,
+        child: Column(
+          children: [
+            Container(height: 22, color: DbColors.of(context).chrome),
+            const LoadingLine(),
+          ],
+        ),
+      ),
+    ]),
+    _Row([
+      const StatusLine('Connessione riuscita (PostgreSQL 16.2)', kind: StatusKind.success),
+      StatusLine('Certificato non verificato', kind: StatusKind.warning, onDetails: () {}),
+      const StatusLine('Accesso negato per l\'utente «demo»', kind: StatusKind.danger),
+      const StatusLine.busy('Prova connessione in corso…'),
+    ]),
+  ];
 
   List<Widget> _feedback(BuildContext context) {
     final c = DbColors.of(context);
@@ -657,6 +931,19 @@ class _ControlGalleryState extends State<ControlGallery> {
             icon: (_) => AppIcons.table,
             detail: (s) => '${s.length * 37}',
           ),
+        ),
+        PushButton(
+          label: 'Scorciatoie',
+          onPressed: () => showShortcutsSheet(context, const [
+            ('Generale', [
+              ShortcutHelp('Nuovo editor SQL', [SingleActivator(LogicalKeyboardKey.keyN, meta: true)]),
+              ShortcutHelp('Mostra/nascondi barra laterale', [SingleActivator(LogicalKeyboardKey.digit0, meta: true)]),
+            ]),
+            ('Griglia dati', [
+              ShortcutHelp('Modifica cella', [SingleActivator(LogicalKeyboardKey.enter), SingleActivator(LogicalKeyboardKey.f2)]),
+              ShortcutHelp('Aggiungi riga', [SingleActivator(LogicalKeyboardKey.insert)]),
+            ]),
+          ]),
         ),
         PushButton(
           label: 'Informazioni',

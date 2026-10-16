@@ -372,10 +372,10 @@ class _HomePageState extends State<HomePage> {
         SidebarTabs<int>(
           value: _leftTab,
           items: const [
-            (0, 'Database', AppIcons.database),
-            (1, 'Script', AppIcons.document),
-            (2, 'Cloud', AppIcons.cloud),
-            (3, 'Git', AppIcons.git),
+            SidebarTab(0, 'Database', AppIcons.database, selectedIcon: AppIcons.databaseFill),
+            SidebarTab(1, 'Script', AppIcons.document, selectedIcon: AppIcons.documentFill),
+            SidebarTab(2, 'Cloud', AppIcons.cloud, selectedIcon: AppIcons.cloudFill),
+            SidebarTab(3, 'Git', AppIcons.git, selectedIcon: AppIcons.gitFill),
           ],
           onChanged: (v) => setState(() => _leftTab = v),
         ),

@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import 'badges.dart';
 import 'buttons.dart';
 import 'feedback.dart';
 import 'fields.dart';
+import 'lists.dart';
 import 'surfaces.dart';
 
 /// Fixed sheet sizes. Small and medium take the height of their content
@@ -875,3 +877,68 @@ Future<void> showAboutPanel(
     action: action,
   ),
 );
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts
+// ---------------------------------------------------------------------------
+
+/// One line of a [ShortcutsSheet]: what it does and its keys (alternatives
+/// are shown separated by "/").
+class ShortcutHelp {
+  const ShortcutHelp(this.description, this.keys);
+
+  final String description;
+  final List<SingleActivator> keys;
+}
+
+/// The keyboard shortcuts reference (Aiuto ▸ Scorciatoie da tastiera): a
+/// medium sheet with a [SectionLabel] per group and one row per command,
+/// the keys as [KeyCap]s on the right. Fine closes it.
+class ShortcutsSheet extends StatelessWidget {
+  const ShortcutsSheet({super.key, required this.groups, this.onDone});
+
+  /// Group title and its shortcuts.
+  final List<(String, List<ShortcutHelp>)> groups;
+  final VoidCallback? onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    void done() => onDone != null ? onDone!() : Navigator.of(context).maybePop();
+    return SheetScaffold(
+      title: 'Scorciatoie da tastiera',
+      onSubmit: done,
+      actions: [PushButton.primary(label: 'Fine', onPressed: done)],
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, (title, rows)) in groups.indexed) ...[
+            SectionLabel(title, padding: EdgeInsets.only(top: i == 0 ? 0 : Gap.md, bottom: Gap.xs)),
+            for (final r in rows)
+              SizedBox(
+                height: 26,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        r.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: uiText(TypeSize.body, color: c.text),
+                      ),
+                    ),
+                    const SizedBox(width: Gap.md),
+                    KeyCaps(r.keys),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Opens the [ShortcutsSheet].
+Future<void> showShortcutsSheet(BuildContext context, List<(String, List<ShortcutHelp>)> groups) =>
+    showSheet<void>(context, builder: (_) => ShortcutsSheet(groups: groups));

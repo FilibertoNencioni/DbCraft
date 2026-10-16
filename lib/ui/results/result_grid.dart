@@ -55,8 +55,10 @@ class ResultGridState extends State<ResultGrid> {
   final _editCtrl = TextEditingController();
   final _editFocus = FocusNode();
 
-  static const double _rowH = 26;
-  static const double _headH = 30;
+  static const double _rowH = GridMetrics.row;
+  static const double _headH = GridMetrics.header;
+
+  bool _hasFocus = false;
 
   ResultSetModel get m => widget.model;
 
@@ -440,10 +442,11 @@ class ResultGridState extends State<ResultGrid> {
     final c = DbColors.of(context);
     final cols = m.columns.length;
     final rows = m.view.length;
-    final vLine = BorderSide(color: c.separator.withValues(alpha: c.separator.a * 0.6), width: 1);
+    final hairline = BorderSide(color: c.separator, width: 0.5);
     return Focus(
       focusNode: _focus,
       onKeyEvent: _onKey,
+      onFocusChange: (v) => setState(() => _hasFocus = v),
       child: ColoredBox(
         color: c.content,
         child: Scrollbar(
@@ -462,16 +465,12 @@ class ResultGridState extends State<ResultGrid> {
                 rowCount: rows + 1,
                 columnBuilder: (i) => TableSpan(
                   extent: FixedTableSpanExtent(i == 0 ? _rowNumWidth : _colWidth(i - 1)),
-                  foregroundDecoration: TableSpanDecoration(border: TableSpanBorder(trailing: vLine)),
+                  foregroundDecoration: i == 0 ? TableSpanDecoration(border: TableSpanBorder(trailing: hairline)) : null,
                 ),
                 rowBuilder: (i) => TableSpan(
                   extent: FixedTableSpanExtent(i == 0 ? _headH : _rowH),
                   backgroundDecoration: i > 0 && i.isEven ? TableSpanDecoration(color: c.zebra) : null,
-                  foregroundDecoration: i == 0
-                      ? TableSpanDecoration(
-                          border: TableSpanBorder(trailing: BorderSide(color: c.separator)),
-                        )
-                      : null,
+                  foregroundDecoration: i == 0 ? TableSpanDecoration(border: TableSpanBorder(trailing: hairline)) : null,
                 ),
                 cellBuilder: (context, v) {
                   if (v.row == 0 && v.column == 0) return TableViewCell(child: _corner(c));
@@ -499,78 +498,29 @@ class ResultGridState extends State<ResultGrid> {
     final col = m.columns[i];
     final isKey =
         !m.keyIsVirtual && m.keyColumns.any((k) => k.toLowerCase() == (col.baseColumn ?? col.name).toLowerCase());
-    final sorted = m.sortColumn == i;
-    final typeLabel = col.displayType.toLowerCase();
-    return Container(
+    final size = col.size > 0 ? '(${col.size}${col.decimals > 0 ? ',${col.decimals}' : ''})' : '';
+    return ColoredBox(
       color: c.chrome,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: () => m.setSort(i),
-              onSecondaryTapDown: (d) => _headerMenu(i, d.globalPosition),
-              child: Tooltip(
-                message:
-                    '${col.name}\n${col.displayType}'
-                    '${col.size > 0 ? '(${col.size}${col.decimals > 0 ? ',${col.decimals}' : ''})' : ''}'
-                    '${col.nullable ? '' : ' NOT NULL'}'
-                    '${col.autoIncrement ? ' AUTO' : ''}'
-                    '${col.baseTable != null ? '\n${col.baseTable}.${col.baseColumn ?? col.name}' : ''}'
-                    '\nClic per ordinare',
-                waitDuration: const Duration(milliseconds: 700),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-                  child: Row(
-                    children: [
-                      if (isKey) ...[
-                        const Icon(AppIcons.key, size: 11, color: Color(0xFFE8A200)),
-                        const SizedBox(width: 4),
-                      ],
-                      Flexible(
-                        child: Text(
-                          col.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: widget.fontSize - 0.5, fontWeight: FontWeight.w600, color: c.text),
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          typeLabel,
-                          overflow: TextOverflow.clip,
-                          softWrap: false,
-                          style: TextStyle(fontSize: TypeSize.caption - 0.5, color: c.textTertiary),
-                        ),
-                      ),
-                      if (sorted)
-                        Icon(
-                          m.sortAscending ? AppIcons.arrowUp : AppIcons.arrowDown,
-                          size: 12,
-                          color: c.accent,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: 7,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.resizeColumn,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragUpdate: (d) => setState(() {
-                  _widths[i] = (_colWidth(i) + d.delta.dx).clamp(30.0, 2000.0);
-                }),
-                onDoubleTap: () => setState(() => _widths.remove(i)),
-              ),
-            ),
-          ),
+      child: RichTooltip(
+        title: col.name,
+        rows: [
+          ('Tipo', '${col.displayType}$size'),
+          ('Null', col.nullable ? 'sì' : 'no'),
+          if (col.autoIncrement) ('Auto', 'sì'),
+          if (col.baseTable != null) ('Origine', '${col.baseTable}.${col.baseColumn ?? col.name}'),
         ],
+        footer: 'Clic per ordinare',
+        child: TableHeaderCell(
+          label: col.name,
+          type: col.displayType.toLowerCase(),
+          fontSize: widget.fontSize - 1,
+          leading: isKey ? Icon(AppIcons.key, size: 11, color: c.keyIcon) : null,
+          sorted: m.sortColumn == i ? m.sortAscending : null,
+          onTap: () => m.setSort(i),
+          onSecondaryTapDown: (d) => _headerMenu(i, d.globalPosition),
+          onResize: (dx) => setState(() => _widths[i] = (_colWidth(i) + dx).clamp(30.0, 2000.0)),
+          onResetWidth: () => setState(() => _widths.remove(i)),
+        ),
       ),
     );
   }
@@ -580,11 +530,11 @@ class ResultGridState extends State<ResultGrid> {
     final selected = _sel.any((e) => e.$1 == r);
     Color? mark;
     if (row.deleted) {
-      mark = c.danger;
+      mark = c.diffRemoved;
     } else if (row.inserted) {
-      mark = c.success;
+      mark = c.diffAdded;
     } else if (row.changedCells.isNotEmpty) {
-      mark = c.warning;
+      mark = c.diffChanged;
     }
     return GestureDetector(
       onTapDown: (_) {
@@ -600,15 +550,15 @@ class ResultGridState extends State<ResultGrid> {
         padding: const EdgeInsets.only(right: Gap.sm),
         child: Row(
           children: [
-            Container(width: 3, color: mark ?? Colors.transparent),
+            Container(width: GridMetrics.marker, color: mark ?? Colors.transparent),
             Expanded(
               child: Text(
                 row.inserted ? 'nuova' : '${m.view[r] + 1}',
                 textAlign: TextAlign.right,
-                style: TextStyle(
-                  fontSize: widget.fontSize - 1.5,
+                style: uiText(
+                  TypeSize.caption,
                   color: selected ? c.text : c.textTertiary,
-                  fontFeatures: kTabular,
+                  features: kTabular,
                 ),
               ),
             ),
@@ -626,11 +576,8 @@ class ResultGridState extends State<ResultGrid> {
     final isCursor = _cursor == (r, i);
 
     if (_editing == (r, i)) {
-      return Container(
-        decoration: BoxDecoration(
-          color: c.content,
-          border: Border.all(color: c.accent, width: 2),
-        ),
+      return ColoredBox(
+        color: c.content,
         child: CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.escape): _cancelEdit,
@@ -642,15 +589,8 @@ class ResultGridState extends State<ResultGrid> {
           child: TextField(
             controller: _editCtrl,
             focusNode: _editFocus,
-            style: TextStyle(fontSize: widget.fontSize, fontFeatures: kTabular),
-            decoration: const InputDecoration(
-              isDense: true,
-              filled: false,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            ),
+            style: uiText(widget.fontSize, color: c.text, features: kTabular),
+            decoration: cellEditorDecoration(context, padding: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: 5)),
             onSubmitted: (_) => _commitEdit(move: true),
             onTapOutside: (_) => _commitEdit(),
           ),
@@ -660,11 +600,11 @@ class ResultGridState extends State<ResultGrid> {
 
     Color? bg;
     if (row.deleted) {
-      bg = c.danger.withValues(alpha: 0.10);
+      bg = c.diffRemoved.withValues(alpha: Tint.subtle);
     } else if (row.inserted) {
-      bg = c.success.withValues(alpha: 0.10);
+      bg = c.diffAdded.withValues(alpha: Tint.subtle);
     } else if (row.changedCells.contains(i)) {
-      bg = c.warning.withValues(alpha: 0.22);
+      bg = c.diffChanged.withValues(alpha: Tint.strong);
     }
     if (selected) bg = Color.alphaBlend(c.selection, bg ?? Colors.transparent);
 
@@ -681,23 +621,24 @@ class ResultGridState extends State<ResultGrid> {
         if (!selected) _select(r, i);
         _cellMenu(r, i, d.globalPosition);
       },
-      child: Container(
-        decoration: BoxDecoration(
+      child: FocusRing(
+        visible: isCursor && _hasFocus,
+        inset: true,
+        radius: 0,
+        child: Container(
           color: bg,
-          border: isCursor ? Border.all(color: c.accent.withValues(alpha: 0.8), width: 1.5) : null,
-        ),
-        alignment: col.isNumeric && !isNull ? Alignment.centerRight : Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-        child: Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: isNull ? widget.fontSize - 1.5 : widget.fontSize,
-            fontStyle: isNull ? FontStyle.italic : null,
-            color: isNull ? c.textTertiary : c.text,
-            fontFeatures: kTabular,
-            decoration: row.deleted ? TextDecoration.lineThrough : null,
+          alignment: col.isNumeric && !isNull ? Alignment.centerRight : Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: uiText(
+              isNull ? widget.fontSize - 1 : widget.fontSize,
+              style: isNull ? FontStyle.italic : null,
+              color: isNull ? c.textTertiary : c.text,
+              features: kTabular,
+            ).copyWith(decoration: row.deleted ? TextDecoration.lineThrough : null),
           ),
         ),
       ),

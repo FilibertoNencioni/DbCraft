@@ -185,6 +185,12 @@ abstract final class AppIcons {
   static const IconData errorFill = IconData(0xe4e2, fontFamily: 'PhosphorFill'); // warningCircle
   static const IconData dot = IconData(0xe18a, fontFamily: 'PhosphorFill'); // circle
 
+  // Selected navigator tabs (Fill of the sidebar glyphs)
+  static const IconData databaseFill = IconData(0xe1de, fontFamily: 'PhosphorFill'); // database
+  static const IconData documentFill = IconData(0xe23a, fontFamily: 'PhosphorFill'); // fileText
+  static const IconData cloudFill = IconData(0xe1aa, fontFamily: 'PhosphorFill'); // cloud
+  static const IconData gitFill = IconData(0xe278, fontFamily: 'PhosphorFill'); // gitBranch
+
   /// Every icon by name (control gallery).
   static const Map<String, IconData> all = {
     'database': database,
@@ -347,5 +353,9 @@ abstract final class AppIcons {
     'errorFill': errorFill,
     'warningFill': warningFill,
     'dot': dot,
+    'databaseFill': databaseFill,
+    'documentFill': documentFill,
+    'cloudFill': cloudFill,
+    'gitFill': gitFill,
   };
 }
