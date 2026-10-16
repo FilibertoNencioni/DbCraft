@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -17,6 +19,19 @@ enum ControlScale {
   /// Glyph size next to a label (icon-only buttons use [ToolButton] sizes).
   final double iconSize;
 }
+
+/// Devices that drag items on a pannable canvas (ERD tables, query builder
+/// boxes). Trackpad two-finger scrolls arrive as pan-zoom gestures: leaving
+/// them out lets them reach the enclosing InteractiveViewer, so scrolling
+/// over an item pans the canvas instead of moving the item. A trackpad
+/// click-and-drag still arrives as a mouse.
+const kCanvasDragDevices = {
+  PointerDeviceKind.mouse,
+  PointerDeviceKind.touch,
+  PointerDeviceKind.stylus,
+  PointerDeviceKind.invertedStylus,
+  PointerDeviceKind.unknown,
+};
 
 /// Keyboard focus halo drawn outside [child] (AppKit focus ring): 3.5pt at
 /// `focusRing`, faded in over [Motion.fast]. Shown only while [visible].

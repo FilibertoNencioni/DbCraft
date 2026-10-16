@@ -607,6 +607,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               GestureDetector(
+                supportedDevices: kCanvasDragDevices,
                 onTap: () {
                   setState(() => _selectedBox = t.id);
                   if (_isDoubleTap('box:${t.id}')) _renameAlias(t);

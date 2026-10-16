@@ -1044,6 +1044,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
       width: e.size.width,
       height: e.size.height,
       child: GestureDetector(
+        supportedDevices: kCanvasDragDevices,
         onTap: () => _tapBox(e),
         onPanUpdate: (d) => setState(() {
           e.pos += d.delta;
@@ -1108,6 +1109,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
       row = MouseRegion(
         cursor: SystemMouseCursors.precise,
         child: GestureDetector(
+          supportedDevices: kCanvasDragDevices,
           behavior: HitTestBehavior.opaque,
           onPanStart: (d) => setState(() {
             _dragFrom = e;
