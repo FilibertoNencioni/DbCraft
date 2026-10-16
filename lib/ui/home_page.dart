@@ -310,16 +310,17 @@ class _HomePageState extends State<HomePage> {
           menuChildren: [
             for (final e in spec.entries)
               switch (e) {
-                _MenuDivider() => const Divider(height: 9),
+                _MenuDivider() => const Divider(height: 11, indent: 5, endIndent: 5),
                 _MenuAction a => MenuItemButton(onPressed: a.onSelected, shortcut: a.shortcut, child: Text(a.label)),
                 _MenuProvided() => const SizedBox.shrink(),
               },
           ],
           child: Text(spec.label),
         );
+    // In-window menu bar (Windows, Linux): 24pt on chrome, same tokens as MacMenu.
     return Container(
-      height: 28,
-      decoration: BoxDecoration(color: c.chrome),
+      height: 24,
+      decoration: BoxDecoration(color: c.chrome, border: Border(bottom: BorderSide(color: c.separator))),
       child: Row(children: [Expanded(child: MenuBar(children: _menuSpecs(app).map(toWidget).toList()))]),
     );
   }
@@ -517,7 +518,7 @@ class _HomePageState extends State<HomePage> {
         context: context,
         applicationName: 'DbCraft',
         applicationVersion: '1.0.0',
-        applicationIcon: const _AppMark(size: 48),
+        applicationIcon: const AppMark(size: 48),
         children: const [
           Text('Client database universale in Flutter. La connettività è basata su ODBC '
               '(unixODBC / iODBC / Windows ODBC) tramite dart:ffi.'),
@@ -1025,26 +1026,6 @@ class _EditorTabChipState extends State<_EditorTabChip> {
 // Welcome
 // ---------------------------------------------------------------------------
 
-class _AppMark extends StatelessWidget {
-  const _AppMark({this.size = 64});
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: c.accent,
-        borderRadius: BorderRadius.circular(size * 0.23),
-        boxShadow: [BoxShadow(color: const Color(0x29000000), blurRadius: size * 0.08, offset: Offset(0, size * 0.03))],
-      ),
-      child: Icon(AppIcons.database, color: Colors.white, size: size * 0.52),
-    );
-  }
-}
-
 class _Welcome extends StatelessWidget {
   const _Welcome({required this.onOpenScript});
   final VoidCallback onOpenScript;
@@ -1066,7 +1047,7 @@ class _Welcome extends StatelessWidget {
               child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const _AppMark(),
+                    const AppMark(),
                     const SizedBox(height: Gap.lg),
                     Text('DbCraft', style: Theme.of(context).textTheme.displaySmall),
                     const SizedBox(height: 2),

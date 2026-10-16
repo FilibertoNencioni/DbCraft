@@ -21,6 +21,7 @@ class DbColors extends ThemeExtension<DbColors> {
     required this.sidebar,
     required this.raised,
     required this.windowBackground,
+    required this.groupBackground,
     required this.separator,
     required this.text,
     required this.textSecondary,
@@ -72,6 +73,9 @@ class DbColors extends ThemeExtension<DbColors> {
 
   /// Sheets, inspectors and settings pages (NSColor.windowBackgroundColor).
   final Color windowBackground;
+
+  /// Form groups on a [windowBackground] (System Settings boxes).
+  final Color groupBackground;
   final Color separator;
   final Color text;
   final Color textSecondary;
@@ -147,6 +151,7 @@ class DbColors extends ThemeExtension<DbColors> {
     sidebar: Color(0xFFEDEDF0),
     raised: Color(0xFFFFFFFF),
     windowBackground: Color(0xFFECECEC),
+    groupBackground: Color(0x99FFFFFF),
     separator: Color(0x1A000000),
     text: Color(0xFF1D1D1F),
     textSecondary: Color(0xFF6E6E73),
@@ -190,6 +195,7 @@ class DbColors extends ThemeExtension<DbColors> {
     sidebar: Color(0xFF252528),
     raised: Color(0xFF323236),
     windowBackground: Color(0xFF2B2B2E),
+    groupBackground: Color(0x0DFFFFFF),
     separator: Color(0x26FFFFFF),
     text: Color(0xFFF2F2F5),
     textSecondary: Color(0xFFA1A1A8),
@@ -255,6 +261,7 @@ class DbColors extends ThemeExtension<DbColors> {
     Color? sidebar,
     Color? raised,
     Color? windowBackground,
+    Color? groupBackground,
     Color? separator,
     Color? text,
     Color? textSecondary,
@@ -296,6 +303,7 @@ class DbColors extends ThemeExtension<DbColors> {
     sidebar: sidebar ?? this.sidebar,
     raised: raised ?? this.raised,
     windowBackground: windowBackground ?? this.windowBackground,
+    groupBackground: groupBackground ?? this.groupBackground,
     separator: separator ?? this.separator,
     text: text ?? this.text,
     textSecondary: textSecondary ?? this.textSecondary,
@@ -343,6 +351,7 @@ class DbColors extends ThemeExtension<DbColors> {
       sidebar: l(sidebar, other.sidebar),
       raised: l(raised, other.raised),
       windowBackground: l(windowBackground, other.windowBackground),
+      groupBackground: l(groupBackground, other.groupBackground),
       separator: l(separator, other.separator),
       text: l(text, other.text),
       textSecondary: l(textSecondary, other.textSecondary),

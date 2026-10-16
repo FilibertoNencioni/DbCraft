@@ -94,6 +94,8 @@ class _ControlGalleryState extends State<ControlGallery> {
     ('Righe e liste', _rows),
     ('Badge e indicatori', _badges),
     ('Feedback', _feedback),
+    ('Sheet e alert', _sheets),
+    ('Codice e diff', _code),
     ('Form', _forms),
   ];
 
@@ -506,22 +508,239 @@ class _ControlGalleryState extends State<ControlGallery> {
   List<Widget> _feedback(BuildContext context) {
     final c = DbColors.of(context);
     return [
-      InlineNotice(
-        color: c.warning,
+      Notice(
         title: 'OpenSSL non trovato',
         message: 'Il driver richiede libssl 3. Installalo con Homebrew.',
-        action: PushButton(label: 'Copia comando', size: ControlScale.small, onPressed: () {}),
+        actions: [PushButton(label: 'Copia comando', size: ControlScale.small, onPressed: () {})],
+        child: const CodeBox('brew install openssl@3'),
       ),
-      const SizedBox(
-        height: 160,
-        child: EmptyState(
-          icon: AppIcons.runCircle,
-          title: 'Nessun risultato',
-          message: 'Premi Esegui o ⌘Invio per eseguire l\'istruzione sotto il cursore.',
-        ),
+      const SizedBox(height: Gap.md),
+      Notice(
+        kind: NoticeKind.danger,
+        message: 'ORA-00942: tabella o vista inesistente',
+        actions: [LinkButton(label: 'Riprova', small: true, onPressed: () {})],
+      ),
+      const SizedBox(height: Gap.md),
+      Notice.card(
+        title: 'Scansione completa su ordini',
+        message: 'Un indice su (cliente_id, data) eviterebbe di leggere 1,2 milioni di righe.',
+        actions: [
+          PushButton(label: 'Crea indice', size: ControlScale.small, onPressed: () {}),
+          LinkButton(label: 'Dettagli…', small: true, onPressed: () {}),
+        ],
+      ),
+      const SizedBox(height: Gap.md),
+      Notice.strip(
+        title: 'Conflitti di merge',
+        message: '2 file da risolvere prima del commit',
+        actions: [LinkButton(label: 'Annulla merge', small: true, onPressed: () {})],
+      ),
+      const SizedBox(height: Gap.md),
+      _Row([
+        HudCapsule(message: 'Copiato negli appunti', icon: AppIcons.checkCircle, iconColor: c.success),
+        HudCapsule(message: 'Salvataggio non riuscito', icon: AppIcons.error, iconColor: c.danger),
+        PushButton(label: 'Mostra HUD', onPressed: () => showToast(context, 'Copiato negli appunti')),
+      ]),
+      Row(
+        children: [
+          const Expanded(
+            child: SizedBox(
+              height: 180,
+              child: EmptyState(
+                icon: AppIcons.runCircle,
+                title: 'Nessun risultato',
+                message: 'Premi Esegui o ⌘Invio per eseguire l\'istruzione sotto il cursore.',
+              ),
+            ),
+          ),
+          Expanded(
+            child: SizedBox(
+              height: 180,
+              child: EmptyState.error(
+                'Connessione rifiutata dal server\n[unixODBC][FreeTDS][SQL Server]Unable to connect to data source',
+                action: PushButton(label: 'Riprova', onPressed: () {}),
+              ),
+            ),
+          ),
+        ],
       ),
     ];
   }
+
+  List<Widget> _sheets(BuildContext context) {
+    Widget preview(double width, Widget child) => ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 420),
+      child: SheetSurface(width: width, child: child),
+    );
+    final sheetForm = FormGroup(
+      children: [
+        const FormRow(label: 'Nome', child: MacTextField(hint: 'Produzione')),
+        FormRow(label: 'Sola lettura', child: DbSwitch(value: true, onChanged: (_) {})),
+      ],
+    );
+    return [
+      _Row([
+        PushButton(
+          label: 'Sheet M',
+          onPressed: () => showSheet<void>(
+            context,
+            builder: (ctx) => SheetScaffold(
+              title: 'Nuova connessione',
+              body: sheetForm,
+              leading: [PushButton(label: 'Prova connessione', onPressed: () {})],
+              onSubmit: () => Navigator.pop(ctx),
+              actions: [
+                PushButton(label: 'Annulla', onPressed: () => Navigator.pop(ctx)),
+                PushButton.primary(label: 'Salva', onPressed: () => Navigator.pop(ctx)),
+              ],
+            ),
+          ),
+        ),
+        PushButton(
+          label: 'Sheet L',
+          onPressed: () => showSheet<void>(
+            context,
+            size: SheetSize.large,
+            builder: (ctx) => SheetScaffold(
+              title: 'Diff di ordini.sql',
+              subtitle: 'main ↔ working copy',
+              body: DiffView.unified(_samplePatch),
+              actions: [PushButton.primary(label: 'Fine', onPressed: () => Navigator.pop(ctx))],
+              onSubmit: () => Navigator.pop(ctx),
+            ),
+          ),
+        ),
+        PushButton(
+          label: 'Conferma',
+          onPressed: () => confirmDialog(context, 'Eseguire lo script?', 'Verranno eseguite 12 istruzioni.'),
+        ),
+        PushButton(
+          label: 'Distruttivo',
+          onPressed: () => confirmDialog(
+            context,
+            'Eliminare la tabella «ordini»?',
+            'L\'operazione non si può annullare.',
+            ok: 'Elimina',
+            destructive: true,
+          ),
+        ),
+        PushButton(
+          label: 'Errore',
+          onPressed: () => showErrorDialog(
+            context,
+            'Connessione rifiutata dal server\n[unixODBC][FreeTDS][SQL Server]Unable to connect to data source '
+            '(SQLSTATE 08001, codice 20009)',
+          ),
+        ),
+        PushButton(label: 'Prompt', onPressed: () => promptText(context, 'Rinomina script', initial: 'query.sql')),
+        PushButton(
+          label: '3 bottoni',
+          onPressed: () => showAlert<int>(
+            context,
+            title: 'Transazione aperta',
+            message: 'Ci sono 3 modifiche non confermate su Produzione.',
+            style: AlertStyle.warning,
+            buttons: const [
+              AlertButton('Commit e chiudi', 0, role: AlertRole.defaultAction),
+              AlertButton('Rollback e chiudi', 1, role: AlertRole.destructive),
+              AlertButton('Annulla', 2, role: AlertRole.cancel),
+            ],
+          ),
+        ),
+        PushButton(
+          label: 'Scegli tabella…',
+          onPressed: () => showListPicker<String>(
+            context,
+            title: 'Scegli una tabella',
+            items: const ['clienti', 'dipendenti', 'fatture', 'ordini', 'prodotti', 'reparti'],
+            label: (s) => s,
+            icon: (_) => AppIcons.table,
+            detail: (s) => '${s.length * 37}',
+          ),
+        ),
+        PushButton(
+          label: 'Informazioni',
+          onPressed: () => showAboutPanel(
+            context,
+            name: 'DbCraft',
+            version: '1.0.0',
+            description: 'Client database universale.',
+            copyright: '© 2026 DbCraft',
+          ),
+        ),
+      ]),
+      Wrap(
+        spacing: Gap.xl,
+        runSpacing: Gap.xl,
+        crossAxisAlignment: WrapCrossAlignment.start,
+        children: [
+          preview(
+            SheetSize.small.width,
+            SheetScaffold(
+              title: 'Nuova connessione',
+              body: sheetForm,
+              actions: [
+                PushButton(label: 'Annulla', onPressed: () {}),
+                PushButton.primary(label: 'Salva', onPressed: () {}),
+              ],
+            ),
+          ),
+          preview(
+            260,
+            AlertPanel<bool>(
+              title: 'Eliminare la tabella «ordini»?',
+              message: 'L\'operazione non si può annullare.',
+              style: AlertStyle.critical,
+              onSelected: (_) {},
+              buttons: const [
+                AlertButton('Elimina', true, role: AlertRole.destructive),
+                AlertButton('Annulla', false, role: AlertRole.cancel),
+              ],
+            ),
+          ),
+          preview(
+            260,
+            AlertPanel<int>(
+              title: 'Transazione aperta',
+              message: 'Ci sono 3 modifiche non confermate.',
+              style: AlertStyle.warning,
+              onSelected: (_) {},
+              buttons: const [
+                AlertButton('Commit e chiudi', 0, role: AlertRole.defaultAction),
+                AlertButton('Rollback e chiudi', 1),
+                AlertButton('Annulla', 2, role: AlertRole.cancel),
+              ],
+            ),
+          ),
+          preview(
+            280,
+            const AboutPanel(
+              name: 'DbCraft',
+              version: '1.0.0',
+              description: 'Client database universale.',
+              copyright: '© 2026 DbCraft',
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  List<Widget> _code(BuildContext context) => [
+    CodeBox(
+      'SELECT d.nome, r.nome AS reparto\nFROM dipendenti d\nJOIN reparti r ON r.id = d.reparto_id\nWHERE d.attivo = 1;',
+      label: 'sql',
+      actions: [ToolButton(icon: AppIcons.run, tooltip: 'Esegui', extent: 18, onPressed: () {})],
+    ),
+    const SizedBox(height: Gap.md),
+    const CodeBox(
+      'Driver={ODBC Driver 18 for SQL Server};Server=tcp:db.example.com,1433;Database=vendite;Encrypt=yes;'
+      'TrustServerCertificate=no;Connection Timeout=30;',
+      maxLines: 2,
+    ),
+    const SizedBox(height: Gap.md),
+    DiffView.unified(_samplePatch, shrinkWrap: true),
+  ];
 
   List<Widget> _forms(BuildContext context) => [
     FormGroup(
@@ -531,24 +750,37 @@ class _ControlGalleryState extends State<ControlGallery> {
         const FormRow(label: 'Host', child: MacTextField(hint: 'localhost')),
         FormRow(
           label: 'Ambiente',
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Segmented<int>(
-              value: 0,
-              items: const [(0, 'Sviluppo', null), (1, 'Test', null), (2, 'Produzione', null)],
-              onChanged: (_) {},
-            ),
+          child: Segmented<int>(
+            value: 0,
+            items: const [(0, 'Sviluppo', null), (1, 'Test', null), (2, 'Produzione', null)],
+            onChanged: (_) {},
           ),
         ),
         FormRow(
           label: 'Salva password',
           help: 'Cifrata nel vault del workspace',
-          child: Align(alignment: Alignment.centerRight, child: DbSwitch(value: true, onChanged: (_) {})),
+          child: DbSwitch(value: true, onChanged: (_) {}),
         ),
       ],
     ),
   ];
 }
+
+const _samplePatch = """diff --git a/ordini.sql b/ordini.sql
+index 3f2a1c0..9b8e7d4 100644
+--- a/ordini.sql
++++ b/ordini.sql
+@@ -1,6 +1,7 @@
+ SELECT o.id,
+-       o.data,
++       o.data_ordine,
++       c.nome AS cliente,
+        o.totale
+ FROM ordini o
+-WHERE o.totale > 100
++JOIN clienti c ON c.id = o.cliente_id
+ ORDER BY o.id;
+""";
 
 class _Section extends StatelessWidget {
   const _Section(this.title, this.children);

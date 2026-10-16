@@ -180,6 +180,7 @@ abstract final class AppIcons {
   static const IconData info = IconData(0xe2ce, fontFamily: 'PhosphorRegular'); // info
   static const IconData help = IconData(0xe3e8, fontFamily: 'PhosphorRegular'); // question
   static const IconData warning = IconData(0xe4e0, fontFamily: 'PhosphorRegular'); // warning
+  static const IconData warningFill = IconData(0xe4e0, fontFamily: 'PhosphorFill'); // warning
   static const IconData error = IconData(0xe4e2, fontFamily: 'PhosphorRegular'); // warningCircle
   static const IconData errorFill = IconData(0xe4e2, fontFamily: 'PhosphorFill'); // warningCircle
   static const IconData dot = IconData(0xe18a, fontFamily: 'PhosphorFill'); // circle
@@ -344,6 +345,7 @@ abstract final class AppIcons {
     'warning': warning,
     'error': error,
     'errorFill': errorFill,
+    'warningFill': warningFill,
     'dot': dot,
   };
 }

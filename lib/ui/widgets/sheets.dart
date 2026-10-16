@@ -1,0 +1,877 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../theme/app_theme.dart';
+import 'buttons.dart';
+import 'feedback.dart';
+import 'fields.dart';
+import 'surfaces.dart';
+
+/// Fixed sheet sizes. Small and medium take the height of their content
+/// (up to the window); large and extra large have a fixed height.
+enum SheetSize {
+  small(420),
+  medium(560),
+  large(780, 560),
+  xlarge(900, 640);
+
+  const SheetSize(this.width, [this.height]);
+
+  final double width;
+  final double? height;
+}
+
+/// Content margin of sheets and alerts.
+const double _kMargin = 20;
+
+/// Sheet, alert and panel surface: `windowBackground`, radius 10, sheet
+/// shadow and a 0.5 hairline.
+class SheetSurface extends StatelessWidget {
+  const SheetSurface({super.key, required this.child, this.width, this.height});
+
+  final Widget child;
+  final double? width;
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: c.windowBackground,
+        borderRadius: BorderRadius.circular(Radii.sheet),
+        border: Border.all(color: c.separator, width: 0.5),
+        boxShadow: Elevation.sheet(Theme.of(context).brightness),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        type: MaterialType.transparency,
+        child: DefaultTextStyle(style: uiText(TypeSize.body, color: c.text), child: child),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Route
+// ---------------------------------------------------------------------------
+
+/// Window-modal route for sheets, alerts and panels. No dimming: the window
+/// stays visible and clicks outside are ignored (or close a [dismissible]
+/// panel). Esc pops (respecting [PopScope]); Invio runs [submit], the
+/// default button registered by [SheetScaffold] or [AlertPanel], unless the
+/// focus is in a multi-line field (⌘Invio always runs it).
+class _SheetRoute<T> extends PopupRoute<T> {
+  _SheetRoute({
+    required this.builder,
+    required this.width,
+    required this.height,
+    required this.capturedThemes,
+    this.centered = false,
+    this.dismissible = false,
+    this.size,
+  });
+
+  final WidgetBuilder builder;
+  final double width;
+  final double? height;
+  final CapturedThemes capturedThemes;
+
+  /// Centered in the window (About) instead of hanging from the toolbar.
+  final bool centered;
+  final bool dismissible;
+  final SheetSize? size;
+
+  /// The default action, set while the content builds.
+  VoidCallback? submit;
+
+  static _SheetRoute<dynamic>? of(BuildContext context) {
+    final r = ModalRoute.of(context);
+    return r is _SheetRoute ? r : null;
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent || !isCurrent) return KeyEventResult.ignored;
+    final key = e.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      navigator?.maybePop();
+      return KeyEventResult.handled;
+    }
+    if (key != LogicalKeyboardKey.enter && key != LogicalKeyboardKey.numpadEnter) return KeyEventResult.ignored;
+    final run = submit;
+    if (run == null) return KeyEventResult.ignored;
+    final hw = HardwareKeyboard.instance;
+    final command = hw.isMetaPressed || hw.isControlPressed;
+    if (!command) {
+      if (hw.isShiftPressed || hw.isAltPressed) return KeyEventResult.ignored;
+      final editable = FocusManager.instance.primaryFocus?.context?.findAncestorStateOfType<EditableTextState>();
+      if (editable != null &&
+          (editable.widget.maxLines != 1 || editable.textEditingValue.composing.isValid)) {
+        return KeyEventResult.ignored;
+      }
+    }
+    run();
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  bool get barrierDismissible => dismissible;
+
+  @override
+  String? get barrierLabel => dismissible ? 'Chiudi' : null;
+
+  @override
+  Duration get transitionDuration => Motion.regular;
+
+  @override
+  Widget buildPage(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation) =>
+      capturedThemes.wrap(
+        LayoutBuilder(
+          builder: (context, box) {
+            // Key events from anywhere in the route bubble up to its scope.
+            FocusScope.of(context).onKeyEvent = _onKey;
+            final top = centered ? 0.0 : BarHeight.toolbar;
+            final w = math.min(width, box.maxWidth - Gap.lg * 2);
+            final maxH = box.maxHeight - top - Gap.lg;
+            Widget sheet = ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxH),
+              child: SheetSurface(
+                width: w,
+                height: height == null ? null : math.min(height!, maxH),
+                child: Builder(builder: builder),
+              ),
+            );
+            if (centered) return Center(child: sheet);
+            if (!(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+              sheet = SlideTransition(
+                position: Tween(begin: const Offset(0, -1), end: Offset.zero).animate(
+                  CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic),
+                ),
+                child: sheet,
+              );
+            }
+            return Padding(
+              padding: EdgeInsets.only(top: top),
+              child: Align(
+                alignment: Alignment.topCenter,
+                // The sheet slides out from under the toolbar: clip only the top.
+                child: ClipRect(clipper: const _BelowTopClipper(), child: sheet),
+              ),
+            );
+          },
+        ),
+      );
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => centered ? FadeTransition(opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut), child: child) : child;
+}
+
+class _BelowTopClipper extends CustomClipper<Rect> {
+  const _BelowTopClipper();
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(-100, 0, size.width + 100, size.height + 100);
+
+  @override
+  bool shouldReclip(_BelowTopClipper oldClipper) => false;
+}
+
+Future<T?> _present<T>(
+  BuildContext context, {
+  required WidgetBuilder builder,
+  required double width,
+  double? height,
+  bool centered = false,
+  bool dismissible = false,
+  SheetSize? size,
+}) {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  return navigator.push(
+    _SheetRoute<T>(
+      builder: builder,
+      width: width,
+      height: height,
+      centered: centered,
+      dismissible: dismissible,
+      size: size,
+      capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sheet
+// ---------------------------------------------------------------------------
+
+/// Opens a sheet (NSWindow sheet): hangs from under the toolbar and slides
+/// down over 200ms, no dimming, Esc closes it. Build the content with a
+/// [SheetScaffold].
+Future<T?> showSheet<T>(BuildContext context, {required WidgetBuilder builder, SheetSize size = SheetSize.medium}) =>
+    _present<T>(context, builder: builder, width: size.width, height: size.height, size: size);
+
+/// Layout of a sheet: title, body, footer.
+///
+/// - Title: 13 semibold centered; 17 left-aligned in large sheets (with an
+///   optional [subtitle]).
+/// - Body: inside 20pt margins. In small and medium sheets it scrolls when
+///   taller than the window (so it must not be a [ListView]); in large ones
+///   it fills the space between title and footer.
+/// - Footer, no fill: [leading] on the left (secondary actions, inline
+///   status such as "Prova connessione"), [actions] on the right in the order
+///   Annulla, default. No close X: Esc, Annulla or Fine.
+///
+/// [onSubmit] is the default action, run by Invio.
+class SheetScaffold extends StatelessWidget {
+  const SheetScaffold({
+    super.key,
+    required this.title,
+    required this.body,
+    this.subtitle,
+    this.leading = const [],
+    this.actions = const [],
+    this.onSubmit,
+    this.largeTitle,
+    this.padding = const EdgeInsets.symmetric(horizontal: _kMargin),
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget body;
+  final List<Widget> leading;
+  final List<Widget> actions;
+  final VoidCallback? onSubmit;
+
+  /// Defaults to true in [SheetSize.large] and [SheetSize.xlarge] sheets.
+  final bool? largeTitle;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    final route = _SheetRoute.of(context);
+    route?.submit = onSubmit;
+    final large = largeTitle ?? (route?.size?.height != null);
+
+    final header = large
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(_kMargin, 18, _kMargin, Gap.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: uiText(TypeSize.sheetTitle, weight: FontWeight.w700, color: c.text),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: uiText(TypeSize.small, color: c.textSecondary),
+                  ),
+              ],
+            ),
+          )
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(_kMargin, Gap.lg, _kMargin, Gap.md),
+            child: Column(
+              children: [
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: uiText(TypeSize.body, weight: FontWeight.w600, color: c.text),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    textAlign: TextAlign.center,
+                    style: uiText(TypeSize.caption, color: c.textSecondary),
+                  ),
+              ],
+            ),
+          );
+
+    final footer = leading.isEmpty && actions.isEmpty
+        ? const SizedBox(height: _kMargin)
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(_kMargin, Gap.lg, _kMargin, 18),
+            child: Row(
+              children: [
+                for (final (i, w) in leading.indexed) ...[if (i > 0) const SizedBox(width: Gap.sm), w],
+                const Spacer(),
+                for (final (i, a) in actions.indexed) ...[if (i > 0) const SizedBox(width: Gap.sm), a],
+              ],
+            ),
+          );
+
+    return LayoutBuilder(
+      builder: (context, box) {
+        final fixed = box.hasBoundedHeight && box.minHeight == box.maxHeight;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            if (fixed)
+              Expanded(child: Padding(padding: padding, child: body))
+            else
+              Flexible(child: SingleChildScrollView(padding: padding, child: body)),
+            footer,
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Alert
+// ---------------------------------------------------------------------------
+
+enum AlertStyle {
+  informational,
+  warning,
+
+  /// Destructive confirmations and errors (caution badge on the icon).
+  critical,
+}
+
+enum AlertRole {
+  normal,
+
+  /// The button Invio presses (accent).
+  defaultAction,
+
+  /// What Esc means. Esc itself returns null.
+  cancel,
+
+  /// Danger fill; it is the Invio button when there is no [defaultAction].
+  destructive,
+}
+
+class AlertButton<T> {
+  const AlertButton(this.label, this.value, {this.role = AlertRole.normal});
+
+  final String label;
+  final T value;
+  final AlertRole role;
+}
+
+/// Alert body in the Sonoma layout: app icon 64 (with a caution badge for
+/// [AlertStyle.warning] and [AlertStyle.critical]), bold 13 title and 11
+/// message centered, optional [details] disclosure and [accessory] (a
+/// field), buttons at full width.
+///
+/// List [buttons] most important first. Two short buttons sit side by side
+/// with the first on the right; otherwise they stack with the first on top.
+class AlertPanel<T> extends StatelessWidget {
+  const AlertPanel({
+    super.key,
+    required this.title,
+    required this.buttons,
+    required this.onSelected,
+    this.message,
+    this.style = AlertStyle.informational,
+    this.details,
+    this.accessory,
+  });
+
+  final String title;
+  final String? message;
+  final AlertStyle style;
+  final List<AlertButton<T>> buttons;
+  final ValueChanged<T> onSelected;
+  final String? details;
+  final Widget? accessory;
+
+  AlertButton<T>? get _default =>
+      buttons.where((b) => b.role == AlertRole.defaultAction).firstOrNull ??
+      buttons.where((b) => b.role == AlertRole.destructive).firstOrNull;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    final def = _default;
+    _SheetRoute.of(context)?.submit = def == null ? null : () => onSelected(def.value);
+
+    Widget button(AlertButton<T> b) => PushButton(
+      label: b.label,
+      expand: true,
+      kind: switch (b.role) {
+        AlertRole.defaultAction => PushButtonKind.defaultAction,
+        AlertRole.destructive => PushButtonKind.destructive,
+        _ => PushButtonKind.normal,
+      },
+      filled: b.role == AlertRole.destructive,
+      onPressed: () => onSelected(b.value),
+    );
+
+    final horizontal = buttons.length == 2 && buttons.every((b) => b.label.length <= 12);
+    final buttonArea = horizontal
+        ? Row(
+            children: [
+              Expanded(child: button(buttons[1])),
+              const SizedBox(width: Gap.sm),
+              Expanded(child: button(buttons[0])),
+            ],
+          )
+        : Column(
+            children: [
+              for (final (i, b) in buttons.indexed) ...[if (i > 0) const SizedBox(height: Gap.sm), button(b)],
+            ],
+          );
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(Gap.lg, _kMargin, Gap.lg, Gap.lg),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _AlertIcon(style),
+          const SizedBox(height: Gap.md),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: uiText(TypeSize.body, weight: FontWeight.w700, color: c.text),
+          ),
+          if (message != null && message!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            SelectableText(
+              message!,
+              textAlign: TextAlign.center,
+              style: uiText(TypeSize.caption, color: c.text, height: 1.35),
+            ),
+          ],
+          if (details != null) ...[const SizedBox(height: Gap.sm), ErrorDetails(details!)],
+          if (accessory != null) ...[const SizedBox(height: Gap.md), accessory!],
+          const SizedBox(height: Gap.lg),
+          buttonArea,
+        ],
+      ),
+    );
+  }
+}
+
+class _AlertIcon extends StatelessWidget {
+  const _AlertIcon(this.style);
+
+  final AlertStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    if (style == AlertStyle.informational) return const AppMark();
+    return SizedBox(
+      width: 64,
+      height: 64,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const AppMark(),
+          Positioned(
+            right: -6,
+            bottom: -4,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // White outline so the triangle reads over the icon.
+                Icon(AppIcons.warningFill, size: 34, color: c.windowBackground),
+                Icon(AppIcons.warningFill, size: 28, color: style == AlertStyle.critical ? c.warning : c.textSecondary),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Opens an alert attached to the window (sheet position). Returns the
+/// value of the pressed button, or null on Esc.
+Future<T?> showAlert<T>(
+  BuildContext context, {
+  required String title,
+  required List<AlertButton<T>> buttons,
+  String? message,
+  AlertStyle style = AlertStyle.informational,
+  String? details,
+  Widget? accessory,
+}) => _present<T>(
+  context,
+  width: details == null ? 260 : 360,
+  builder: (context) => AlertPanel<T>(
+    title: title,
+    message: message,
+    style: style,
+    buttons: buttons,
+    details: details,
+    accessory: accessory,
+    onSelected: (v) => Navigator.of(context).pop(v),
+  ),
+);
+
+/// Yes/no alert. [destructive] makes [ok] a danger button.
+Future<bool> confirmDialog(
+  BuildContext context,
+  String title,
+  String message, {
+  String ok = 'OK',
+  String cancel = 'Annulla',
+  bool destructive = false,
+}) async {
+  final r = await showAlert<bool>(
+    context,
+    title: title,
+    message: message,
+    style: destructive ? AlertStyle.critical : AlertStyle.informational,
+    buttons: [
+      AlertButton(ok, true, role: destructive ? AlertRole.destructive : AlertRole.defaultAction),
+      AlertButton(cancel, false, role: AlertRole.cancel),
+    ],
+  );
+  return r ?? false;
+}
+
+/// Alert with a text field. Returns the text, or null when cancelled.
+Future<String?> promptText(
+  BuildContext context,
+  String title, {
+  String label = '',
+  String initial = '',
+  bool obscure = false,
+  int maxLines = 1,
+}) async {
+  final ctrl = TextEditingController(text: initial);
+  try {
+    final ok = await showAlert<bool>(
+      context,
+      title: title,
+      accessory: obscure
+          ? SecureField(controller: ctrl, hint: label.isEmpty ? null : label, autofocus: true)
+          : MacTextField(
+              controller: ctrl,
+              hint: label.isEmpty ? null : label,
+              autofocus: true,
+              maxLines: maxLines,
+              minLines: maxLines > 1 ? math.min(maxLines, 3) : null,
+            ),
+      buttons: const [
+        AlertButton('OK', true, role: AlertRole.defaultAction),
+        AlertButton('Annulla', false, role: AlertRole.cancel),
+      ],
+    );
+    return ok == true ? ctrl.text : null;
+  } finally {
+    // The route's exit animation still shows the field for a moment.
+    Future<void>.delayed(Motion.regular * 2, ctrl.dispose);
+  }
+}
+
+/// Error alert: the first line of the message, the full text (copyable)
+/// under "Mostra dettagli".
+Future<void> showErrorDialog(BuildContext context, Object error, {String title = 'Errore'}) {
+  final full = describeError(error).trim();
+  final first = full.split('\n').first;
+  final message = first.length > 200 ? '${first.substring(0, 197)}…' : first;
+  return showAlert<void>(
+    context,
+    title: title,
+    message: message,
+    style: AlertStyle.critical,
+    details: message == full ? null : full,
+    buttons: const [AlertButton('OK', null, role: AlertRole.defaultAction)],
+  );
+}
+
+/// Runs [action] showing errors in an alert. Returns true on success.
+Future<bool> guarded(BuildContext context, Future<void> Function() action, {String title = 'Errore'}) async {
+  try {
+    await action();
+    return true;
+  } catch (e) {
+    if (context.mounted) showErrorDialog(context, e, title: title);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// List picker
+// ---------------------------------------------------------------------------
+
+/// Medium sheet to pick one item: search field, list, Annulla / [choose].
+/// Arrows move the selection from the search field, Invio or a double click
+/// chooses.
+Future<T?> showListPicker<T>(
+  BuildContext context, {
+  required String title,
+  required List<T> items,
+  required String Function(T) label,
+  String Function(T)? detail,
+  IconData Function(T)? icon,
+  String choose = 'Scegli',
+  String searchHint = 'Cerca',
+}) => showSheet<T>(
+  context,
+  builder: (_) => _ListPicker<T>(
+    title: title,
+    items: items,
+    label: label,
+    detail: detail,
+    icon: icon,
+    choose: choose,
+    searchHint: searchHint,
+  ),
+);
+
+class _ListPicker<T> extends StatefulWidget {
+  const _ListPicker({
+    required this.title,
+    required this.items,
+    required this.label,
+    required this.detail,
+    required this.icon,
+    required this.choose,
+    required this.searchHint,
+  });
+
+  final String title;
+  final List<T> items;
+  final String Function(T) label;
+  final String Function(T)? detail;
+  final IconData Function(T)? icon;
+  final String choose;
+  final String searchHint;
+
+  @override
+  State<_ListPicker<T>> createState() => _ListPickerState<T>();
+}
+
+class _ListPickerState<T> extends State<_ListPicker<T>> {
+  static const _rowHeight = 24.0;
+  static const _listHeight = 288.0;
+
+  final _query = TextEditingController();
+  final _scroll = ScrollController();
+  late List<T> _shown = widget.items;
+  int _selected = 0;
+
+  @override
+  void dispose() {
+    _query.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _filter(String q) {
+    final needle = q.trim().toLowerCase();
+    setState(() {
+      _shown = needle.isEmpty
+          ? widget.items
+          : widget.items.where((i) => widget.label(i).toLowerCase().contains(needle)).toList();
+      _selected = 0;
+    });
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  void _move(int delta) {
+    if (_shown.isEmpty) return;
+    setState(() => _selected = (_selected + delta).clamp(0, _shown.length - 1));
+    if (!_scroll.hasClients) return;
+    final top = _selected * _rowHeight;
+    final view = _scroll.position.viewportDimension;
+    if (top < _scroll.offset) {
+      _scroll.jumpTo(top);
+    } else if (top + _rowHeight > _scroll.offset + view) {
+      _scroll.jumpTo(top + _rowHeight - view + Gap.xs * 2);
+    }
+  }
+
+  void _pick() {
+    if (_selected < _shown.length) Navigator.of(context).pop(_shown[_selected]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    final canPick = _selected < _shown.length;
+    return SheetScaffold(
+      title: widget.title,
+      onSubmit: canPick ? _pick : null,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: (_, e) {
+              if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+              if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
+                _move(1);
+                return KeyEventResult.handled;
+              }
+              if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
+                _move(-1);
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: SearchField(controller: _query, hint: widget.searchHint, autofocus: true, onChanged: _filter),
+          ),
+          const SizedBox(height: Gap.sm),
+          Container(
+            height: _listHeight,
+            decoration: BoxDecoration(
+              color: c.content,
+              borderRadius: BorderRadius.circular(Radii.panel),
+              border: Border.all(color: c.separator, width: 0.5),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: _shown.isEmpty
+                ? Center(child: Text('Nessun risultato', style: uiText(TypeSize.body, color: c.textTertiary)))
+                : ListView.builder(
+                    controller: _scroll,
+                    padding: const EdgeInsets.all(Gap.xs),
+                    itemExtent: _rowHeight,
+                    itemCount: _shown.length,
+                    itemBuilder: (context, i) => _row(c, i),
+                  ),
+          ),
+        ],
+      ),
+      actions: [
+        PushButton(label: 'Annulla', onPressed: () => Navigator.of(context).pop()),
+        PushButton.primary(label: widget.choose, onPressed: canPick ? _pick : null),
+      ],
+    );
+  }
+
+  Widget _row(DbColors c, int i) {
+    final item = _shown[i];
+    final selected = i == _selected;
+    final fg = selected ? c.onSelectionEmphasized : c.text;
+    final detail = widget.detail?.call(item);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _selected = i),
+      onDoubleTap: _pick,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+        decoration: BoxDecoration(
+          color: selected ? c.selectionEmphasized : null,
+          borderRadius: BorderRadius.circular(Radii.control),
+        ),
+        child: Row(
+          children: [
+            if (widget.icon != null) ...[
+              Icon(widget.icon!(item), size: 16, color: selected ? fg : c.textSecondary),
+              const SizedBox(width: 6),
+            ],
+            Expanded(
+              child: Text(
+                widget.label(item),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: uiText(TypeSize.body, color: fg),
+              ),
+            ),
+            if (detail != null)
+              Text(
+                detail,
+                style: uiText(TypeSize.caption, color: selected ? fg : c.textTertiary, features: kTabular),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// About
+// ---------------------------------------------------------------------------
+
+/// About panel (orderFrontStandardAboutPanel): icon 64, name 15 bold,
+/// version 11 secondary, [description], copyright 10, optional [action].
+class AboutPanel extends StatelessWidget {
+  const AboutPanel({
+    super.key,
+    required this.name,
+    required this.version,
+    this.description,
+    this.copyright,
+    this.action,
+  });
+
+  final String name;
+  final String version;
+  final String? description;
+  final String? copyright;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.xl, Gap.xl, _kMargin),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AppMark(),
+          const SizedBox(height: Gap.md),
+          Text(name, style: uiText(TypeSize.title, weight: FontWeight.w700, color: c.text)),
+          const SizedBox(height: 2),
+          Text('Versione $version', style: uiText(TypeSize.caption, color: c.textSecondary, features: kTabular)),
+          if (description != null) ...[
+            const SizedBox(height: Gap.md),
+            Text(
+              description!,
+              textAlign: TextAlign.center,
+              style: uiText(TypeSize.caption, color: c.textSecondary, height: 1.35),
+            ),
+          ],
+          if (copyright != null) ...[
+            const SizedBox(height: Gap.md),
+            Text(copyright!, textAlign: TextAlign.center, style: uiText(TypeSize.mini, color: c.textTertiary)),
+          ],
+          if (action != null) ...[const SizedBox(height: Gap.lg), action!],
+        ],
+      ),
+    );
+  }
+}
+
+/// Opens the [AboutPanel] centered in the window; Esc or a click outside
+/// closes it.
+Future<void> showAboutPanel(
+  BuildContext context, {
+  required String name,
+  required String version,
+  String? description,
+  String? copyright,
+  Widget? action,
+}) => _present<void>(
+  context,
+  width: 280,
+  centered: true,
+  dismissible: true,
+  builder: (_) => AboutPanel(
+    name: name,
+    version: version,
+    description: description,
+    copyright: copyright,
+    action: action,
+  ),
+);
