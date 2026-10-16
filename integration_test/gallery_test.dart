@@ -20,7 +20,7 @@ void main() {
 
   testWidgets('control gallery', (tester) async {
     final key = GlobalKey();
-    await tester.binding.setSurfaceSize(const Size(1400, 2600));
+    await tester.binding.setSurfaceSize(const Size(1400, 3800));
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,
