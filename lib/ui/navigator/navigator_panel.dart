@@ -194,12 +194,12 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ToolButton(
-                icon: Icons.add_rounded,
+                icon: AppIcons.add,
                 tooltip: 'Nuova connessione',
                 onPressed: () => newConnection(context),
               ),
               ToolButton(
-                icon: Icons.unfold_less_rounded,
+                icon: AppIcons.collapseAll,
                 tooltip: 'Comprimi tutto',
                 onPressed: () => setState(() {
                   for (final n in _cache.values) {
@@ -208,7 +208,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
                 }),
               ),
               ToolButton(
-                icon: Icons.refresh_rounded,
+                icon: AppIcons.refresh,
                 tooltip: 'Aggiorna (F5)',
                 onPressed: _selected == null ? null : () => _refresh(_selected!),
               ),
@@ -271,7 +271,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   }
 
   Widget _empty() => EmptyState(
-    icon: Icons.storage_rounded,
+    icon: AppIcons.database,
     title: 'Nessuna connessione',
     message: 'Aggiungi un database tramite driver ODBC, DSN o stringa di connessione.',
     action: PrimaryButton(label: 'Nuova connessione', onPressed: () => newConnection(context)),
@@ -348,7 +348,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
                                 turns: n.expanded ? 0.25 : 0,
                                 duration: const Duration(milliseconds: 120),
                                 curve: Curves.easeOut,
-                                child: Icon(Icons.chevron_right_rounded, size: 15, color: fgSecondary),
+                                child: Icon(AppIcons.chevronRight, size: 15, color: fgSecondary),
                               ),
                             )
                     : null,
@@ -399,7 +399,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               if (n.error != null)
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
-                  child: Icon(Icons.warning_amber_rounded, size: 14, color: strong ? Colors.white : c.danger),
+                  child: Icon(AppIcons.warning, size: 14, color: strong ? Colors.white : c.danger),
                 ),
             ],
           ),
@@ -444,42 +444,42 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       case ConnectionNode c:
         final d = c.dc;
         items.addAll([
-          if (!d.isConnected) _item('Connetti', Icons.power, () => ensureConnected(context, d)),
-          if (d.isConnected) _item('Disconnetti', Icons.power_off, () => disconnectWithCheck(context, d)),
+          if (!d.isConnected) _item('Connetti', AppIcons.connect, () => ensureConnected(context, d)),
+          if (d.isConnected) _item('Disconnetti', AppIcons.disconnect, () => disconnectWithCheck(context, d)),
           if (d.isConnected)
             _item(
               'Riconnetti',
-              Icons.sync,
+              AppIcons.sync,
               () => guarded(context, () => d.reconnect(libPath: app.settings.libPathOrNull)),
             ),
           const PopupMenuDivider(height: 9),
-          _item('Nuovo editor SQL', Icons.note_add_outlined, () => openSqlEditor(context, dc: d), shortcut: 'Ctrl+]'),
+          _item('Nuovo editor SQL', AppIcons.newScript, () => openSqlEditor(context, dc: d), shortcut: 'Ctrl+]'),
           if (d.isConnected && d.dialect.isSql)
-            _item('Query builder…', Icons.join_inner_rounded, () => app.openFeatureTab(QueryBuilderTab(d))),
+            _item('Query builder…', AppIcons.join, () => app.openFeatureTab(QueryBuilderTab(d))),
           if (d.isConnected && !simple)
             _item(
               'Prestazioni…',
-              Icons.speed_rounded,
+              AppIcons.performance,
               () => app.openFeatureTab<PerformanceDashboardTab>(PerformanceDashboardTab(d), match: (t) => t.dc == d),
             ),
-          _item('Informazioni connessione', Icons.info_outline, d.isConnected ? () => app.openConnectionInfo(d) : null),
+          _item('Informazioni connessione', AppIcons.info, d.isConnected ? () => app.openConnectionInfo(d) : null),
           const PopupMenuDivider(height: 9),
-          _item('Modifica connessione…', Icons.edit, () => editConnection(context, d), shortcut: 'F4'),
-          _item('Duplica', Icons.copy_all, () => duplicateConnection(context, d)),
-          _item('Sposta su', Icons.arrow_upward, () => app.moveConnection(d, -1)),
-          _item('Sposta giù', Icons.arrow_downward, () => app.moveConnection(d, 1)),
-          _item('Elimina', Icons.delete_outline, () => deleteConnection(context, d)),
+          _item('Modifica connessione…', AppIcons.edit, () => editConnection(context, d), shortcut: 'F4'),
+          _item('Duplica', AppIcons.copy, () => duplicateConnection(context, d)),
+          _item('Sposta su', AppIcons.arrowUp, () => app.moveConnection(d, -1)),
+          _item('Sposta giù', AppIcons.arrowDown, () => app.moveConnection(d, 1)),
+          _item('Elimina', AppIcons.delete, () => deleteConnection(context, d)),
           const PopupMenuDivider(height: 9),
-          _item('Aggiorna', Icons.refresh, d.isConnected ? () => _refresh(n) : null, shortcut: 'F5'),
+          _item('Aggiorna', AppIcons.refresh, d.isConnected ? () => _refresh(n) : null, shortcut: 'F5'),
         ]);
       case CatalogNode c:
         items.addAll([
           _item(
             'Nuovo editor SQL',
-            Icons.note_add_outlined,
+            AppIcons.newScript,
             () => app.openSqlEditor(dc, catalog: c.catalog),
           ),
-          _item('Imposta come predefinito', Icons.check, () async {
+          _item('Imposta come predefinito', AppIcons.check, () async {
             await guarded(context, () async {
               await dc!.useCatalog(c.catalog);
               dc.defaultCatalog = c.catalog;
@@ -487,40 +487,40 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               if (mounted) showToast(this.context, 'Catalogo attivo: ${c.catalog}');
             });
           }),
-          _item('Diagramma ER', Icons.account_tree_outlined, () => app.openErDiagram(dc!, c.catalog, null)),
+          _item('Diagramma ER', AppIcons.tree, () => app.openErDiagram(dc!, c.catalog, null)),
           if (dc!.dialect.isSql)
             _item(
               'Query builder…',
-              Icons.join_inner_rounded,
+              AppIcons.join,
               () => app.openFeatureTab(QueryBuilderTab(dc, catalog: c.catalog)),
             ),
           if (dc.dialect.isSql && !simple)
             _item(
               'Confronta schema…',
-              Icons.difference_outlined,
+              AppIcons.diff,
               () => app.openFeatureTab(SchemaCompareTab(source: dc, sourceCatalog: c.catalog)),
             ),
-          _item('Copia nome', Icons.content_copy, () => Clipboard.setData(ClipboardData(text: c.catalog))),
-          _item('Aggiorna', Icons.refresh, () => _refresh(n), shortcut: 'F5'),
+          _item('Copia nome', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: c.catalog))),
+          _item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'),
         ]);
       case SchemaNode s:
         items.addAll([
-          _item('Nuovo editor SQL', Icons.note_add_outlined, () => app.openSqlEditor(dc, catalog: s.catalog)),
-          _item('Diagramma ER', Icons.account_tree_outlined, () => app.openErDiagram(dc!, s.catalog, s.schema)),
+          _item('Nuovo editor SQL', AppIcons.newScript, () => app.openSqlEditor(dc, catalog: s.catalog)),
+          _item('Diagramma ER', AppIcons.tree, () => app.openErDiagram(dc!, s.catalog, s.schema)),
           if (dc!.dialect.isSql)
             _item(
               'Query builder…',
-              Icons.join_inner_rounded,
+              AppIcons.join,
               () => app.openFeatureTab(QueryBuilderTab(dc, catalog: s.catalog, schema: s.schema)),
             ),
           if (dc.dialect.isSql && !simple)
             _item(
               'Confronta schema…',
-              Icons.difference_outlined,
+              AppIcons.diff,
               () => app.openFeatureTab(SchemaCompareTab(source: dc, sourceCatalog: s.catalog, sourceSchema: s.schema)),
             ),
-          _item('Copia nome', Icons.content_copy, () => Clipboard.setData(ClipboardData(text: s.schema))),
-          _item('Aggiorna', Icons.refresh, () => _refresh(n), shortcut: 'F5'),
+          _item('Copia nome', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: s.schema))),
+          _item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'),
         ]);
       case TableNode t:
         final tb = t.table;
@@ -533,100 +533,100 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         }
 
         items.addAll([
-          _item('Apri', Icons.open_in_new, () => app.openTable(dc, tb), shortcut: 'Invio'),
-          _item('Visualizza dati', Icons.grid_on, () => app.openTable(dc, tb, page: 1)),
+          _item('Apri', AppIcons.openExternal, () => app.openTable(dc, tb), shortcut: 'Invio'),
+          _item('Visualizza dati', AppIcons.grid, () => app.openTable(dc, tb, page: 1)),
           if (d.isSql)
             _item(
               'Query builder…',
-              Icons.join_inner_rounded,
+              AppIcons.join,
               () => app.openFeatureTab(QueryBuilderTab(dc, catalog: tb.catalog, schema: tb.schema, initialTable: tb)),
             ),
-          _item('Leggi in editor SQL', Icons.play_arrow_outlined, () => sqlWith('SELECT * FROM ${d.tableName(tb)}')),
+          _item('Leggi in editor SQL', AppIcons.runOutline, () => sqlWith('SELECT * FROM ${d.tableName(tb)}')),
           if (d.isSql && !simple) ...[
             const PopupMenuDivider(height: 9),
-            _item('Genera SELECT', Icons.code, () => gen((x) => '${d.selectSql(tb, x.columns)};')),
-            _item('Genera INSERT', Icons.code, () => gen((x) => '${d.insertSql(tb, x.columns)};')),
+            _item('Genera SELECT', AppIcons.code, () => gen((x) => '${d.selectSql(tb, x.columns)};')),
+            _item('Genera INSERT', AppIcons.code, () => gen((x) => '${d.insertSql(tb, x.columns)};')),
             _item(
               'Genera UPDATE',
-              Icons.code,
+              AppIcons.code,
               () => gen((x) => '${d.updateSql(tb, x.columns, x.primaryKey?.columns ?? [])};'),
             ),
             _item(
               'Genera DELETE',
-              Icons.code,
+              AppIcons.code,
               () => gen((x) => '${d.deleteSql(tb, x.columns, x.primaryKey?.columns ?? [])};'),
             ),
-            _item('Genera DDL', Icons.description_outlined, () => gen(d.ddl)),
+            _item('Genera DDL', AppIcons.document, () => gen(d.ddl)),
           ],
           const PopupMenuDivider(height: 9),
-          _item('Esporta dati…', Icons.file_upload_outlined, () => showTableExportDialog(context, dc, tb)),
+          _item('Esporta dati…', AppIcons.upload, () => showTableExportDialog(context, dc, tb)),
           if (!tb.isView)
             _item(
               'Importa dati (CSV)…',
-              Icons.file_download_outlined,
+              AppIcons.download,
               dc.config.readOnly ? null : () => showImportDialog(context, dc, tb),
             ),
           _item(
             'Diagramma ER',
-            Icons.account_tree_outlined,
+            AppIcons.tree,
             () => app.openErDiagram(dc, tb.catalog, tb.schema, focus: tb),
           ),
           if (!tb.isView && d.isSql && !simple)
             _item(
               'Genera dati di test…',
-              Icons.casino_outlined,
+              AppIcons.random,
               dc.config.readOnly ? null : () => showMockDataDialog(context, dc, tb),
             ),
           if (!simple)
             _item(
               'Confronta dati…',
-              Icons.compare_arrows_rounded,
+              AppIcons.compare,
               () => app.openFeatureTab(DataCompareTab(source: dc, sourceTable: tb)),
             ),
-          _item('Conta righe', Icons.numbers, () => _countRows(dc, tb)),
+          _item('Conta righe', AppIcons.number, () => _countRows(dc, tb)),
           if (app.settings.aiEnabled)
-            _item('Spiega con AI', Icons.auto_awesome_outlined, () async {
+            _item('Spiega con AI', AppIcons.ai, () async {
               if (await ensureAiReady(context) && mounted) await showAiExplainObject(this.context, dc, tb);
             }),
           _item(
             'Copia nome qualificato',
-            Icons.content_copy,
+            AppIcons.copy,
             () => Clipboard.setData(ClipboardData(text: d.tableName(tb))),
           ),
           const PopupMenuDivider(height: 9),
           if (!tb.isView)
             _item(
               'Svuota (TRUNCATE)…',
-              Icons.cleaning_services_outlined,
+              AppIcons.clearAll,
               dc.config.readOnly ? null : () => _dangerous(dc, d.truncateSql(tb), n),
             ),
           _item(
             'Elimina (DROP)…',
-            Icons.delete_forever_outlined,
+            AppIcons.delete,
             dc.config.readOnly ? null : () => _dangerous(dc, d.dropSql(tb), n),
           ),
-          _item('Aggiorna', Icons.refresh, () => _refresh(n), shortcut: 'F5'),
+          _item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'),
         ]);
       case ProcedureNode p:
         items.addAll([
-          _item('Apri', Icons.open_in_new, () => app.openProcedure(dc!, p.procedure)),
+          _item('Apri', AppIcons.openExternal, () => app.openProcedure(dc!, p.procedure)),
           if (app.settings.aiEnabled)
-            _item('Spiega con AI', Icons.auto_awesome_outlined, () async {
+            _item('Spiega con AI', AppIcons.ai, () async {
               if (await ensureAiReady(context) && mounted) await showAiExplainProcedure(this.context, dc!, p.procedure);
             }),
           if (dc!.dialect.family == DbFamily.postgres)
-            _item('Debug…', Icons.bug_report_outlined, () => PgDebuggerTab.open(context, dc, p.procedure)),
-          _item('Genera chiamata', Icons.code, () async {
+            _item('Debug…', AppIcons.debug, () => PgDebuggerTab.open(context, dc, p.procedure)),
+          _item('Genera chiamata', AppIcons.code, () async {
             final params = await dc.metadata!.procedureParams(p.procedure);
             sqlWith(dc.dialect.procedureCall(p.procedure, params));
           }),
-          _item('Copia nome', Icons.content_copy, () => Clipboard.setData(ClipboardData(text: p.procedure.cleanName))),
+          _item('Copia nome', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: p.procedure.cleanName))),
         ]);
       case ObjectFolderNode _:
       case TablePartNode _:
-        items.add(_item('Aggiorna', Icons.refresh, () => _refresh(n), shortcut: 'F5'));
+        items.add(_item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'));
       case LeafNode l:
-        items.add(_item('Copia nome', Icons.content_copy, () => Clipboard.setData(ClipboardData(text: l.name))));
+        items.add(_item('Copia nome', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: l.name))));
       default:
         break;
     }

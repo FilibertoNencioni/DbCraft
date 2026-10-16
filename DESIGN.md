@@ -1,6 +1,8 @@
 # DbCraft design system
 
-The visual world is **macOS-native Operate UI**: the window chrome recedes into one calm gray layer and SQL and data take the space. The tokens live in `lib/ui/theme/app_theme.dart` (`DbColors`, `Gap`, `Radii`, `TypeSize`) and every widget reads them through `DbColors.of(context)`. Do not hard-code colors in widgets.
+The visual world is **macOS-native Operate UI**: the window chrome recedes into one calm gray layer and SQL and data take the space. The tokens live in `lib/ui/theme/app_theme.dart` (`DbColors`, `Gap`, `Radii`, `TypeSize`, `uiText`) and `lib/ui/theme/tokens.dart` (`ControlSize`, `BarHeight`, `Tint`, `Elevation`, `Motion`), and every widget reads colors through `DbColors.of(context)`. Do not hard-code colors, alphas or shadows in widgets.
+
+The target is macOS Sonoma/Sequoia (no Liquid Glass). `lib/ui/dev/control_gallery.dart` (Aiuto ▸ Galleria controlli, debug builds; `integration_test/gallery_test.dart` saves it as a PNG) shows every component in light, dark and inactive-window states, to compare against native screenshots.
 
 ## Surfaces
 
@@ -17,7 +19,8 @@ Elevation is either a hairline or a shadow, never both, except on sheets and men
 
 ## Color
 
-- **One accent**: system blue (`#007AFF` light, `#0A84FF` dark). Use it only for the primary action (Esegui, Crea/Salva), selection, focus rings and the active state.
+- **One accent**: the user's system accent color (`NSColor.controlAccentColor`, default blue `#007AFF` light, `#0A84FF` dark), delivered by `WindowBridge`. Use it only for the primary action (Esegui, Crea/Salva), selection, focus rings and the active state.
+- **Inactive window**: when the window is not key, `DbColors.resolve` turns `selection`, `selectionEmphasized` and `defaultButton` gray, as AppKit does. Use those tokens, never `accent`, for selections and the default button.
 - **Semantic colors**: `success` (connected, commit), `warning` (pending changes), `danger` (errors, destructive actions, Interrompi).
 - **Environment colors** (`ConnectionType`): green for development, orange for test, red for production. A dot or badge appears **only for test and production**; development is the default and stays silent.
 - **Connection state** uses a separate signal: a solid green dot means connected and an empty ring means disconnected. Never reuse the environment dot to show state.
@@ -25,7 +28,7 @@ Elevation is either a hairline or a shadow, never both, except on sheets and men
 
 ## Typography
 
-- System font (SF on macOS) at 13pt body, 12 small, 11 caption, 15 titles, 17 sheet titles, 26 display (welcome only).
+- System font (`.AppleSystemUIFont`, SF on macOS) at 13pt body, 12 small, 11 caption, 10 mini, 15 titles, 17 sheet titles, 26 display (welcome only). Build styles with `uiText(size, …)`: it applies SF's size-specific tracking (−0.08 at 13pt), which Flutter does not apply by itself. No fractional sizes (`small + 0.5`).
 - `SF Mono` (falling back to Menlo/Consolas) for SQL, connection strings, error messages and data cells in value views.
 - Tabular figures (`kTabular`) on every number: grid, counts, timings.
 - Labels use sentence case. There are no eyebrows and no uppercase section headers; `SectionLabel` is 11pt semibold secondary.
@@ -35,9 +38,10 @@ Elevation is either a hairline or a shadow, never both, except on sheets and men
 ## Shape and spacing
 
 - 4pt grid (`Gap`).
-- Radii (`Radii`): 6 for controls, 8 for panels and form groups, 12 for sheets.
-- Control height is 28 (buttons, fields, segmented controls). Toolbars are 52 (unified, macOS) or 44 (other platforms) for the app toolbar, 40 for the editor toolbar, 34 for the tab strip and 24 for status bars.
-- Icon glyphs: 17 in controls (`ToolButton` default), 19–21 on 32pt buttons in the unified toolbar, 16–17 in source-list rows. Material glyphs draw smaller than SF Symbols, so never go below 16.
+- Radii (`Radii`): 4 small (tags, keycaps, tooltips), 5 for controls, 6 for menus, 8 for panels and form groups, 10 for sheets and popovers.
+- Control heights (`ControlSize`): 22 regular (buttons, fields, pop-ups, segmented controls), 19 small, 16 mini, 28 in the unified toolbar. Bars (`BarHeight`): 52 app toolbar, 36 pane toolbar, 28 pane header / inner strip, 30 tab strip, 22 status bar.
+- Fields draw a 0.5px outline and, when focused, an outer 3.5px focus ring (`MacFieldBorder`), never a thicker inner border.
+- Icons come only from `AppIcons` (`lib/ui/theme/app_icons.dart`), the Phosphor font bundled in `assets/fonts/phosphor` (Regular, Bold for chevrons, Fill for selected states). Never use `Icons.*`. Sizes: 16 in controls, 18 in the unified toolbar, 14 in dense rows.
 - Grid rows are 26 and the grid header is 30. Source-list rows (navigator, scripts) are 28 (`kSidebarRowHeight`).
 
 ## Components (`lib/ui/widgets/common.dart`)

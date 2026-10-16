@@ -212,7 +212,7 @@ class _DdlScriptDialogState extends State<_DdlScriptDialog> {
         OutlinedButton(onPressed: _running ? null : () => Navigator.pop(context, false), child: const Text('Chiudi')),
         PrimaryButton(
           label: 'Esegui',
-          icon: Icons.play_arrow_rounded,
+          icon: AppIcons.run,
           tooltip: readOnly ? 'Connessione in sola lettura' : null,
           onPressed: _running || readOnly || _count == 0 ? null : _run,
         ),

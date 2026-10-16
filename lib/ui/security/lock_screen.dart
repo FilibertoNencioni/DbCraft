@@ -76,7 +76,7 @@ class _LockScreenState extends State<LockScreen> {
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 24, offset: const Offset(0, 8))],
           ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.lock_outline_rounded, size: 36, color: c.accent),
+            Icon(AppIcons.lock, size: 36, color: c.accent),
             const SizedBox(height: Gap.md),
             Text('DbCraft è bloccato', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: Gap.xs),
@@ -103,7 +103,7 @@ class _LockScreenState extends State<LockScreen> {
               width: double.infinity,
               child: PrimaryButton(
                 label: _busy ? 'Verifica…' : 'Sblocca',
-                icon: Icons.lock_open_rounded,
+                icon: AppIcons.lockOpen,
                 onPressed: _busy ? null : _submit,
               ),
             ),

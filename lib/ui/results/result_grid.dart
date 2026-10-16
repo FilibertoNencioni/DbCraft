@@ -523,7 +523,7 @@ class ResultGridState extends State<ResultGrid> {
                   child: Row(
                     children: [
                       if (isKey) ...[
-                        const Icon(Icons.key_rounded, size: 11, color: Color(0xFFE8A200)),
+                        const Icon(AppIcons.key, size: 11, color: Color(0xFFE8A200)),
                         const SizedBox(width: 4),
                       ],
                       Flexible(
@@ -544,7 +544,7 @@ class ResultGridState extends State<ResultGrid> {
                       ),
                       if (sorted)
                         Icon(
-                          m.sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                          m.sortAscending ? AppIcons.arrowUp : AppIcons.arrowDown,
                           size: 12,
                           color: c.accent,
                         ),
@@ -736,11 +736,11 @@ class ResultGridState extends State<ResultGrid> {
   void _headerMenu(int c, Offset pos) {
     final col = m.columns[c];
     _show(pos, [
-      _mi('Ordina crescente', Icons.arrow_upward, () => m.sortBy(c)),
-      _mi('Ordina decrescente', Icons.arrow_downward, () => m.sortBy(c, ascending: false)),
-      _mi('Rimuovi ordinamento', Icons.clear, m.sortColumn == null ? null : () => m.sortBy(null)),
+      _mi('Ordina crescente', AppIcons.arrowUp, () => m.sortBy(c)),
+      _mi('Ordina decrescente', AppIcons.arrowDown, () => m.sortBy(c, ascending: false)),
+      _mi('Rimuovi ordinamento', AppIcons.close, m.sortColumn == null ? null : () => m.sortBy(null)),
       const PopupMenuDivider(height: 9),
-      _mi('Seleziona colonna', Icons.view_column, () {
+      _mi('Seleziona colonna', AppIcons.column, () {
         setState(() {
           _sel.clear();
           for (var r = 0; r < m.view.length; r++) {
@@ -748,8 +748,8 @@ class ResultGridState extends State<ResultGrid> {
           }
         });
       }),
-      _mi('Copia nome colonna', Icons.content_copy, () => Clipboard.setData(ClipboardData(text: col.name))),
-      _mi('Adatta larghezza', Icons.width_normal, () => setState(() => _widths.remove(c))),
+      _mi('Copia nome colonna', AppIcons.copy, () => Clipboard.setData(ClipboardData(text: col.name))),
+      _mi('Adatta larghezza', AppIcons.widthNormal, () => setState(() => _widths.remove(c))),
     ]);
   }
 
@@ -758,38 +758,38 @@ class ResultGridState extends State<ResultGrid> {
     final v = m.rowAt(r).values[c];
     final editable = m.isEditable;
     _show(pos, [
-      _mi('Copia', Icons.content_copy, () => copy(), 'Ctrl+C'),
-      _mi('Copia con intestazioni', Icons.copy_all, () => copy(header: true), 'Ctrl+Shift+C'),
-      _mi('Copia come CSV', Icons.copy, () => copy(format: ExportFormat.csv)),
-      _mi('Copia come JSON', Icons.data_object, () => copy(format: ExportFormat.json)),
-      _mi('Copia come Markdown', Icons.table_rows_outlined, () => copy(format: ExportFormat.markdown)),
-      if (!widget.simpleMode) _mi('Copia come SQL INSERT', Icons.code, () => copy(format: ExportFormat.sql)),
-      _mi('Incolla', Icons.content_paste, editable ? paste : null, 'Ctrl+V'),
+      _mi('Copia', AppIcons.copy, () => copy(), 'Ctrl+C'),
+      _mi('Copia con intestazioni', AppIcons.copy, () => copy(header: true), 'Ctrl+Shift+C'),
+      _mi('Copia come CSV', AppIcons.copy, () => copy(format: ExportFormat.csv)),
+      _mi('Copia come JSON', AppIcons.json, () => copy(format: ExportFormat.json)),
+      _mi('Copia come Markdown', AppIcons.rows, () => copy(format: ExportFormat.markdown)),
+      if (!widget.simpleMode) _mi('Copia come SQL INSERT', AppIcons.code, () => copy(format: ExportFormat.sql)),
+      _mi('Incolla', AppIcons.paste, editable ? paste : null, 'Ctrl+V'),
       const PopupMenuDivider(height: 9),
-      _mi('Visualizza / modifica valore…', Icons.open_in_full, () => openValueEditor(r, c), 'Shift+Invio'),
-      _mi('Modifica cella', Icons.edit, editable ? () => startEdit(r, c) : null, 'Invio'),
-      _mi('Imposta NULL', Icons.block, editable ? setNull : null),
+      _mi('Visualizza / modifica valore…', AppIcons.expand, () => openValueEditor(r, c), 'Shift+Invio'),
+      _mi('Modifica cella', AppIcons.edit, editable ? () => startEdit(r, c) : null, 'Invio'),
+      _mi('Imposta NULL', AppIcons.block, editable ? setNull : null),
       const PopupMenuDivider(height: 9),
-      _mi('Aggiungi riga', Icons.add, editable ? addRow : null, 'Ins'),
-      _mi('Duplica riga', Icons.control_point_duplicate, editable ? duplicateRow : null),
-      _mi('Elimina righe', Icons.remove, editable ? deleteSelectedRows : null, 'Canc'),
+      _mi('Aggiungi riga', AppIcons.add, editable ? addRow : null, 'Ins'),
+      _mi('Duplica riga', AppIcons.duplicate, editable ? duplicateRow : null),
+      _mi('Elimina righe', AppIcons.remove, editable ? deleteSelectedRows : null, 'Canc'),
       if (widget.onFilterByValue != null) ...[
         const PopupMenuDivider(height: 9),
         _mi(
           v == null ? 'Filtra: ${col.name} IS NULL' : 'Filtra: ${col.name} = ${formatValue(v, maxLen: 30)}',
-          Icons.filter_alt_outlined,
+          AppIcons.filter,
           () => widget.onFilterByValue!(col, v, '='),
         ),
         if (v != null)
           _mi(
             'Filtra: ${col.name} <> ${formatValue(v, maxLen: 30)}',
-            Icons.filter_alt_off_outlined,
+            AppIcons.filterOff,
             () => widget.onFilterByValue!(col, v, '<>'),
           ),
       ],
       if (widget.onExport != null) ...[
         const PopupMenuDivider(height: 9),
-        _mi('Esporta dati…', Icons.file_upload_outlined, widget.onExport),
+        _mi('Esporta dati…', AppIcons.upload, widget.onExport),
       ],
     ]);
   }

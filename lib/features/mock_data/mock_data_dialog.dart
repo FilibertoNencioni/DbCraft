@@ -508,19 +508,19 @@ class _MockDataDialogState extends State<_MockDataDialog> {
           OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Chiudi')),
         OutlinedButton.icon(
           onPressed: _running ? null : _csv,
-          icon: const Icon(Icons.table_view_outlined, size: 16),
+          icon: const Icon(AppIcons.table, size: 16),
           label: const Text('Esporta CSV…'),
         ),
         OutlinedButton.icon(
           onPressed: _running ? null : _script,
-          icon: const Icon(Icons.description_outlined, size: 16),
+          icon: const Icon(AppIcons.document, size: 16),
           label: const Text('Genera script SQL'),
         ),
         Tooltip(
           message: readOnly ? 'Connessione in sola lettura' : 'Inserisce le righe con una sessione dedicata',
           child: FilledButton.icon(
             onPressed: _running || readOnly ? null : _insert,
-            icon: const Icon(Icons.playlist_add_rounded, size: 16),
+            icon: const Icon(AppIcons.addList, size: 16),
             label: Text('Inserisci ${_rowCount > 0 ? _rowCount : ''} righe'),
           ),
         ),
@@ -564,8 +564,8 @@ class _MockDataDialogState extends State<_MockDataDialog> {
             SizedBox(
               width: 18,
               child: cfg.isPrimaryKey
-                  ? Icon(Icons.key_rounded, size: 13, color: c.warning)
-                  : (cfg.fkSample != null ? Icon(Icons.link_rounded, size: 13, color: c.textTertiary) : null),
+                  ? Icon(AppIcons.key, size: 13, color: c.warning)
+                  : (cfg.fkSample != null ? Icon(AppIcons.link, size: 13, color: c.textTertiary) : null),
             ),
             Expanded(
               child: Column(
@@ -603,7 +603,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
                 ],
               ),
             ),
-            if (_warning(cfg) != null) Icon(Icons.warning_amber_rounded, size: 14, color: c.warning),
+            if (_warning(cfg) != null) Icon(AppIcons.warning, size: 14, color: c.warning),
           ],
         ),
       ),
@@ -824,7 +824,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.warning_amber_rounded, size: 15, color: c.warning),
+                Icon(AppIcons.warning, size: 15, color: c.warning),
                 const SizedBox(width: Gap.xs),
                 Expanded(
                   child: Text(
@@ -882,7 +882,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
                     ),
                     const SizedBox(width: Gap.xs),
                     ToolButton(
-                      icon: Icons.casino_outlined,
+                      icon: AppIcons.random,
                       tooltip: 'Nuovo seme casuale',
                       onPressed: () => setState(() => _seed.text = '${Random().nextInt(1 << 31)}'),
                     ),
@@ -957,7 +957,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
           if (_truncate)
             Row(
               children: [
-                Icon(Icons.warning_amber_rounded, size: 15, color: c.danger),
+                Icon(AppIcons.warning, size: 15, color: c.danger),
                 const SizedBox(width: Gap.xs),
                 Expanded(
                   child: Text(
@@ -975,7 +975,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
   Widget _previewPage(DbColors c) {
     if (_previewError != null) {
       return EmptyState(
-        icon: Icons.error_outline_rounded,
+        icon: AppIcons.error,
         title: 'Impossibile generare i dati',
         message: _previewError,
       );
@@ -994,7 +994,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
               ),
             ),
             ToolButton(
-              icon: Icons.refresh_rounded,
+              icon: AppIcons.refresh,
               tooltip: 'Nuovo seme e rigenera',
               onPressed: () => setState(() {
                 _seed.text = '${Random().nextInt(1 << 31)}';

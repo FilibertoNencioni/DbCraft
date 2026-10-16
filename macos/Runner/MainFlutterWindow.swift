@@ -46,6 +46,10 @@ class MainFlutterWindow: NSWindow {
         result(nil)
       case "isFullScreen":
         result(self.styleMask.contains(.fullScreen))
+      case "isKeyWindow":
+        result(self.isKeyWindow)
+      case "accentColor":
+        result(Self.accentArgb())
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -58,7 +62,26 @@ class MainFlutterWindow: NSWindow {
     NotificationCenter.default.addObserver(
       forName: NSWindow.willExitFullScreenNotification, object: self, queue: .main
     ) { [weak self] _ in self?.windowChannel?.invokeMethod("fullScreen", arguments: false) }
+    // Inactive windows dim selections and the default button, as AppKit does.
+    NotificationCenter.default.addObserver(
+      forName: NSWindow.didBecomeKeyNotification, object: self, queue: .main
+    ) { [weak self] _ in self?.windowChannel?.invokeMethod("windowKey", arguments: true) }
+    NotificationCenter.default.addObserver(
+      forName: NSWindow.didResignKeyNotification, object: self, queue: .main
+    ) { [weak self] _ in self?.windowChannel?.invokeMethod("windowKey", arguments: false) }
+    // The user's accent color (System Settings > Appearance).
+    NotificationCenter.default.addObserver(
+      forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.windowChannel?.invokeMethod("accentColor", arguments: Self.accentArgb()) }
 
     super.awakeFromNib()
+  }
+
+  /// The system accent color as 0xAARRGGBB in sRGB.
+  private static func accentArgb() -> Int {
+    guard let c = NSColor.controlAccentColor.usingColorSpace(.sRGB) else { return 0xFF007AFF }
+    func byte(_ v: CGFloat) -> Int { Int((max(0, min(1, v)) * 255).rounded()) }
+    return (byte(c.alphaComponent) << 24) | (byte(c.redComponent) << 16) | (byte(c.greenComponent) << 8)
+      | byte(c.blueComponent)
   }
 }

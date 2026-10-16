@@ -264,7 +264,7 @@ class _SyncScriptDialogState extends State<_SyncScriptDialog> {
                 ),
                 child: empty
                     ? const EmptyState(
-                        icon: Icons.check_circle_outline_rounded,
+                        icon: AppIcons.checkCircle,
                         title: 'Nessuna istruzione',
                         message: 'Attiva almeno un tipo di modifica con righe da sincronizzare.',
                       )

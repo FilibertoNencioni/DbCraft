@@ -437,7 +437,7 @@ class CodeBlockView extends StatelessWidget {
                 const Spacer(),
                 if (block.closed) ...actions,
                 ToolButton(
-                  icon: Icons.content_copy_rounded,
+                  icon: AppIcons.copy,
                   size: 14,
                   tooltip: 'Copia',
                   onPressed: () => Clipboard.setData(ClipboardData(text: block.code)),

@@ -220,14 +220,14 @@ class _GitPanelState extends State<GitPanel> {
       body = const Center(child: CircularProgressIndicator(strokeWidth: 2));
     } else if (_gitMissing) {
       body = EmptyState(
-        icon: Icons.warning_amber_rounded,
+        icon: AppIcons.warning,
         title: 'Git non trovato',
         message: 'Installa Git per sincronizzare script e connessioni con un repository, poi premi Riprova.',
         action: OutlinedButton(onPressed: _refresh, child: const Text('Riprova')),
       );
     } else if (!_isRepo) {
       body = EmptyState(
-        icon: Icons.cloud_sync_outlined,
+        icon: AppIcons.git,
         title: 'Progetto non sincronizzato',
         message:
             'Salva script, connessioni e impostazioni in un repository Git per condividerli con il team. '
@@ -272,7 +272,7 @@ class _GitPanelState extends State<GitPanel> {
           padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 0),
           child: Row(
             children: [
-              Icon(Icons.call_split_rounded, size: 15, color: c.textSecondary),
+              Icon(AppIcons.split, size: 15, color: c.textSecondary),
               const SizedBox(width: Gap.xs),
               Flexible(
                 child: Text(
@@ -296,9 +296,9 @@ class _GitPanelState extends State<GitPanel> {
                 ),
               ],
               const Spacer(),
-              ToolButton(icon: Icons.refresh_rounded, tooltip: 'Aggiorna', onPressed: idle ? _refresh : null),
+              ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', onPressed: idle ? _refresh : null),
               ToolButton(
-                icon: Icons.settings_outlined,
+                icon: AppIcons.settings,
                 tooltip: 'Impostazioni di sincronizzazione',
                 onPressed: () async {
                   await showGitSettingsDialog(context);
@@ -323,19 +323,19 @@ class _GitPanelState extends State<GitPanel> {
             children: [
               if (hasRemote) ...[
                 ToolButton(
-                  icon: Icons.download_rounded,
+                  icon: AppIcons.download,
                   label: 'Pull',
                   tooltip: 'Scarica le modifiche remote',
                   onPressed: idle ? _pull : null,
                 ),
                 ToolButton(
-                  icon: Icons.upload_rounded,
+                  icon: AppIcons.upload,
                   label: 'Push',
                   tooltip: 'Pubblica i commit',
                   onPressed: idle ? _push : null,
                 ),
                 ToolButton(
-                  icon: Icons.sync_rounded,
+                  icon: AppIcons.sync,
                   label: 'Sincronizza',
                   tooltip: 'Pull e poi Push',
                   onPressed: idle ? _sync : null,
@@ -411,7 +411,7 @@ class _GitPanelState extends State<GitPanel> {
                   alignment: Alignment.centerRight,
                   child: PrimaryButton(
                     label: 'Commit',
-                    icon: Icons.check_rounded,
+                    icon: AppIcons.check,
                     tooltip: 'Salva tutte le modifiche in un commit',
                     onPressed: idle && st.files.isNotEmpty && !st.hasConflicts && _message.text.trim().isNotEmpty
                         ? _commit
@@ -518,7 +518,7 @@ class _FileRowState extends State<_FileRow> {
                   const Spacer(),
                 if (_hover && widget.onDiscard != null)
                   ToolButton(
-                    icon: f.untracked ? Icons.delete_outline_rounded : Icons.undo_rounded,
+                    icon: f.untracked ? AppIcons.delete : AppIcons.undo,
                     size: 14,
                     tooltip: f.untracked ? 'Elimina il file' : 'Annulla le modifiche',
                     onPressed: widget.onDiscard,
@@ -616,7 +616,7 @@ class _DiffDialog extends StatelessWidget {
                   Expanded(
                     child: Text(title, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge),
                   ),
-                  ToolButton(icon: Icons.close_rounded, tooltip: 'Chiudi', onPressed: () => Navigator.pop(context)),
+                  ToolButton(icon: AppIcons.close, tooltip: 'Chiudi', onPressed: () => Navigator.pop(context)),
                 ],
               ),
             ),

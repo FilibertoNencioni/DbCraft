@@ -32,7 +32,7 @@ class PerformanceDashboardTab extends FeatureTab {
   @override
   String get title => 'Prestazioni · ${dc.config.name}';
   @override
-  IconData get icon => Icons.speed_outlined;
+  IconData get icon => AppIcons.performance;
   @override
   DbConnection get connection => dc;
 
@@ -363,13 +363,13 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
               child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
             ),
             DashboardPhase.notConnected => EmptyState(
-              icon: Icons.power_off_outlined,
+              icon: AppIcons.disconnect,
               title: 'Connessione non attiva',
               message: 'Connetti "${widget.tab.dc.config.name}" per vedere sessioni, lock e metriche del server.',
-              action: PrimaryButton(label: 'Connetti', icon: Icons.power_outlined, onPressed: _connect),
+              action: PrimaryButton(label: 'Connetti', icon: AppIcons.connect, onPressed: _connect),
             ),
             DashboardPhase.unsupported => EmptyState(
-              icon: Icons.speed_outlined,
+              icon: AppIcons.performance,
               title:
                   'Dashboard non supportata per ${widget.tab.dc.serverLabel.isEmpty ? 'questo database' : widget.tab.dc.serverLabel}',
               message:
@@ -378,10 +378,10 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
                   'e interrogare le viste di sistema dall\'editor.',
             ),
             DashboardPhase.failed => EmptyState(
-              icon: Icons.error_outline_rounded,
+              icon: AppIcons.error,
               title: 'Monitoraggio interrotto',
               message: ctl.error,
-              action: PrimaryButton(label: 'Riprova', icon: Icons.refresh_rounded, onPressed: ctl.restart),
+              action: PrimaryButton(label: 'Riprova', icon: AppIcons.refresh, onPressed: ctl.restart),
             ),
             DashboardPhase.running => _dashboard(context),
           },
@@ -407,7 +407,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
             padding: const EdgeInsets.fromLTRB(Gap.md, 0, Gap.md, Gap.sm),
             child: Row(
               children: [
-                Icon(Icons.info_outline_rounded, size: 14, color: c.warning),
+                Icon(AppIcons.info, size: 14, color: c.warning),
                 const SizedBox(width: Gap.xs),
                 Expanded(
                   child: Text(
@@ -464,13 +464,13 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
       child: Row(
         children: [
           ToolButton(
-            icon: ctl.paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+            icon: ctl.paused ? AppIcons.run : AppIcons.pause,
             tooltip: ctl.paused ? 'Riprendi l\'aggiornamento automatico' : 'Sospendi l\'aggiornamento automatico',
             label: ctl.paused ? 'Riprendi' : 'Pausa',
             onPressed: ctl.togglePause,
           ),
           ToolButton(
-            icon: Icons.refresh_rounded,
+            icon: AppIcons.refresh,
             tooltip: 'Aggiorna ora (tutte le schede)',
             onPressed: () => ctl.refresh(full: true),
           ),
@@ -492,13 +492,13 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.timer_outlined, size: 15, color: c.textSecondary),
+                  Icon(AppIcons.timer, size: 15, color: c.textSecondary),
                   const SizedBox(width: 4),
                   Text(
                     'Ogni ${ctl.refreshSec} s',
                     style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary, fontFeatures: kTabular),
                   ),
-                  Icon(Icons.expand_more_rounded, size: 14, color: c.textTertiary),
+                  Icon(AppIcons.chevronDown, size: 14, color: c.textTertiary),
                 ],
               ),
             ),
@@ -617,7 +617,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
       out.add(
         Tooltip(
           message: t.help!,
-          child: Icon(Icons.help_outline_rounded, size: 15, color: DbColors.of(context).textTertiary),
+          child: Icon(AppIcons.help, size: 15, color: DbColors.of(context).textTertiary),
         ),
       );
       out.add(const SizedBox(width: Gap.sm));
@@ -639,7 +639,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
       if (a.cancel != null) {
         out.add(
           ToolButton(
-            icon: Icons.cancel_outlined,
+            icon: AppIcons.cancel,
             tooltip: 'Annulla la query in esecuzione nella sessione selezionata',
             label: 'Annulla query',
             onPressed: row == null ? null : () => _action(t, row, cancel: true),
@@ -648,7 +648,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
       }
       out.add(
         ToolButton(
-          icon: Icons.power_settings_new_rounded,
+          icon: AppIcons.power,
           tooltip: 'Termina la sessione selezionata',
           label: 'Termina sessione',
           color: DbColors.of(context).danger,
@@ -659,7 +659,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
     if (!t.live) {
       out.add(
         ToolButton(
-          icon: Icons.refresh_rounded,
+          icon: AppIcons.refresh,
           tooltip: 'Aggiorna questa scheda',
           onPressed: st?.loading ?? false ? null : () => ctl.refreshTable(t),
         ),
@@ -726,7 +726,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
       return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
     }
     if (st.hint != null) {
-      return EmptyState(icon: Icons.extension_outlined, title: 'Funzione non disponibile', message: st.hint);
+      return EmptyState(icon: AppIcons.extension, title: 'Funzione non disponibile', message: st.hint);
     }
     if (st.error != null) {
       return Padding(
@@ -736,7 +736,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
           children: [
             Row(
               children: [
-                Icon(Icons.lock_outline_rounded, size: 16, color: c.danger),
+                Icon(AppIcons.lock, size: 16, color: c.danger),
                 const SizedBox(width: Gap.sm),
                 Text(
                   'Impossibile leggere "${t.title}"',
@@ -767,7 +767,7 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
     final (rows, depth, blocked) = _visible(t, st);
     if (rows.isEmpty) {
       return EmptyState(
-        icon: t.isBlockingTree ? Icons.lock_open_rounded : Icons.inbox_outlined,
+        icon: t.isBlockingTree ? AppIcons.lockOpen : AppIcons.empty,
         title: t.emptyTitle,
         message: t.idleColumn != null && !_showIdle && st.rows.isNotEmpty
             ? '${st.rows.length} sessioni inattive nascoste: attiva "Mostra inattive" per vederle.'
@@ -800,9 +800,9 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
               child: depth[r] == 0
                   ? Tooltip(
                       message: 'Blocca ${blocked[r]} sessioni',
-                      child: Icon(Icons.lock_rounded, size: 13, color: c.danger),
+                      child: Icon(AppIcons.lock, size: 13, color: c.danger),
                     )
-                  : Icon(Icons.subdirectory_arrow_right_rounded, size: 13, color: c.textTertiary),
+                  : Icon(AppIcons.subdirectory, size: 13, color: c.textTertiary),
             ),
     );
   }

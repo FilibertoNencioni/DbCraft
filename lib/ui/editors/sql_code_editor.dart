@@ -287,12 +287,12 @@ class _SqlAutocompleteViewState extends State<SqlAutocompleteView> {
   }
 
   static (IconData, Color) _icon(PromptKind k) => switch (k) {
-    PromptKind.keyword => (Icons.code_rounded, const Color(0xFFAF52DE)),
-    PromptKind.function => (Icons.functions_rounded, const Color(0xFF30B0C7)),
-    PromptKind.table => (Icons.table_chart_outlined, const Color(0xFF007AFF)),
-    PromptKind.view => (Icons.view_quilt_outlined, const Color(0xFF007AFF)),
-    PromptKind.column => (Icons.view_column_outlined, const Color(0xFFFF9500)),
-    PromptKind.type => (Icons.category_outlined, const Color(0xFF8E8E93)),
+    PromptKind.keyword => (AppIcons.code, const Color(0xFFAF52DE)),
+    PromptKind.function => (AppIcons.function, const Color(0xFF30B0C7)),
+    PromptKind.table => (AppIcons.table, const Color(0xFF007AFF)),
+    PromptKind.view => (AppIcons.erDiagram, const Color(0xFF007AFF)),
+    PromptKind.column => (AppIcons.column, const Color(0xFFFF9500)),
+    PromptKind.type => (AppIcons.category, const Color(0xFF8E8E93)),
   };
 
   @override
@@ -397,20 +397,20 @@ class SqlFindBar extends StatelessWidget implements PreferredSizeWidget {
           Row(
             children: [
               ToolButton(
-                icon: v.replaceMode ? Icons.expand_less : Icons.expand_more,
+                icon: v.replaceMode ? AppIcons.chevronUp : AppIcons.chevronDown,
                 tooltip: 'Sostituisci',
                 onPressed: readOnly ? null : controller.toggleMode,
               ),
               input(controller.findInputController, controller.findInputFocusNode, 'Trova'),
               const SizedBox(width: 4),
               ToolButton(
-                icon: Icons.text_fields,
+                icon: AppIcons.text,
                 tooltip: 'Maiuscole/minuscole',
                 active: v.option.caseSensitive,
                 onPressed: controller.toggleCaseSensitive,
               ),
               ToolButton(
-                icon: Icons.code,
+                icon: AppIcons.code,
                 tooltip: 'Espressione regolare',
                 active: v.option.regex,
                 onPressed: controller.toggleRegex,
@@ -419,12 +419,12 @@ class SqlFindBar extends StatelessWidget implements PreferredSizeWidget {
               Text(count, style: const TextStyle(fontSize: 12)),
               const Spacer(),
               ToolButton(
-                icon: Icons.arrow_upward,
+                icon: AppIcons.arrowUp,
                 tooltip: 'Precedente',
                 onPressed: controller.previousMatch,
               ),
-              ToolButton(icon: Icons.arrow_downward, tooltip: 'Successivo', onPressed: controller.nextMatch),
-              ToolButton(icon: Icons.close, tooltip: 'Chiudi (Esc)', onPressed: controller.close),
+              ToolButton(icon: AppIcons.arrowDown, tooltip: 'Successivo', onPressed: controller.nextMatch),
+              ToolButton(icon: AppIcons.close, tooltip: 'Chiudi (Esc)', onPressed: controller.close),
             ],
           ),
           if (v.replaceMode)

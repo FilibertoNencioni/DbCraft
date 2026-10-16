@@ -17,7 +17,7 @@ class AiSheet extends StatelessWidget {
     required this.title,
     required this.body,
     this.subtitle,
-    this.icon = Icons.auto_awesome_outlined,
+    this.icon = AppIcons.ai,
     this.leading = const [],
     this.actions = const [],
     this.width = 760,
@@ -70,7 +70,7 @@ class AiSheet extends StatelessWidget {
                     ),
                   ),
                   ToolButton(
-                    icon: Icons.close_rounded,
+                    icon: AppIcons.close,
                     tooltip: 'Chiudi (Esc)',
                     onPressed: () => Navigator.pop(context),
                   ),
@@ -152,7 +152,7 @@ class AiNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(error ? Icons.error_outline_rounded : Icons.warning_amber_rounded, size: 16, color: col),
+          Icon(error ? AppIcons.error : AppIcons.warning, size: 16, color: col),
           const SizedBox(width: Gap.sm),
           Expanded(
             child: SelectableText(
@@ -299,7 +299,7 @@ CodeActionsBuilder editorCodeActions(AppState app, DbConnection? dc, {VoidCallba
     (context, b) => [
       if (isQueryBlock(b)) ...[
         ToolButton(
-          icon: Icons.input_rounded,
+          icon: AppIcons.insert,
           size: 14,
           tooltip: 'Inserisci nell\'editor',
           onPressed: () {
@@ -309,7 +309,7 @@ CodeActionsBuilder editorCodeActions(AppState app, DbConnection? dc, {VoidCallba
         ),
         if (dc != null && dialectOf(dc).isSql)
           ToolButton(
-            icon: Icons.play_arrow_rounded,
+            icon: AppIcons.run,
             size: 15,
             tooltip: 'Esegui in editor SQL',
             onPressed: () {

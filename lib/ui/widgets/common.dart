@@ -103,9 +103,9 @@ class _ToolButtonState extends State<ToolButton> {
               height: widget.extent,
               constraints: BoxConstraints(minWidth: widget.extent),
               padding: EdgeInsets.symmetric(horizontal: widget.label == null ? 4 : 8),
-              alignment: Alignment.center,
               decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.control)),
-              child: child,
+              // Shrink-wrap the content: an aligned Container would fill bounded parents.
+              child: Center(widthFactor: 1, child: child),
             ),
           ),
         ),
@@ -304,7 +304,7 @@ class _SidebarRowState extends State<SidebarRow> {
             SizedBox(
               key: _menuKey,
               child: ToolButton(
-                icon: Icons.more_horiz_rounded,
+                icon: AppIcons.more,
                 tooltip: 'Azioni',
                 extent: 22,
                 size: 16,
@@ -407,7 +407,7 @@ class SearchField extends StatelessWidget {
             filled: true,
             fillColor: c.hover,
             contentPadding: const EdgeInsets.symmetric(vertical: 6),
-            prefixIcon: Icon(Icons.search_rounded, size: 15, color: c.textTertiary),
+            prefixIcon: Icon(AppIcons.search, size: 15, color: c.textTertiary),
             prefixIconConstraints: const BoxConstraints(minWidth: 28),
             suffixIcon: value.text.isEmpty
                 ? null
@@ -416,7 +416,7 @@ class SearchField extends StatelessWidget {
                       controller.clear();
                       onChanged?.call('');
                     },
-                    child: Icon(Icons.cancel_rounded, size: 14, color: c.textTertiary),
+                    child: Icon(AppIcons.clearFill, size: 14, color: c.textTertiary),
                   ),
             suffixIconConstraints: const BoxConstraints(minWidth: 26),
             border: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide.none),
@@ -613,7 +613,7 @@ class InlineNotice extends StatelessWidget {
     super.key,
     required this.color,
     required this.title,
-    this.icon = Icons.warning_amber_rounded,
+    this.icon = AppIcons.warning,
     this.message,
     this.child,
     this.action,
@@ -788,7 +788,7 @@ Future<bool> confirmDialog(
       final c = DbColors.of(ctx);
       return AlertDialog(
         icon: Icon(
-          destructive ? Icons.warning_amber_rounded : Icons.help_outline_rounded,
+          destructive ? AppIcons.warning : AppIcons.help,
           size: 32,
           color: destructive ? c.danger : c.accent,
         ),
@@ -854,7 +854,7 @@ void showErrorDialog(BuildContext context, Object error, {String title = 'Errore
     builder: (ctx) {
       final c = DbColors.of(ctx);
       return AlertDialog(
-        icon: Icon(Icons.error_outline_rounded, size: 32, color: c.danger),
+        icon: Icon(AppIcons.error, size: 32, color: c.danger),
         title: Text(title, textAlign: TextAlign.center),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560, maxHeight: 380),
@@ -890,7 +890,7 @@ void showToast(BuildContext context, String message, {bool error = false}) {
       content: Row(
         children: [
           Icon(
-            error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+            error ? AppIcons.error : AppIcons.checkCircle,
             size: 16,
             color: error ? c.danger : c.success,
           ),
@@ -976,7 +976,7 @@ class SimpleGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     if (rows.isEmpty) {
-      return const EmptyState(icon: Icons.inbox_outlined, title: 'Nessun elemento');
+      return const EmptyState(icon: AppIcons.empty, title: 'Nessun elemento');
     }
     return SingleChildScrollView(
       padding: const EdgeInsets.all(Gap.lg),
@@ -1074,7 +1074,7 @@ class SelectField<T> extends StatelessWidget {
         child: Row(
           children: [
             Expanded(child: entry(current)),
-            Icon(Icons.unfold_more_rounded, size: 15, color: c.textSecondary),
+            Icon(AppIcons.upDown, size: 15, color: c.textSecondary),
           ],
         ),
       ),

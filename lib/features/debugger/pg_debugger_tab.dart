@@ -60,7 +60,7 @@ class PgDebuggerTab extends FeatureTab {
   @override
   String get tooltip => '${dc.config.name}: debug di ${procedure.cleanName}';
   @override
-  IconData get icon => Icons.bug_report_outlined;
+  IconData get icon => AppIcons.debug;
   @override
   DbConnection get connection => dc;
 
@@ -105,7 +105,7 @@ Future<PgFunctionCandidate?> pickPgOverload(BuildContext context, List<PgFunctio
                 child: Row(
                   children: [
                     Icon(
-                      f.kind == 'p' ? Icons.settings_applications_outlined : Icons.functions,
+                      f.kind == 'p' ? AppIcons.procedure : AppIcons.function,
                       size: 16,
                       color: c.textSecondary,
                     ),
@@ -464,12 +464,12 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
     final dc = widget.tab.dc;
     if (!dc.isConnected) {
       return EmptyState(
-        icon: Icons.power_off_outlined,
+        icon: AppIcons.disconnect,
         title: 'Connessione non attiva',
         message: 'Connetti "${dc.config.name}" per avviare il debugger.',
         action: PrimaryButton(
           label: 'Connetti',
-          icon: Icons.power_outlined,
+          icon: AppIcons.connect,
           onPressed: () async {
             if (await ensureConnected(context, dc)) await _prepare();
             if (mounted) setState(() {});
@@ -479,7 +479,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
     }
     if (dc.dialect.family != DbFamily.postgres) {
       return const EmptyState(
-        icon: Icons.bug_report_outlined,
+        icon: AppIcons.debug,
         title: 'Debugger non disponibile',
         message: 'Il debugger di procedure è disponibile solo per PostgreSQL (estensione pldbgapi).',
       );
@@ -492,23 +492,23 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
         }
         if (ctl.prepareError != null) {
           return EmptyState(
-            icon: Icons.error_outline_rounded,
+            icon: AppIcons.error,
             title: 'Impossibile preparare il debug',
             message: ctl.prepareError,
-            action: PrimaryButton(label: 'Riprova', icon: Icons.refresh_rounded, onPressed: _prepare),
+            action: PrimaryButton(label: 'Riprova', icon: AppIcons.refresh, onPressed: _prepare),
           );
         }
         final av = ctl.availability;
         if (av != null && !av.available) {
           return EmptyState(
-            icon: Icons.extension_off_outlined,
+            icon: AppIcons.extension,
             title: 'Estensione pldbgapi non installata',
             message:
                 'Il debugger usa l\'estensione pldbgapi (pldebugger, la stessa di pgAdmin). Sul server: '
                 'installa il pacchetto pldebugger, aggiungi shared_preload_libraries = \'plugin_debugger\' a '
                 'postgresql.conf, riavvia PostgreSQL ed esegui CREATE EXTENSION pldbgapi; nel database.'
                 '${av.error == null ? '' : '\n\n${av.error}'}',
-            action: PrimaryButton(label: 'Verifica di nuovo', icon: Icons.refresh_rounded, onPressed: _prepare),
+            action: PrimaryButton(label: 'Verifica di nuovo', icon: AppIcons.refresh, onPressed: _prepare),
           );
         }
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToLine(ctl.displayLine));
@@ -567,7 +567,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
           color: c.warning.withValues(alpha: 0.1),
           child: Row(
             children: [
-              Icon(Icons.info_outline_rounded, size: 14, color: c.warning),
+              Icon(AppIcons.info, size: 14, color: c.warning),
               const SizedBox(width: Gap.sm),
               Expanded(
                 child: Text(
@@ -602,7 +602,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
           if (sm.isActive)
             PrimaryButton(
               label: 'Stop',
-              icon: Icons.stop_rounded,
+              icon: AppIcons.stop,
               color: c.danger,
               tooltip: 'Interrompi il debug (⇧F5)',
               onPressed: sm.canStop ? ctl.stop : null,
@@ -610,29 +610,29 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
           else
             PrimaryButton(
               label: 'Avvia',
-              icon: Icons.play_arrow_rounded,
+              icon: AppIcons.run,
               tooltip: 'Avvia il debug (F5)',
               onPressed: _start,
             ),
           const SizedBox(width: Gap.xs),
           ToolButton(
-            icon: Icons.fast_forward_rounded,
+            icon: AppIcons.stepOver,
             tooltip: 'Continua fino al prossimo breakpoint (F8)',
             onPressed: sm.canStep ? ctl.continueExecution : null,
           ),
           ToolButton(
-            icon: Icons.subdirectory_arrow_right_rounded,
+            icon: AppIcons.subdirectory,
             tooltip: 'Step into: entra nelle funzioni chiamate (F7)',
             onPressed: sm.canStep ? ctl.stepInto : null,
           ),
           ToolButton(
-            icon: Icons.redo_rounded,
+            icon: AppIcons.redo,
             tooltip: 'Step over: esegue la riga corrente (F6)',
             onPressed: sm.canStep ? ctl.stepOver : null,
           ),
           const ToolSeparator(),
           ToolButton(
-            icon: Icons.replay_rounded,
+            icon: AppIcons.replay,
             tooltip: 'Ricomincia con gli stessi parametri',
             onPressed: sm.canRestart && ctl.lastStart != null ? ctl.restart : null,
           ),
@@ -727,7 +727,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                                     child: hasBp
                                         ? Center(child: StatusDot(c.danger, size: 9))
                                         : (isCurrent
-                                              ? Icon(Icons.arrow_right_rounded, size: 18, color: c.accent)
+                                              ? Icon(AppIcons.chevronRight, size: 18, color: c.accent)
                                               : null),
                                   ),
                                   Expanded(
@@ -743,7 +743,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                           ),
                         ),
                         if (hasBp && isCurrent)
-                          Icon(Icons.arrow_right_rounded, size: 16, color: c.accent)
+                          Icon(AppIcons.chevronRight, size: 16, color: c.accent)
                         else
                           const SizedBox(width: 16),
                         Expanded(
@@ -841,7 +841,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                               ),
                             ),
                             ToolButton(
-                              icon: Icons.close_rounded,
+                              icon: AppIcons.close,
                               size: 13,
                               tooltip: 'Rimuovi',
                               onPressed: ctl.sm.phase == DebugPhase.running ? null : () => ctl.removeBreakpoint(b),
@@ -904,7 +904,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
               const Spacer(),
               if (ctl.callSql != null)
                 ToolButton(
-                  icon: Icons.copy_rounded,
+                  icon: AppIcons.copy,
                   tooltip: 'Copia la chiamata SQL',
                   onPressed: () => Clipboard.setData(ClipboardData(text: ctl.callSql!)),
                 ),

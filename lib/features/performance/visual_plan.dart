@@ -57,7 +57,7 @@ class VisualPlanTab extends FeatureTab {
   @override
   String get tooltip => '${dc.config.name}: $sql';
   @override
-  IconData get icon => Icons.account_tree_outlined;
+  IconData get icon => AppIcons.tree;
   @override
   DbConnection get connection => dc;
 
@@ -200,10 +200,10 @@ class _VisualPlanViewState extends State<VisualPlanView> {
         } else if (tab.error != null) {
           final e = tab.error!;
           body = EmptyState(
-            icon: Icons.error_outline_rounded,
+            icon: AppIcons.error,
             title: 'Piano non disponibile',
             message: e is OdbcException ? e.message : e.toString().replaceFirst(RegExp(r'^\w+Error: '), ''),
-            action: PrimaryButton(label: 'Riprova', icon: Icons.refresh_rounded, onPressed: tab.run),
+            action: PrimaryButton(label: 'Riprova', icon: AppIcons.refresh, onPressed: tab.run),
           );
         } else if (p == null) {
           body = const SizedBox();
@@ -253,7 +253,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
         children: [
           PrimaryButton(
             label: 'Aggiorna',
-            icon: Icons.refresh_rounded,
+            icon: AppIcons.refresh,
             tooltip: 'Ricalcola il piano',
             onPressed: tab.loading ? null : tab.run,
           ),
@@ -273,10 +273,10 @@ class _VisualPlanViewState extends State<VisualPlanView> {
           Segmented<PlanViewMode>(
             value: tab.mode,
             items: const [
-              (PlanViewMode.graph, 'Grafico', Icons.account_tree_outlined),
-              (PlanViewMode.table, 'Tabella', Icons.table_rows_outlined),
-              (PlanViewMode.text, 'Testo', Icons.notes_rounded),
-              (PlanViewMode.source, 'Sorgente', Icons.code_rounded),
+              (PlanViewMode.graph, 'Grafico', AppIcons.tree),
+              (PlanViewMode.table, 'Tabella', AppIcons.rows),
+              (PlanViewMode.text, 'Testo', AppIcons.notes),
+              (PlanViewMode.source, 'Sorgente', AppIcons.code),
             ],
             onChanged: (m) {
               tab.mode = m;
@@ -286,13 +286,13 @@ class _VisualPlanViewState extends State<VisualPlanView> {
           ),
           if (tab.mode == PlanViewMode.graph) ...[
             const ToolSeparator(),
-            ToolButton(icon: Icons.zoom_out_rounded, tooltip: 'Riduci', onPressed: () => _zoom(1 / 1.25)),
-            ToolButton(icon: Icons.zoom_in_rounded, tooltip: 'Ingrandisci', onPressed: () => _zoom(1.25)),
-            ToolButton(icon: Icons.fit_screen_outlined, tooltip: 'Adatta alla finestra', onPressed: _fit),
+            ToolButton(icon: AppIcons.zoomOut, tooltip: 'Riduci', onPressed: () => _zoom(1 / 1.25)),
+            ToolButton(icon: AppIcons.zoomIn, tooltip: 'Ingrandisci', onPressed: () => _zoom(1.25)),
+            ToolButton(icon: AppIcons.fitScreen, tooltip: 'Adatta alla finestra', onPressed: _fit),
           ],
           const Spacer(),
           ToolButton(
-            icon: Icons.copy_rounded,
+            icon: AppIcons.copy,
             tooltip: 'Copia il piano come testo',
             onPressed: tab.plan == null
                 ? null
@@ -302,7 +302,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
                   },
           ),
           ToolButton(
-            icon: Icons.edit_note_rounded,
+            icon: AppIcons.script,
             tooltip: 'Apri l\'istruzione nell\'editor SQL',
             onPressed: () => AppScope.read(context).sqlEditorWith(tab.dc, tab.sql),
           ),
@@ -338,7 +338,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
             ),
           ),
           if (warnings > 0) ...[
-            Icon(Icons.warning_amber_rounded, size: 13, color: c.warning),
+            Icon(AppIcons.warning, size: 13, color: c.warning),
             const SizedBox(width: 4),
             Text(
               '$warnings avvisi',
@@ -443,7 +443,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
                   ),
                   if (worst != null)
                     Icon(
-                      Icons.warning_amber_rounded,
+                      AppIcons.warning,
                       size: 14,
                       color: worst == PlanWarningLevel.danger
                           ? c.danger
@@ -587,7 +587,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
         if (p.allWarnings.isEmpty)
           Row(
             children: [
-              Icon(Icons.check_circle_outline_rounded, size: 15, color: c.success),
+              Icon(AppIcons.checkCircle, size: 15, color: c.success),
               const SizedBox(width: Gap.xs),
               Text(
                 'Nessun avviso',
@@ -687,8 +687,8 @@ class _VisualPlanViewState extends State<VisualPlanView> {
                   children: [
                     Icon(
                       warnings[i].level == PlanWarningLevel.info
-                          ? Icons.info_outline_rounded
-                          : Icons.warning_amber_rounded,
+                          ? AppIcons.info
+                          : AppIcons.warning,
                       size: 14,
                       color: switch (warnings[i].level) {
                         PlanWarningLevel.danger => c.danger,
@@ -717,12 +717,12 @@ class _VisualPlanViewState extends State<VisualPlanView> {
                   Row(
                     children: [
                       ToolButton(
-                        icon: Icons.copy_rounded,
+                        icon: AppIcons.copy,
                         tooltip: 'Copia',
                         onPressed: () => Clipboard.setData(ClipboardData(text: warnings[i].suggestion!)),
                       ),
                       ToolButton(
-                        icon: Icons.edit_note_rounded,
+                        icon: AppIcons.script,
                         tooltip: 'Apri nell\'editor SQL',
                         onPressed: () => AppScope.read(context).sqlEditorWith(tab.dc, warnings[i].suggestion!),
                       ),

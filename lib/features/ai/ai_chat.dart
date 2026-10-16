@@ -58,7 +58,7 @@ class AiChatTab extends FeatureTab {
   @override
   String get tooltip => 'Assistente AI${_connection == null ? '' : ' — ${_connection.config.name}'}';
   @override
-  IconData get icon => Icons.auto_awesome_outlined;
+  IconData get icon => AppIcons.ai;
 
   bool get busy => _run?.busy ?? false;
 
@@ -230,7 +230,7 @@ class _AiChatViewState extends State<_AiChatView> {
             ),
             child: Row(
               children: [
-                Icon(Icons.auto_awesome_outlined, size: 16, color: c.accent),
+                Icon(AppIcons.ai, size: 16, color: c.accent),
                 const SizedBox(width: Gap.sm),
                 Text(
                   'Assistente AI',
@@ -252,7 +252,7 @@ class _AiChatViewState extends State<_AiChatView> {
                 ),
                 const ToolSeparator(),
                 ToolButton(
-                  icon: Icons.add_comment_outlined,
+                  icon: AppIcons.compose,
                   tooltip: 'Nuova conversazione',
                   onPressed: tab.messages.isEmpty ? null : tab.clear,
                 ),
@@ -283,7 +283,7 @@ class _AiChatViewState extends State<_AiChatView> {
       'Quali indici mancano per le query più comuni?',
     ];
     return EmptyState(
-      icon: Icons.auto_awesome_outlined,
+      icon: AppIcons.ai,
       title: 'Chiedi qualcosa sul database',
       message: dc == null
           ? 'Scrivi una domanda: Claude risponde e propone query da inserire o eseguire nell\'editor SQL.'
@@ -388,9 +388,9 @@ class _AiChatViewState extends State<_AiChatView> {
           ),
           const SizedBox(width: Gap.sm),
           if (tab.busy)
-            PrimaryButton(label: 'Interrompi', icon: Icons.stop_rounded, color: c.danger, onPressed: tab.cancel)
+            PrimaryButton(label: 'Interrompi', icon: AppIcons.stop, color: c.danger, onPressed: tab.cancel)
           else
-            PrimaryButton(label: 'Invia', icon: Icons.arrow_upward_rounded, onPressed: _send),
+            PrimaryButton(label: 'Invia', icon: AppIcons.arrowUp, onPressed: _send),
         ],
       ),
     );

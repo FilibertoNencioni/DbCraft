@@ -328,7 +328,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         ],
       );
       final line = Row(children: [
-        Icon(r.ok ? Icons.check_circle_rounded : Icons.error_rounded, size: 15, color: r.ok ? c.success : c.danger),
+        Icon(r.ok ? AppIcons.checkCircleFill : AppIcons.errorFill, size: 15, color: r.ok ? c.success : c.danger),
         const SizedBox(width: Gap.sm),
         Flexible(child: r.details == null ? text : Tooltip(message: r.details!, child: text)),
         if (!r.ok) ...[
@@ -385,7 +385,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   }
 
   Widget _browseButton(VoidCallback onTap, String tooltip) =>
-      ToolButton(icon: Icons.folder_open_outlined, tooltip: tooltip, onPressed: onTap);
+      ToolButton(icon: AppIcons.folderOpen, tooltip: tooltip, onPressed: onTap);
 
   /// Pickers sit at their natural width on the left of a form row.
   Widget _leading(Widget child) => Align(alignment: Alignment.centerLeft, child: child);
@@ -422,7 +422,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         if (_loadError case final Object e when cfg.mode != ConnectionMode.native)
           InlineNotice(
             color: c.danger,
-            icon: Icons.error_outline_rounded,
+            icon: AppIcons.error,
             title: 'Driver ODBC non disponibili',
             message: canInstallDrivers
                 ? 'Manca il Driver Manager ODBC (unixODBC): si installa insieme a qualunque driver.'
@@ -525,7 +525,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                       tooltip: 'Driver installati',
                       padding: EdgeInsets.zero,
                       position: PopupMenuPosition.under,
-                      icon: Icon(Icons.unfold_more_rounded, size: 15, color: c.textSecondary),
+                      icon: Icon(AppIcons.upDown, size: 15, color: c.textSecondary),
                       onSelected: (v) {
                         if (v == _installDriverItem) {
                           _openInstaller();
@@ -561,7 +561,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                             height: 28,
                             child: Row(
                               children: [
-                                Icon(Icons.download_rounded, size: 15, color: c.textSecondary),
+                                Icon(AppIcons.download, size: 15, color: c.textSecondary),
                                 const SizedBox(width: Gap.sm),
                                 const Text('Installa driver…', style: TextStyle(fontSize: TypeSize.body)),
                               ],
@@ -620,7 +620,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                 tooltip: 'DSN configurati',
                 padding: EdgeInsets.zero,
                 position: PopupMenuPosition.under,
-                icon: Icon(Icons.unfold_more_rounded, size: 15, color: c.textSecondary),
+                icon: Icon(AppIcons.upDown, size: 15, color: c.textSecondary),
                 onSelected: (v) => _dsn.text = v,
                 itemBuilder: (_) => [
                   if (_dsns.isEmpty)
@@ -671,7 +671,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         width: 30,
         child: Center(
           child: ToolButton(
-            icon: _showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+            icon: _showPassword ? AppIcons.eyeOff : AppIcons.eye,
             tooltip: _showPassword ? 'Nascondi' : 'Mostra',
             size: 15,
             onPressed: () => setState(() => _showPassword = !_showPassword),
@@ -892,7 +892,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                     turns: _showAdvanced ? 0.25 : 0,
                     duration: const Duration(milliseconds: 120),
                     curve: Curves.easeOut,
-                    child: Icon(Icons.chevron_right_rounded, size: 16, color: c.textSecondary),
+                    child: Icon(AppIcons.chevronRight, size: 16, color: c.textSecondary),
                   ),
                   const SizedBox(width: 2),
                   Text(
@@ -955,7 +955,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                 ),
               ),
               ToolButton(
-                icon: Icons.content_copy_rounded,
+                icon: AppIcons.copy,
                 tooltip: 'Copia',
                 onPressed: preview.isEmpty ? null : () => Clipboard.setData(ClipboardData(text: preview)),
               ),

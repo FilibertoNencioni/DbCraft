@@ -291,9 +291,9 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ToolButton(icon: Icons.add_rounded, tooltip: 'Nuovo account cloud', onPressed: _newAccount),
+              ToolButton(icon: AppIcons.add, tooltip: 'Nuovo account cloud', onPressed: _newAccount),
               ToolButton(
-                icon: Icons.unfold_less_rounded,
+                icon: AppIcons.collapseAll,
                 tooltip: 'Comprimi tutto',
                 onPressed: () => setState(() {
                   void collapse(_Node n) {
@@ -307,7 +307,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
                 }),
               ),
               ToolButton(
-                icon: Icons.refresh_rounded,
+                icon: AppIcons.refresh,
                 tooltip: 'Aggiorna (F5)',
                 onPressed: _selected == null ? null : () => _refresh(_selected),
               ),
@@ -323,7 +323,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
               ? const SizedBox.shrink()
               : roots.isEmpty
               ? EmptyState(
-                  icon: Icons.cloud_outlined,
+                  icon: AppIcons.cloud,
                   title: 'Nessun account cloud',
                   message:
                       'Aggiungi un account AWS, Azure o Google Cloud per sfogliare bucket e container come '
@@ -381,9 +381,9 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
 
   IconData _icon(_Node n) => switch (n.kind) {
     _Kind.account => cloudProviderIcon(n.account.provider),
-    _Kind.bucket => Icons.inventory_2_outlined,
-    _Kind.folder => n.expanded ? Icons.folder_open_outlined : Icons.folder_outlined,
-    _Kind.more => Icons.more_horiz_rounded,
+    _Kind.bucket => AppIcons.archive,
+    _Kind.folder => n.expanded ? AppIcons.folderOpen : AppIcons.folder,
+    _Kind.more => AppIcons.more,
     _Kind.file => cloudFileIcon(n.object!.extension),
   };
 
@@ -445,7 +445,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
                           turns: n.expanded ? 0.25 : 0,
                           duration: const Duration(milliseconds: 120),
                           curve: Curves.easeOut,
-                          child: Icon(Icons.chevron_right_rounded, size: 15, color: fgSecondary),
+                          child: Icon(AppIcons.chevronRight, size: 15, color: fgSecondary),
                         ),
                       )
                     : null,
@@ -482,7 +482,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
               if (n.error != null)
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
-                  child: Icon(Icons.warning_amber_rounded, size: 14, color: strong ? Colors.white : c.danger),
+                  child: Icon(AppIcons.warning, size: 14, color: strong ? Colors.white : c.danger),
                 ),
             ],
           ),
@@ -531,7 +531,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
 
   void _emptyMenu(Offset pos) {
     if (_selected != null) return;
-    _showMenu(pos, [_item('Nuovo account…', Icons.add_rounded, _newAccount)]);
+    _showMenu(pos, [_item('Nuovo account…', AppIcons.add, _newAccount)]);
   }
 
   Future<void> _contextMenu(_Node n, Offset pos) async {
@@ -540,32 +540,32 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
     switch (n.kind) {
       case _Kind.account:
         items.addAll([
-          _item('Aggiorna', Icons.refresh, () => _refresh(n), shortcut: 'F5'),
+          _item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'),
           _divider,
-          _item('Modifica…', Icons.edit, () => _editAccount(n)),
-          _item('Elimina', Icons.delete_outline, () => _deleteAccount(n)),
+          _item('Modifica…', AppIcons.edit, () => _editAccount(n)),
+          _item('Elimina', AppIcons.delete, () => _deleteAccount(n)),
           _divider,
-          _item('Nuovo account…', Icons.add_rounded, _newAccount),
+          _item('Nuovo account…', AppIcons.add, _newAccount),
         ]);
       case _Kind.bucket:
       case _Kind.folder:
         final o = n.asObject;
         items.addAll([
-          _item('Apri nel browser', Icons.open_in_new, () => _openBrowser(n)),
+          _item('Apri nel browser', AppIcons.openExternal, () => _openBrowser(n)),
           _divider,
           _item(
             'Nuova cartella…',
-            Icons.create_new_folder_outlined,
+            AppIcons.newFolder,
             () => _withStorage(n, (s) => cloudNewFolder(context, s, n.bucket!, n.prefix)),
           ),
           _item(
             'Carica file…',
-            Icons.upload_outlined,
+            AppIcons.upload,
             () => _withStorage(n, (s) => cloudUploadFiles(context, s, n.bucket!, n.prefix)),
           ),
           _item(
             'Scarica…',
-            Icons.download_outlined,
+            AppIcons.download,
             () => _withStorage(n, (s) async {
               await cloudDownloadFolder(context, s, n.bucket!, n.prefix);
               return false;
@@ -574,7 +574,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           _divider,
           _item(
             'Copia URI',
-            Icons.content_copy,
+            AppIcons.copy,
             () => _withStorage(n, (s) async {
               await cloudCopyUri(context, s, n.bucket!, n.prefix);
               return false;
@@ -583,17 +583,17 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           if (n.kind == _Kind.folder) ...[
             _item(
               'Rinomina…',
-              Icons.drive_file_rename_outline,
+              AppIcons.rename,
               () => _withStorage(n, (s) => cloudRename(context, s, o), refresh: n.parent),
             ),
             _item(
               'Elimina…',
-              Icons.delete_outline,
+              AppIcons.delete,
               () => _withStorage(n, (s) => cloudDelete(context, s, [o]), refresh: n.parent),
             ),
           ],
-          if (n.kind == _Kind.bucket) _item('Proprietà', Icons.info_outline, () => _bucketProperties(n)),
-          _item('Aggiorna', Icons.refresh, () => _refresh(n), shortcut: 'F5'),
+          if (n.kind == _Kind.bucket) _item('Proprietà', AppIcons.info, () => _bucketProperties(n)),
+          _item('Aggiorna', AppIcons.refresh, () => _refresh(n), shortcut: 'F5'),
         ]);
       case _Kind.file:
         final o = n.object!;
@@ -604,7 +604,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           if (cloudTextExtensions.contains(ext))
             _item(
               'Apri nell\'editor SQL',
-              Icons.edit_note_rounded,
+              AppIcons.script,
               () => _withStorage(n, (s) async {
                 await cloudOpenInEditor(context, n.account, s, o);
                 return false;
@@ -613,13 +613,13 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           if (hasLocal)
             _item(
               'Salva nel cloud la copia locale',
-              Icons.cloud_upload_outlined,
+              AppIcons.cloudUpload,
               () => _withStorage(n, (s) => cloudSaveLocalCopy(context, n.account, s, o), refresh: n.parent),
             ),
           if (cloudCsvExtensions.contains(ext))
             _item(
               'Importa in tabella…',
-              Icons.table_chart_outlined,
+              AppIcons.table,
               () => _withStorage(n, (s) async {
                 await cloudImportCsv(context, s, o);
                 return false;
@@ -628,7 +628,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           if (cloudTextExtensions.contains(ext) || cloudCsvExtensions.contains(ext) || hasLocal) _divider,
           _item(
             'Scarica…',
-            Icons.download_outlined,
+            AppIcons.download,
             () => _withStorage(n, (s) async {
               await cloudDownload(context, s, o);
               return false;
@@ -636,7 +636,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           ),
           _item(
             'Copia link di condivisione…',
-            Icons.link_rounded,
+            AppIcons.link,
             () => _withStorage(n, (s) async {
               await cloudShareLink(context, s, o);
               return false;
@@ -644,7 +644,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           ),
           _item(
             'Copia URI',
-            Icons.content_copy,
+            AppIcons.copy,
             () => _withStorage(n, (s) async {
               await cloudCopyUri(context, s, o.bucket, o.key);
               return false;
@@ -653,18 +653,18 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           _divider,
           _item(
             'Rinomina…',
-            Icons.drive_file_rename_outline,
+            AppIcons.rename,
             () => _withStorage(n, (s) => cloudRename(context, s, o), refresh: n.parent),
           ),
           _item(
             'Elimina…',
-            Icons.delete_outline,
+            AppIcons.delete,
             () => _withStorage(n, (s) => cloudDelete(context, s, [o]), refresh: n.parent),
           ),
           _divider,
           _item(
             'Proprietà',
-            Icons.info_outline,
+            AppIcons.info,
             () => _withStorage(n, (s) async {
               await cloudProperties(context, s, o);
               return false;
@@ -672,7 +672,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           ),
         ]);
       case _Kind.more:
-        items.add(_item('Carica altri', Icons.more_horiz, () => _loadMore(n)));
+        items.add(_item('Carica altri', AppIcons.more, () => _loadMore(n)));
     }
     await _showMenu(pos, items);
   }
@@ -704,11 +704,11 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
 }
 
 IconData cloudFileIcon(String ext) => switch (ext) {
-  'sql' || 'ddl' || 'pgsql' || 'psql' => Icons.description_outlined,
-  'csv' || 'tsv' || 'xlsx' || 'parquet' || 'avro' => Icons.table_chart_outlined,
-  'json' || 'jsonl' || 'ndjson' || 'xml' || 'yaml' || 'yml' => Icons.data_object_rounded,
-  'png' || 'jpg' || 'jpeg' || 'gif' || 'svg' => Icons.image_outlined,
-  'zip' || 'gz' || 'tar' || 'bz2' => Icons.folder_zip_outlined,
-  'txt' || 'md' || 'log' => Icons.article_outlined,
-  _ => Icons.insert_drive_file_outlined,
+  'sql' || 'ddl' || 'pgsql' || 'psql' => AppIcons.document,
+  'csv' || 'tsv' || 'xlsx' || 'parquet' || 'avro' => AppIcons.table,
+  'json' || 'jsonl' || 'ndjson' || 'xml' || 'yaml' || 'yml' => AppIcons.json,
+  'png' || 'jpg' || 'jpeg' || 'gif' || 'svg' => AppIcons.image,
+  'zip' || 'gz' || 'tar' || 'bz2' => AppIcons.zip,
+  'txt' || 'md' || 'log' => AppIcons.article,
+  _ => AppIcons.file,
 };

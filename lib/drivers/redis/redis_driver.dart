@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../db_session.dart';
 import '../native_driver.dart';
 import 'redis_session.dart';
+import '../../ui/theme/app_icons.dart';
 
 const _yesNo = ['no', 'sì'];
 
@@ -19,7 +20,7 @@ class RedisDriver extends NativeDriver {
       'Archivio chiave-valore Redis (e Valkey, Azure Cache, ElastiCache). Comandi Redis una riga alla volta; '
       'le chiavi sono raggruppate per prefisso nel navigatore.';
   @override
-  IconData get icon => Icons.bolt_outlined;
+  IconData get icon => AppIcons.bolt;
   @override
   Color get color => const Color(0xFFDC382D);
   @override

@@ -144,9 +144,9 @@ class _ResultsViewerState extends State<ResultsViewer> {
                 Segmented<ResultsViewMode>(
                   value: _mode,
                   items: const [
-                    (ResultsViewMode.grid, 'Griglia', Icons.grid_on_rounded),
-                    (ResultsViewMode.record, 'Record', Icons.view_agenda_outlined),
-                    (ResultsViewMode.chart, 'Grafico', Icons.insert_chart_outlined_rounded),
+                    (ResultsViewMode.grid, 'Griglia', AppIcons.grid),
+                    (ResultsViewMode.record, 'Record', AppIcons.palettePanel),
+                    (ResultsViewMode.chart, 'Grafico', AppIcons.chart),
                   ],
                   onChanged: (v) => setState(() {
                     final sel = _mode == ResultsViewMode.grid ? _gridKey.currentState?.selectedRows : null;
@@ -165,17 +165,17 @@ class _ResultsViewerState extends State<ResultsViewer> {
                 if (editable && _mode != ResultsViewMode.chart) ...[
                   const ToolSeparator(),
                   ToolButton(
-                    icon: Icons.add_rounded,
+                    icon: AppIcons.add,
                     tooltip: 'Aggiungi riga (Ins)',
                     onPressed: () => _gridKey.currentState?.addRow(),
                   ),
                   ToolButton(
-                    icon: Icons.control_point_duplicate_rounded,
+                    icon: AppIcons.duplicate,
                     tooltip: 'Duplica riga',
                     onPressed: () => _gridKey.currentState?.duplicateRow(),
                   ),
                   ToolButton(
-                    icon: Icons.remove_rounded,
+                    icon: AppIcons.remove,
                     tooltip: 'Elimina righe selezionate (Canc)',
                     onPressed: () => _gridKey.currentState?.deleteSelectedRows(),
                   ),
@@ -186,7 +186,7 @@ class _ResultsViewerState extends State<ResultsViewer> {
                   const SizedBox(width: Gap.sm),
                   if (!simple) ...[
                     ToolButton(
-                      icon: Icons.code_rounded,
+                      icon: AppIcons.code,
                       tooltip: 'Mostra l\'SQL che verrà eseguito',
                       onPressed: _showChangesSql,
                     ),
@@ -207,20 +207,20 @@ class _ResultsViewerState extends State<ResultsViewer> {
                   ),
                 if (m.hasMore) ...[
                   ToolButton(
-                    icon: Icons.expand_more_rounded,
+                    icon: AppIcons.chevronDown,
                     tooltip: 'Leggi altre ${app.settings.fetchSize} righe',
                     onPressed: m.loading ? null : () => m.fetchNext(),
                   ),
                   ToolButton(
-                    icon: Icons.keyboard_double_arrow_down_rounded,
+                    icon: AppIcons.expandAll,
                     tooltip: 'Leggi tutte le righe',
                     onPressed: m.loading ? null : m.fetchAll,
                   ),
                 ],
                 if (widget.onRefresh != null)
-                  ToolButton(icon: Icons.refresh_rounded, tooltip: 'Aggiorna', onPressed: widget.onRefresh),
+                  ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', onPressed: widget.onRefresh),
                 ToolButton(
-                  icon: Icons.ios_share_rounded,
+                  icon: AppIcons.share,
                   tooltip: 'Esporta…',
                   label: simple ? 'Esporta' : null,
                   onPressed: _export,
@@ -230,7 +230,7 @@ class _ResultsViewerState extends State<ResultsViewer> {
           ),
           Expanded(
             child: m.columns.isEmpty
-                ? const EmptyState(icon: Icons.table_rows_outlined, title: 'Il risultato non ha colonne')
+                ? const EmptyState(icon: AppIcons.rows, title: 'Il risultato non ha colonne')
                 : switch (_mode) {
                     ResultsViewMode.record => _recordView(app),
                     ResultsViewMode.chart => ChartView(key: ObjectKey(m), model: m),
@@ -256,12 +256,12 @@ class _ResultsViewerState extends State<ResultsViewer> {
     final count = m.view.length;
     final total = m.rows.length;
     final (IconData icon, String editInfo) = m.connection.config.readOnly
-        ? (Icons.lock_outline_rounded, 'Sola lettura')
+        ? (AppIcons.lock, 'Sola lettura')
         : m.table == null
-        ? (Icons.lock_outline_rounded, 'Non modificabile')
+        ? (AppIcons.lock, 'Non modificabile')
         : m.keyIsVirtual
-        ? (Icons.edit_outlined, 'Modificabile · nessuna chiave primaria')
-        : (Icons.edit_outlined, 'Modificabile · chiave ${m.keyColumns.join(', ')}');
+        ? (AppIcons.edit, 'Modificabile · nessuna chiave primaria')
+        : (AppIcons.edit, 'Modificabile · chiave ${m.keyColumns.join(', ')}');
     final style = TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textSecondary, fontFeatures: kTabular);
     return Container(
       height: 24,
@@ -304,7 +304,7 @@ class _ResultsViewerState extends State<ResultsViewer> {
 
   Widget _recordView(AppState app) {
     final c = DbColors.of(context);
-    if (m.view.isEmpty) return const EmptyState(icon: Icons.inbox_outlined, title: 'Nessuna riga');
+    if (m.view.isEmpty) return const EmptyState(icon: AppIcons.empty, title: 'Nessuna riga');
     _record = _record.clamp(0, m.view.length - 1);
     final row = m.rowAt(_record);
     return Column(
@@ -314,12 +314,12 @@ class _ResultsViewerState extends State<ResultsViewer> {
           child: Row(
             children: [
               ToolButton(
-                icon: Icons.first_page_rounded,
+                icon: AppIcons.firstPage,
                 tooltip: 'Prima riga',
                 onPressed: () => setState(() => _record = 0),
               ),
               ToolButton(
-                icon: Icons.chevron_left_rounded,
+                icon: AppIcons.chevronLeft,
                 tooltip: 'Riga precedente',
                 onPressed: _record > 0 ? () => setState(() => _record--) : null,
               ),
@@ -331,12 +331,12 @@ class _ResultsViewerState extends State<ResultsViewer> {
                 ),
               ),
               ToolButton(
-                icon: Icons.chevron_right_rounded,
+                icon: AppIcons.chevronRight,
                 tooltip: 'Riga successiva',
                 onPressed: _record < m.view.length - 1 ? () => setState(() => _record++) : null,
               ),
               ToolButton(
-                icon: Icons.last_page_rounded,
+                icon: AppIcons.lastPage,
                 tooltip: 'Ultima riga',
                 onPressed: () => setState(() => _record = m.view.length - 1),
               ),

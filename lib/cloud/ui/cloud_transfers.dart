@@ -108,7 +108,7 @@ class CloudTransfersView extends StatelessWidget {
                 mgr.hasRunning ? 'Trasferimenti in corso' : 'Trasferimenti',
                 padding: const EdgeInsets.fromLTRB(Gap.md, Gap.xs, Gap.xs, 0),
                 trailing: ToolButton(
-                  icon: Icons.clear_all_rounded,
+                  icon: AppIcons.clearAll,
                   tooltip: 'Rimuovi i trasferimenti completati',
                   size: 15,
                   onPressed: mgr.items.any((t) => t.state != TransferState.running) ? mgr.clearFinished : null,
@@ -141,13 +141,13 @@ class _TransferRow extends StatelessWidget {
     final c = DbColors.of(context);
     final (IconData icon, Color color, String status) = switch (t.state) {
       TransferState.running => (
-        t.upload ? Icons.upload_rounded : Icons.download_rounded,
+        t.upload ? AppIcons.upload : AppIcons.download,
         c.accent,
         t.total > 0 ? '${formatBytes(t.done)} di ${formatBytes(t.total)}' : formatBytes(t.done),
       ),
-      TransferState.done => (Icons.check_circle_outline_rounded, c.success, 'Completato'),
-      TransferState.failed => (Icons.error_outline_rounded, c.danger, 'Non riuscito'),
-      TransferState.cancelled => (Icons.block_rounded, c.textTertiary, 'Annullato'),
+      TransferState.done => (AppIcons.checkCircle, c.success, 'Completato'),
+      TransferState.failed => (AppIcons.error, c.danger, 'Non riuscito'),
+      TransferState.cancelled => (AppIcons.block, c.textTertiary, 'Annullato'),
     };
     return Tooltip(
       message: t.error?.toString() ?? t.label,
@@ -200,10 +200,10 @@ class _TransferRow extends StatelessWidget {
               ),
             ),
             if (t.state == TransferState.running)
-              ToolButton(icon: Icons.close_rounded, tooltip: 'Annulla', size: 14, onPressed: t.cancel.cancel)
+              ToolButton(icon: AppIcons.close, tooltip: 'Annulla', size: 14, onPressed: t.cancel.cancel)
             else if (t.state == TransferState.failed)
               ToolButton(
-                icon: Icons.info_outline_rounded,
+                icon: AppIcons.info,
                 tooltip: 'Dettagli errore',
                 size: 14,
                 onPressed: () => showErrorDialog(context, t.error ?? 'Errore', title: t.label),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../model/db_objects.dart';
 import '../../state/db_connection.dart';
+import '../theme/app_icons.dart';
 
 /// A node of the database navigator tree. Children are loaded lazily.
 abstract class NavNode {
@@ -40,7 +41,7 @@ class FolderNode extends NavNode {
   @override
   String get label => name;
   @override
-  IconData get icon => Icons.folder;
+  IconData get icon => AppIcons.folder;
   @override
   Color? get iconColor => const Color(0xFFE0A526);
   @override
@@ -99,7 +100,7 @@ class CatalogNode extends NavNode {
   @override
   String? get detail => current ? 'predefinito' : null;
   @override
-  IconData get icon => Icons.storage;
+  IconData get icon => AppIcons.database;
   @override
   Color? get iconColor => const Color(0xFF8D6E63);
   @override
@@ -124,7 +125,7 @@ class SchemaNode extends NavNode {
   @override
   String get label => schema;
   @override
-  IconData get icon => Icons.schema_outlined;
+  IconData get icon => AppIcons.schema;
   @override
   Color? get iconColor => const Color(0xFF5C6BC0);
   @override
@@ -135,10 +136,10 @@ class SchemaNode extends NavNode {
 }
 
 enum ObjectKind {
-  tables('Tabelle', Icons.table_chart_outlined),
-  views('Viste', Icons.view_quilt_outlined),
-  system('Altri oggetti', Icons.settings_outlined),
-  procedures('Procedure e funzioni', Icons.functions);
+  tables('Tabelle', AppIcons.table),
+  views('Viste', AppIcons.erDiagram),
+  system('Altri oggetti', AppIcons.settings),
+  procedures('Procedure e funzioni', AppIcons.function);
 
   const ObjectKind(this.label, this.icon);
   final String label;
@@ -156,7 +157,7 @@ class ObjectFolderNode extends NavNode {
   @override
   String? get detail => children == null ? null : '${children!.length}';
   @override
-  IconData get icon => Icons.folder_outlined;
+  IconData get icon => AppIcons.folder;
   @override
   Color? get iconColor => const Color(0xFFE0A526);
   @override
@@ -202,10 +203,10 @@ class TableNode extends NavNode {
 
   @override
   IconData get icon => table.isView
-      ? Icons.view_quilt_outlined
+      ? AppIcons.erDiagram
       : table.type.toUpperCase().contains('SYSTEM')
-      ? Icons.table_view
-      : Icons.table_chart_outlined;
+      ? AppIcons.table
+      : AppIcons.table;
   @override
   Color? get iconColor => table.isView ? const Color(0xFF26A69A) : const Color(0xFF1E88E5);
   @override
@@ -224,11 +225,11 @@ class TableNode extends NavNode {
 }
 
 enum TablePart {
-  columns('Colonne', Icons.view_column_outlined),
-  keys('Chiavi', Icons.vpn_key_outlined),
-  foreignKeys('Chiavi esterne', Icons.link),
-  references('Riferimenti', Icons.call_received),
-  indexes('Indici', Icons.sort);
+  columns('Colonne', AppIcons.column),
+  keys('Chiavi', AppIcons.key),
+  foreignKeys('Chiavi esterne', AppIcons.link),
+  references('Riferimenti', AppIcons.incoming),
+  indexes('Indici', AppIcons.sort);
 
   const TablePart(this.label, this.icon);
   final String label;
@@ -243,7 +244,7 @@ class TablePartNode extends NavNode {
   @override
   String get label => part.label;
   @override
-  IconData get icon => Icons.folder_outlined;
+  IconData get icon => AppIcons.folder;
   @override
   Color? get iconColor => const Color(0xFFE0A526);
   @override
@@ -262,7 +263,7 @@ class TablePartNode extends NavNode {
               connection!,
               c.name,
               detail: '${c.fullType}${c.nullable ? '' : ' NOT NULL'}',
-              icon: pk?.columns.contains(c.name) ?? false ? Icons.key : Icons.view_column_outlined,
+              icon: pk?.columns.contains(c.name) ?? false ? AppIcons.key : AppIcons.column,
               color: pk?.columns.contains(c.name) ?? false ? const Color(0xFFFFB300) : null,
               id: '${table.key}:${c.name}',
             ),
@@ -275,7 +276,7 @@ class TablePartNode extends NavNode {
             connection!,
             pk.name ?? 'PRIMARY KEY',
             detail: pk.columns.join(', '),
-            icon: Icons.vpn_key,
+            icon: AppIcons.key,
             color: const Color(0xFFFFB300),
             id: '${table.key}:pk',
           ),
@@ -293,7 +294,7 @@ class TablePartNode extends NavNode {
               detail: part == TablePart.foreignKeys
                   ? '(${f.columns.join(', ')}) → ${f.pkTable}(${f.refColumns.join(', ')})'
                   : '${f.fkTable}(${f.columns.join(', ')})',
-              icon: Icons.link,
+              icon: AppIcons.link,
               color: const Color(0xFF7E57C2),
               id: '${table.key}:fk:${f.name}:${f.fkTable}',
             ),
@@ -306,7 +307,7 @@ class TablePartNode extends NavNode {
               connection!,
               i.name,
               detail: '${i.unique ? 'UNIQUE ' : ''}(${i.columns.join(', ')})',
-              icon: Icons.sort,
+              icon: AppIcons.sort,
               color: const Color(0xFF43A047),
               id: '${table.key}:ix:${i.name}',
             ),
@@ -324,7 +325,7 @@ class ProcedureNode extends NavNode {
   @override
   String? get detail => procedure.type == 2 ? 'funzione' : null;
   @override
-  IconData get icon => procedure.type == 2 ? Icons.functions : Icons.settings_applications_outlined;
+  IconData get icon => procedure.type == 2 ? AppIcons.function : AppIcons.procedure;
   @override
   Color? get iconColor => const Color(0xFF8E24AA);
   @override

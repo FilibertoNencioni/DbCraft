@@ -58,7 +58,7 @@ class _SecuritySettingsState extends State<SecuritySettings> {
           FormRow(
             label: 'Stato',
             child: Row(children: [
-              Icon(master ? Icons.lock_rounded : Icons.lock_open_rounded, size: 15, color: master ? c.success : c.textSecondary),
+              Icon(master ? AppIcons.lock : AppIcons.lockOpen, size: 15, color: master ? c.success : c.textSecondary),
               const SizedBox(width: Gap.sm),
               Expanded(child: Text(master ? 'Attiva' : 'Non impostata')),
               if (_busy) const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5)),
@@ -119,7 +119,7 @@ class _SecuritySettingsState extends State<SecuritySettings> {
                     Navigator.of(context).pop();
                     app.lockUi();
                   },
-                  icon: const Icon(Icons.lock_outline_rounded, size: 15),
+                  icon: const Icon(AppIcons.lock, size: 15),
                   label: const Text('Blocca'),
                 ),
               ),

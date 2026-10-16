@@ -177,7 +177,7 @@ class _ImportDialogState extends State<_ImportDialog> {
               children: [
                 FilledButton.tonalIcon(
                   onPressed: _running ? null : _pick,
-                  icon: const Icon(Icons.folder_open),
+                  icon: const Icon(AppIcons.folderOpen),
                   label: const Text('Scegli file…'),
                 ),
                 const SizedBox(width: 12),
@@ -241,7 +241,7 @@ class _ImportDialogState extends State<_ImportDialog> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const Icon(Icons.arrow_back, size: 16),
+                        const Icon(AppIcons.arrowLeft, size: 16),
                         const SizedBox(width: 8),
                         DropdownButton<int?>(
                           value: _mapping[i],

@@ -303,7 +303,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
     final c = DbColors.of(context);
     if (tab.dc.isConnected && !tab.dc.dialect.isSql) {
       return const EmptyState(
-        icon: Icons.join_inner_rounded,
+        icon: AppIcons.join,
         title: 'Query builder non disponibile',
         message: 'Il query builder visuale genera SQL: questa connessione usa un linguaggio di interrogazione diverso.',
       );
@@ -357,19 +357,19 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
         children: [
           PrimaryButton(
             label: 'Esegui',
-            icon: Icons.play_arrow_rounded,
+            icon: AppIcons.run,
             tooltip: 'Esegui la query (${mod}Invio)',
             onPressed: hasSql && !tab.running ? _run : null,
           ),
           const SizedBox(width: Gap.sm),
           ToolButton(
-            icon: Icons.edit_note_rounded,
+            icon: AppIcons.script,
             size: 18,
             tooltip: 'Apri nell\'editor SQL',
             onPressed: hasSql ? _openInEditor : null,
           ),
-          ToolButton(icon: Icons.content_copy_rounded, tooltip: 'Copia SQL', onPressed: hasSql ? _copySql : null),
-          ToolButton(icon: Icons.delete_sweep_outlined, tooltip: 'Cancella tutto', onPressed: _clearAll),
+          ToolButton(icon: AppIcons.copy, tooltip: 'Copia SQL', onPressed: hasSql ? _copySql : null),
+          ToolButton(icon: AppIcons.clearAll, tooltip: 'Cancella tutto', onPressed: _clearAll),
           const ToolSeparator(),
           Text(
             'Distinct',
@@ -409,10 +409,10 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
             ),
           ),
           const ToolSeparator(),
-          ToolButton(icon: Icons.zoom_in_rounded, tooltip: 'Zoom +', onPressed: () => _zoom(1.2)),
-          ToolButton(icon: Icons.zoom_out_rounded, tooltip: 'Zoom -', onPressed: () => _zoom(1 / 1.2)),
+          ToolButton(icon: AppIcons.zoomIn, tooltip: 'Zoom +', onPressed: () => _zoom(1.2)),
+          ToolButton(icon: AppIcons.zoomOut, tooltip: 'Zoom -', onPressed: () => _zoom(1 / 1.2)),
           ToolButton(
-            icon: Icons.fit_screen_outlined,
+            icon: AppIcons.fitScreen,
             tooltip: 'Zoom 100%',
             onPressed: () => _transform.value = Matrix4.identity(),
           ),
@@ -508,7 +508,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
           SectionLabel(
             _loadingTables ? 'Caricamento…' : '${list.length} ${list.length == 1 ? 'oggetto' : 'oggetti'}',
             trailing: ToolButton(
-              icon: Icons.refresh_rounded,
+              icon: AppIcons.refresh,
               size: 14,
               tooltip: 'Ricarica elenco',
               onPressed: () {
@@ -550,7 +550,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       padding: const EdgeInsets.symmetric(horizontal: Gap.md),
       child: Row(
         children: [
-          Icon(t.isView ? Icons.view_quilt_outlined : Icons.table_chart_outlined, size: 15, color: c.textSecondary),
+          Icon(t.isView ? AppIcons.erDiagram : AppIcons.table, size: 15, color: c.textSecondary),
           const SizedBox(width: Gap.sm),
           Expanded(
             child: Text(
@@ -577,7 +577,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.table_chart_outlined, size: 14, color: c.accent),
+              Icon(AppIcons.table, size: 14, color: c.accent),
               const SizedBox(width: 6),
               Text(
                 t.name,
@@ -643,7 +643,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
         ),
         child: model.tables.isEmpty
             ? const EmptyState(
-                icon: Icons.join_inner_rounded,
+                icon: AppIcons.join,
                 title: 'Costruisci una query senza scrivere SQL',
                 message:
                     'Trascina qui le tabelle dall\'elenco: i join seguono le chiavi esterne. '
@@ -705,7 +705,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
                   child: Row(
                     children: [
                       Icon(
-                        t.table.isView ? Icons.view_quilt_outlined : Icons.table_chart_outlined,
+                        t.table.isView ? AppIcons.erDiagram : AppIcons.table,
                         size: 14,
                         color: c.accent,
                       ),
@@ -736,7 +736,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
                         ),
                       ),
                       ToolButton(
-                        icon: Icons.select_all_rounded,
+                        icon: AppIcons.selectAll,
                         size: 13,
                         tooltip: 'Seleziona / deseleziona tutte le colonne',
                         onPressed: () {
@@ -748,7 +748,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
                         },
                       ),
                       ToolButton(
-                        icon: Icons.close_rounded,
+                        icon: AppIcons.close,
                         size: 13,
                         tooltip: 'Rimuovi dalla query',
                         onPressed: () {
@@ -792,7 +792,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
           ),
           SizedBox(
             width: 14,
-            child: col.isKey ? const Icon(Icons.key_rounded, size: 11, color: Color(0xFFE8A200)) : null,
+            child: col.isKey ? const Icon(AppIcons.key, size: 11, color: Color(0xFFE8A200)) : null,
           ),
           Expanded(
             child: Text(
@@ -893,7 +893,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       value: f,
       child: Row(
         children: [
-          SizedBox(width: 20, child: checked ? const Icon(Icons.check_rounded, size: 15) : null),
+          SizedBox(width: 20, child: checked ? const Icon(AppIcons.check, size: 15) : null),
           Text(
             label,
             style: TextStyle(fontSize: TypeSize.body, color: color),
@@ -941,15 +941,15 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
               Segmented<QueryBuilderPane>(
                 value: tab.pane,
                 items: const [
-                  (QueryBuilderPane.columns, 'Colonne', Icons.view_column_outlined),
-                  (QueryBuilderPane.results, 'Risultati', Icons.table_rows_outlined),
+                  (QueryBuilderPane.columns, 'Colonne', AppIcons.column),
+                  (QueryBuilderPane.results, 'Risultati', AppIcons.rows),
                 ],
                 onChanged: (v) => setState(() => tab.pane = v),
               ),
               const SizedBox(width: Gap.sm),
               if (tab.pane == QueryBuilderPane.columns) ...[
                 ToolButton(
-                  icon: Icons.functions_rounded,
+                  icon: AppIcons.function,
                   tooltip: 'Aggiungi un\'espressione calcolata',
                   label: 'Espressione',
                   onPressed: () {
@@ -958,7 +958,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
                   },
                 ),
                 ToolButton(
-                  icon: Icons.numbers_rounded,
+                  icon: AppIcons.number,
                   tooltip: 'Aggiungi COUNT(*)',
                   label: 'Conteggio',
                   onPressed: () {
@@ -980,7 +980,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
           child: tab.pane == QueryBuilderPane.columns
               ? SplitView(initialFraction: 0.64, minFirst: 300, minSecond: 200, first: _grid(c), second: _sqlPreview(c))
               : tab.running && r == null
-              ? const EmptyState(icon: Icons.hourglass_empty_rounded, title: 'Esecuzione in corso…')
+              ? const EmptyState(icon: AppIcons.hourglass, title: 'Esecuzione in corso…')
               : tab.error != null
               ? Padding(
                   padding: const EdgeInsets.all(Gap.lg),
@@ -991,7 +991,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
               : r != null
               ? ResultsViewer(key: ObjectKey(r), model: r, onRefresh: _run)
               : EmptyState(
-                  icon: Icons.play_circle_outline_rounded,
+                  icon: AppIcons.runCircle,
                   title: tab.message ?? 'Nessun risultato',
                   message: tab.message == null ? 'Premi Esegui per eseguire la query costruita.' : null,
                 ),
@@ -1044,7 +1044,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
     final width = _gridCols.fold<double>(Gap.sm * 2, (t, e) => t + e.$2);
     if (model.fields.isEmpty) {
       return const EmptyState(
-        icon: Icons.view_column_outlined,
+        icon: AppIcons.column,
         title: 'Nessuna colonna',
         message: 'Spunta le colonne nelle tabelle o aggiungi un\'espressione: senza colonne la query restituisce *.',
       );
@@ -1202,7 +1202,7 @@ class _FieldRowState extends State<_FieldRow> {
                 ),
               ),
             ),
-            Icon(Icons.expand_more_rounded, size: 14, color: c.textTertiary),
+            Icon(AppIcons.chevronDown, size: 14, color: c.textTertiary),
           ],
         ),
       ),
@@ -1283,7 +1283,7 @@ class _FieldRowState extends State<_FieldRow> {
           SizedBox(
             width: widget.widths[9],
             child: ToolButton(
-              icon: Icons.remove_circle_outline_rounded,
+              icon: AppIcons.removeCircle,
               size: 14,
               tooltip: 'Rimuovi riga',
               onPressed: widget.onRemove,

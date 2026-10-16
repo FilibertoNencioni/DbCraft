@@ -100,7 +100,7 @@ class VisualFilterBar extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 6, right: Gap.sm),
-            child: Icon(Icons.filter_alt_outlined, size: 15, color: c.textSecondary),
+            child: Icon(AppIcons.filter, size: 15, color: c.textSecondary),
           ),
           Expanded(
             child: Wrap(
@@ -173,7 +173,7 @@ class VisualFilterBar extends StatelessWidget {
           ),
           if (!filter.isEmpty)
             ToolButton(
-              icon: Icons.filter_alt_off_outlined,
+              icon: AppIcons.filterOff,
               tooltip: 'Rimuovi filtri e ordinamento',
               onPressed: () {
                 filter.clear();
@@ -233,7 +233,7 @@ class _ChipState extends State<_Chip> {
                   onTap: widget.onRemove,
                   child: Padding(
                     padding: const EdgeInsets.all(3),
-                    child: Icon(Icons.close_rounded, size: 13, color: c.textSecondary),
+                    child: Icon(AppIcons.close, size: 13, color: c.textSecondary),
                   ),
                 ),
               ),
@@ -252,7 +252,7 @@ class _AddButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      ToolButton(icon: Icons.add_rounded, tooltip: 'Aggiungi un filtro', label: label, onPressed: onTap);
+      ToolButton(icon: AppIcons.add, tooltip: 'Aggiungi un filtro', label: label, onPressed: onTap);
 }
 
 class _SortButton extends StatelessWidget {
@@ -277,7 +277,7 @@ class _SortButton extends StatelessWidget {
             value: SortKey(col.name),
             child: Row(
               children: [
-                const Icon(Icons.arrow_upward_rounded, size: 14),
+                const Icon(AppIcons.arrowUp, size: 14),
                 const SizedBox(width: 8),
                 Text('${col.name} crescente'),
               ],
@@ -288,7 +288,7 @@ class _SortButton extends StatelessWidget {
             value: SortKey(col.name, descending: true),
             child: Row(
               children: [
-                const Icon(Icons.arrow_downward_rounded, size: 14),
+                const Icon(AppIcons.arrowDown, size: 14),
                 const SizedBox(width: 8),
                 Text('${col.name} decrescente'),
               ],
@@ -299,8 +299,8 @@ class _SortButton extends StatelessWidget {
       child: IgnorePointer(
         child: ToolButton(
           icon: cur == null
-              ? Icons.swap_vert_rounded
-              : (cur.descending ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded),
+              ? AppIcons.swapVertical
+              : (cur.descending ? AppIcons.arrowDown : AppIcons.arrowUp),
           tooltip: 'Ordina',
           active: cur != null,
           label: cur == null ? 'Ordina' : cur.column,
@@ -430,7 +430,7 @@ class _FilterPopoverState extends State<_FilterPopover> {
           suffixIcon: _isDate
               ? GestureDetector(
                   onTap: () => _pickDate(ctrl),
-                  child: Icon(Icons.calendar_today_rounded, size: 14, color: c.textSecondary),
+                  child: Icon(AppIcons.calendar, size: 14, color: c.textSecondary),
                 )
               : null,
           suffixIconConstraints: const BoxConstraints(minWidth: 28),

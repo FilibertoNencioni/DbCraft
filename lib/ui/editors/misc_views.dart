@@ -41,7 +41,7 @@ class _ProcedureViewState extends State<ProcedureView> {
             Row(
               children: [
                 Icon(
-                  p.type == 2 ? Icons.functions : Icons.settings_applications_outlined,
+                  p.type == 2 ? AppIcons.function : AppIcons.procedure,
                   color: const Color(0xFF8E24AA),
                   size: 28,
                 ),
@@ -51,7 +51,7 @@ class _ProcedureViewState extends State<ProcedureView> {
                 FilledButton.tonalIcon(
                   onPressed: () =>
                       AppScope.read(context).sqlEditorWith(c, c.dialect.procedureCall(p, params)),
-                  icon: const Icon(Icons.play_arrow),
+                  icon: const Icon(AppIcons.run),
                   label: const Text('Genera chiamata in editor SQL'),
                 ),
               ],

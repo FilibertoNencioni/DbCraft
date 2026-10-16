@@ -161,7 +161,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
                 minLeadingWidth: 8,
                 title: Text(x.config.name),
                 subtitle: Text(x.config.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: x.isConnected ? Icon(Icons.check_rounded, size: 16, color: c.success) : null,
+                trailing: x.isConnected ? Icon(AppIcons.check, size: 16, color: c.success) : null,
               ),
           ],
         );
@@ -379,7 +379,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         if (tab.running)
           PrimaryButton(
             label: 'Interrompi',
-            icon: Icons.stop_rounded,
+            icon: AppIcons.stop,
             color: c.danger,
             tooltip: 'Interrompi esecuzione ($mod.)',
             onPressed: tab.cancel,
@@ -387,47 +387,47 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         else
           PrimaryButton(
             label: 'Esegui',
-            icon: Icons.play_arrow_rounded,
+            icon: AppIcons.run,
             tooltip: 'Esegui la selezione o, senza selezione, tutto lo script (${mod}Invio)',
             onPressed: _execute,
           ),
         const SizedBox(width: Gap.xs),
         ToolButton(
-          icon: Icons.short_text_rounded,
+          icon: AppIcons.shortText,
           size: 19,
           tooltip: 'Esegui solo l\'istruzione sotto il cursore ($mod⇧Invio)',
           onPressed: tab.running ? null : _executeCurrent,
         ),
         ToolButton(
-          icon: Icons.add_to_photos_outlined,
+          icon: AppIcons.scriptFromSelection,
           tooltip: 'Esegui in una nuova scheda risultati ($mod\\)',
           onPressed: tab.running ? null : () => _execute(newTab: true),
         ),
         ToolButton(
-          icon: Icons.account_tree_outlined,
+          icon: AppIcons.tree,
           tooltip: 'Piano di esecuzione ($mod⇧E)',
           onPressed: tab.running ? null : _explain,
         ),
         ToolButton(
-          icon: Icons.schema_outlined,
+          icon: AppIcons.schema,
           tooltip: 'Piano visuale ($mod⌥E)',
           onPressed: tab.running || conn == null ? null : _visualPlan,
         ),
         const ToolSeparator(),
-        ToolButton(icon: Icons.auto_fix_high_outlined, tooltip: 'Formatta SQL ($mod⇧F)', onPressed: _format),
+        ToolButton(icon: AppIcons.format, tooltip: 'Formatta SQL ($mod⇧F)', onPressed: _format),
         if (app.settings.aiEnabled) _aiMenu(app),
         ToolButton(
-          icon: Icons.join_inner_rounded,
+          icon: AppIcons.join,
           tooltip: 'Query builder visuale',
           onPressed: conn == null || (conn.isConnected && !conn.dialect.isSql)
               ? null
               : () => app.openFeatureTab(QueryBuilderTab(conn)),
         ),
-        ToolButton(icon: Icons.search_rounded, tooltip: 'Trova e sostituisci (${mod}F)', onPressed: _find.findMode),
+        ToolButton(icon: AppIcons.search, tooltip: 'Trova e sostituisci (${mod}F)', onPressed: _find.findMode),
         PopupMenuButton<int>(
           tooltip: 'Altre azioni',
           position: PopupMenuPosition.under,
-          icon: Icon(Icons.more_horiz_rounded, size: 16, color: c.textSecondary),
+          icon: Icon(AppIcons.more, size: 16, color: c.textSecondary),
           onSelected: (v) {
             switch (v) {
               case 0:
@@ -462,7 +462,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           TextButton(onPressed: () => ensureConnected(context, conn), child: const Text('Connetti')),
         const SizedBox(width: Gap.xs),
         ToolButton(
-          icon: Icons.splitscreen_outlined,
+          icon: AppIcons.palettePanel,
           tooltip: _showResults ? 'Nascondi risultati ($mod⇧R)' : 'Mostra risultati ($mod⇧R)',
           active: _showResults,
           onPressed: () => setState(() => _showResults = !_showResults),
@@ -477,7 +477,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     return PopupMenuButton<VoidCallback>(
       tooltip: 'Assistente AI',
       position: PopupMenuPosition.under,
-      icon: Icon(Icons.auto_awesome_outlined, size: 17, color: c.textSecondary),
+      icon: Icon(AppIcons.ai, size: 17, color: c.textSecondary),
       onSelected: (f) => f(),
       itemBuilder: (_) => [
         PopupMenuItem(value: _aiExplain, height: 28, child: const Text('Spiega la query')),
@@ -525,7 +525,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
                 child: Row(children: [
                   SizedBox(
                     width: 18,
-                    child: x == current ? Icon(Icons.check_rounded, size: 14, color: c.accent) : null,
+                    child: x == current ? Icon(AppIcons.check, size: 14, color: c.accent) : null,
                   ),
                   Expanded(child: Text(x, overflow: TextOverflow.ellipsis)),
                 ]),
@@ -540,7 +540,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
               border: Border.all(color: c.separator),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.storage_rounded, size: 13, color: c.textSecondary),
+              Icon(AppIcons.database, size: 13, color: c.textSecondary),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
@@ -550,7 +550,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(Icons.expand_more_rounded, size: 14, color: c.textTertiary),
+              Icon(AppIcons.chevronDown, size: 14, color: c.textTertiary),
             ]),
           ),
         );
@@ -595,7 +595,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
             style: TextStyle(fontSize: TypeSize.small + 0.5, color: conn == null ? c.textSecondary : c.text),
           ),
           const SizedBox(width: 4),
-          Icon(Icons.expand_more_rounded, size: 14, color: c.textTertiary),
+          Icon(AppIcons.chevronDown, size: 14, color: c.textTertiary),
         ]),
       ),
     );
@@ -613,9 +613,9 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       body = _logView();
     } else if (results.isEmpty) {
       body = tab.running
-          ? const EmptyState(icon: Icons.hourglass_empty_rounded, title: 'Esecuzione in corso…')
+          ? const EmptyState(icon: AppIcons.hourglass, title: 'Esecuzione in corso…')
           : EmptyState(
-              icon: Icons.play_circle_outline_rounded,
+              icon: AppIcons.runCircle,
               title: 'Nessun risultato',
               message: 'Premi Esegui o $mod per eseguire la selezione o tutto lo script; '
                   '${Platform.isMacOS ? '⌘⇧Invio' : 'Ctrl+Shift+Invio'} esegue solo l\'istruzione sotto il cursore.',
@@ -648,10 +648,10 @@ class _SqlEditorViewState extends State<SqlEditorView> {
                   _ResultTabChip(
                     label: results[i].title,
                     icon: results[i].error != null
-                        ? Icons.error_outline_rounded
+                        ? AppIcons.error
                         : results[i].model != null
-                            ? Icons.table_rows_outlined
-                            : Icons.insights_rounded,
+                            ? AppIcons.rows
+                            : AppIcons.insights,
                     iconColor: results[i].error != null ? c.danger : null,
                     selected: sel == i,
                     onTap: () => setState(() {
@@ -664,14 +664,14 @@ class _SqlEditorViewState extends State<SqlEditorView> {
             ),
             _ResultTabChip(
               label: 'Output',
-              icon: Icons.terminal_rounded,
+              icon: AppIcons.terminal,
               badge: tab.serverOutput.isEmpty ? null : '${tab.serverOutput.length}',
               selected: sel == -1,
               onTap: () => setState(() => _bottomTab = -1),
             ),
             _ResultTabChip(
               label: 'Log',
-              icon: Icons.history_rounded,
+              icon: AppIcons.history,
               selected: sel == -2,
               onTap: () => setState(() => _bottomTab = -2),
             ),
@@ -696,7 +696,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
             border: Border.all(color: c.danger.withValues(alpha: 0.3)),
           ),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(Icons.error_outline_rounded, size: 18, color: c.danger),
+            Icon(AppIcons.error, size: 18, color: c.danger),
             const SizedBox(width: Gap.sm),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -708,14 +708,14 @@ class _SqlEditorViewState extends State<SqlEditorView> {
                   const SizedBox(height: Gap.md),
                   OutlinedButton.icon(
                     onPressed: () => _aiFix(r),
-                    icon: const Icon(Icons.auto_awesome_outlined, size: 15),
+                    icon: const Icon(AppIcons.ai, size: 15),
                     label: const Text('Correggi con AI'),
                   ),
                 ],
               ]),
             ),
             ToolButton(
-              icon: Icons.content_copy_rounded,
+              icon: AppIcons.copy,
               tooltip: 'Copia messaggio',
               onPressed: () => Clipboard.setData(ClipboardData(text: r.error!)),
             ),
@@ -747,7 +747,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     final c = DbColors.of(context);
     if (tab.serverOutput.isEmpty) {
       return const EmptyState(
-        icon: Icons.terminal_rounded,
+        icon: AppIcons.terminal,
         title: 'Nessun messaggio dal server',
         message: 'Qui compaiono PRINT, RAISE NOTICE e gli avvisi del driver.',
       );
@@ -774,7 +774,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     final c = DbColors.of(context);
     final log = tab.log.reversed.toList();
     if (log.isEmpty) {
-      return const EmptyState(icon: Icons.history_rounded, title: 'Nessuna esecuzione in questo editor');
+      return const EmptyState(icon: AppIcons.history, title: 'Nessuna esecuzione in questo editor');
     }
     String hms(DateTime t) =>
         '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
@@ -784,10 +784,10 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       itemBuilder: (context, i) {
         final e = log[i];
         final (icon, color) = switch (e.level) {
-          LogLevel.success => (Icons.check_circle_outline_rounded, c.success),
-          LogLevel.error => (Icons.error_outline_rounded, c.danger),
-          LogLevel.warning => (Icons.warning_amber_rounded, c.warning),
-          LogLevel.info => (Icons.info_outline_rounded, c.textTertiary),
+          LogLevel.success => (AppIcons.checkCircle, c.success),
+          LogLevel.error => (AppIcons.error, c.danger),
+          LogLevel.warning => (AppIcons.warning, c.warning),
+          LogLevel.info => (AppIcons.info, c.textTertiary),
         };
         return InkWell(
           onTap: e.sql == null ? null : () => Clipboard.setData(ClipboardData(text: e.sql!)),
@@ -877,7 +877,7 @@ class _ResultTabChipState extends State<_ResultTabChip> {
               const SizedBox(width: 4),
               GestureDetector(
                 onTap: widget.onClose,
-                child: Icon(Icons.close_rounded, size: 12, color: c.textTertiary),
+                child: Icon(AppIcons.close, size: 12, color: c.textTertiary),
               ),
             ],
           ]),

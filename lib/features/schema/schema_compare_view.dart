@@ -65,7 +65,7 @@ class SchemaCompareTab extends FeatureTab {
   String get tooltip => 'Confronto schemi: ${source.label} → ${target.label}';
 
   @override
-  IconData get icon => Icons.compare_arrows_rounded;
+  IconData get icon => AppIcons.compare;
 
   @override
   DbConnection? get connection => source.connection;
@@ -331,7 +331,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
                     child: ToolButton(
-                      icon: Icons.swap_horiz_rounded,
+                      icon: AppIcons.swapHorizontal,
                       tooltip: 'Scambia origine e destinazione',
                       onPressed: _running ? null : _swap,
                     ),
@@ -347,7 +347,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
         Expanded(
           child: diff == null
               ? EmptyState(
-                  icon: Icons.compare_arrows_rounded,
+                  icon: AppIcons.compare,
                   title: _running ? 'Confronto in corso…' : 'Confronta due schemi',
                   message: _running
                       ? _progress
@@ -554,14 +554,14 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
           ),
           const SizedBox(width: Gap.sm),
           ToolButton(
-            icon: Icons.stop_circle_outlined,
+            icon: AppIcons.stopCircle,
             color: c.danger,
             tooltip: 'Interrompi',
             onPressed: () => tab._cancel?.cancel(),
           ),
           const SizedBox(width: Gap.sm),
         ],
-        PrimaryButton(label: 'Confronta', icon: Icons.compare_arrows_rounded, onPressed: _running ? null : _compare),
+        PrimaryButton(label: 'Confronta', icon: AppIcons.compare, onPressed: _running ? null : _compare),
       ],
     );
   }
@@ -620,7 +620,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
             child: Row(
               children: [
                 Icon(
-                  collapsed ? Icons.chevron_right_rounded : Icons.expand_more_rounded,
+                  collapsed ? AppIcons.chevronRight : AppIcons.chevronDown,
                   size: 16,
                   color: g == DiffStatus.identical ? c.textTertiary : Colors.transparent,
                 ),
@@ -661,7 +661,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                           ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(Icons.table_chart_outlined, size: 14, color: statusColor(c, td.status)),
+                  Icon(AppIcons.table, size: 14, color: statusColor(c, td.status)),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -721,7 +721,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
     final td = diff.tables.where((t) => t.id == tab.selectedTable).firstOrNull;
     if (td == null) {
       return const EmptyState(
-        icon: Icons.table_chart_outlined,
+        icon: AppIcons.table,
         title: 'Nessuna tabella selezionata',
         message: 'Seleziona una tabella a sinistra per vedere le differenze colonna per colonna.',
       );
@@ -973,7 +973,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                 ],
                 const Spacer(),
                 ToolButton(
-                  icon: Icons.edit_note_rounded,
+                  icon: AppIcons.script,
                   label: 'Apri nell\'editor SQL',
                   tooltip: 'Apri lo script in un editor SQL sulla destinazione',
                   onPressed: count == 0 || dc == null
@@ -981,7 +981,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                       : () => AppScope.read(context).openSqlEditor(dc, initialSql: script),
                 ),
                 ToolButton(
-                  icon: Icons.copy_rounded,
+                  icon: AppIcons.copy,
                   tooltip: 'Copia',
                   onPressed: count == 0
                       ? null
@@ -991,13 +991,13 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                         },
                 ),
                 ToolButton(
-                  icon: Icons.save_outlined,
+                  icon: AppIcons.save,
                   tooltip: 'Salva…',
                   onPressed: count == 0 ? null : () => _save(script),
                 ),
                 const ToolSeparator(),
                 ToolButton(
-                  icon: Icons.play_arrow_rounded,
+                  icon: AppIcons.run,
                   label: 'Esegui sulla destinazione',
                   color: c.accent,
                   tooltip: readOnly ? 'La destinazione è in sola lettura' : 'Esegui lo script su ${tab.target.label}',
@@ -1009,7 +1009,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
           Expanded(
             child: count == 0
                 ? EmptyState(
-                    icon: Icons.check_circle_outline_rounded,
+                    icon: AppIcons.checkCircle,
                     title: 'Nessuna istruzione',
                     message: tab.diff!.changeCount(includeDestructive: tab.dropExtra) == 0
                         ? 'Gli schemi sono allineati con le opzioni scelte.'

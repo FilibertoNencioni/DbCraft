@@ -272,27 +272,27 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
               ),
               if (!app.settings.simpleMode)
                 ToolButton(
-                  icon: Icons.edit_note_rounded,
+                  icon: AppIcons.script,
                   size: 18,
                   tooltip: 'Apri in un editor SQL',
                   onPressed: () =>
                       app.sqlEditorWith(tab.connection, 'SELECT * FROM ${tab.connection.dialect.tableName(table)}'),
                 ),
               ToolButton(
-                icon: Icons.ios_share_rounded,
+                icon: AppIcons.share,
                 tooltip: 'Esporta dati…',
                 onPressed: () => showTableExportDialog(context, tab.connection, table),
               ),
               if (!table.isView)
                 ToolButton(
-                  icon: Icons.download_rounded,
+                  icon: AppIcons.download,
                   tooltip: 'Importa dati da CSV…',
                   onPressed: tab.connection.config.readOnly
                       ? null
                       : () => showImportDialog(context, tab.connection, table),
                 ),
               ToolButton(
-                icon: Icons.refresh_rounded,
+                icon: AppIcons.refresh,
                 tooltip: 'Ricarica metadati',
                 onPressed: () {
                   tab.connection.metadata?.clearCache();
@@ -325,7 +325,7 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
       children: [
         Segmented<int>(
           value: cur,
-          items: [(_pageData, 'Dati', Icons.table_rows_outlined), if (cur != _pageData) (cur, _pageNames[cur], null)],
+          items: [(_pageData, 'Dati', AppIcons.rows), if (cur != _pageData) (cur, _pageNames[cur], null)],
           onChanged: (i) => _tabs.index = i,
         ),
         const SizedBox(width: Gap.sm),
@@ -338,7 +338,7 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
           ],
           child: IgnorePointer(
             child: ToolButton(
-              icon: Icons.info_outline_rounded,
+              icon: AppIcons.info,
               tooltip: 'Dettagli',
               label: 'Dettagli',
               onPressed: () {},
@@ -418,7 +418,7 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
         const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: _countRows,
-          icon: const Icon(Icons.numbers, size: 16),
+          icon: const Icon(AppIcons.number, size: 16),
           label: const Text('Calcola numero righe'),
         ),
       ],
@@ -444,11 +444,11 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
             trailing: [
               if (!_simple)
                 ToolButton(
-                  icon: Icons.code_rounded,
+                  icon: AppIcons.code,
                   tooltip: 'Torna a WHERE / ORDER BY in SQL',
                   onPressed: () => _setVisual(false),
                 ),
-              ToolButton(icon: Icons.refresh_rounded, tooltip: 'Ricarica i dati', onPressed: _loadData),
+              ToolButton(icon: AppIcons.refresh, tooltip: 'Ricarica i dati', onPressed: _loadData),
             ],
           )
         : Container(
@@ -485,9 +485,9 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
                 ),
                 const SizedBox(width: Gap.sm),
                 OutlinedButton(onPressed: _loadData, child: const Text('Applica')),
-                ToolButton(icon: Icons.tune_rounded, tooltip: 'Filtro visuale', onPressed: () => _setVisual(true)),
+                ToolButton(icon: AppIcons.tune, tooltip: 'Filtro visuale', onPressed: () => _setVisual(true)),
                 ToolButton(
-                  icon: Icons.filter_alt_off_outlined,
+                  icon: AppIcons.filterOff,
                   tooltip: 'Rimuovi filtro',
                   onPressed: _where.text.isEmpty && _order.text.isEmpty
                       ? null
@@ -590,7 +590,7 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
                     for (final f in d.foreignKeys)
                       ListTile(
                         dense: true,
-                        leading: const Icon(Icons.link, size: 18, color: Color(0xFF7E57C2)),
+                        leading: const Icon(AppIcons.link, size: 18, color: Color(0xFF7E57C2)),
                         title: Text(f.name ?? '(senza nome)'),
                         subtitle: Text(
                           '(${f.columns.join(', ')}) → ${f.pkTable} (${f.refColumns.join(', ')})'
@@ -616,7 +616,7 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
                     for (final f in d.referencedBy)
                       ListTile(
                         dense: true,
-                        leading: const Icon(Icons.call_received, size: 18),
+                        leading: const Icon(AppIcons.incoming, size: 18),
                         title: Text(f.fkTable),
                         subtitle: Text('${f.name ?? ''}  (${f.columns.join(', ')}) → (${f.refColumns.join(', ')})'),
                         trailing: TextButton(
@@ -653,12 +653,12 @@ class _TableEditorViewState extends State<TableEditorView> with SingleTickerProv
               Text('DDL ricostruito dai metadati ODBC', style: TextStyle(color: theme.hintColor, fontSize: 12)),
               const Spacer(),
               TextButton.icon(
-                icon: const Icon(Icons.copy, size: 16),
+                icon: const Icon(AppIcons.copy, size: 16),
                 label: const Text('Copia'),
                 onPressed: () => Clipboard.setData(ClipboardData(text: ddl)),
               ),
               TextButton.icon(
-                icon: const Icon(Icons.open_in_new, size: 16),
+                icon: const Icon(AppIcons.openExternal, size: 16),
                 label: const Text('Apri in editor SQL'),
                 onPressed: () => AppScope.read(context).sqlEditorWith(tab.connection, ddl),
               ),

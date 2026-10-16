@@ -138,7 +138,7 @@ class _GitSettingsDialogState extends State<_GitSettingsDialog> {
               child: Row(
                 children: [
                   Expanded(child: Text('Sincronizzazione con Git', style: Theme.of(context).textTheme.titleLarge)),
-                  ToolButton(icon: Icons.close_rounded, tooltip: 'Chiudi', onPressed: () => Navigator.pop(context)),
+                  ToolButton(icon: AppIcons.close, tooltip: 'Chiudi', onPressed: () => Navigator.pop(context)),
                 ],
               ),
             ),

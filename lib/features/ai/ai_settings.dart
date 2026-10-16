@@ -155,7 +155,7 @@ class _AiSettingsSectionState extends State<_AiSettingsSection> {
                         suffixIcon: GestureDetector(
                           onTap: () => setState(() => _showKey = !_showKey),
                           child: Icon(
-                            _showKey ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            _showKey ? AppIcons.eyeOff : AppIcons.eye,
                             size: 15,
                             color: c.textTertiary,
                           ),
@@ -167,12 +167,12 @@ class _AiSettingsSectionState extends State<_AiSettingsSection> {
                   ),
                   const SizedBox(width: Gap.xs),
                   ToolButton(
-                    icon: Icons.save_outlined,
+                    icon: AppIcons.save,
                     tooltip: 'Salva nel vault',
                     onPressed: _vaultLocked ? null : _saveKey,
                   ),
                   if (_hasVaultKey)
-                    ToolButton(icon: Icons.delete_outline_rounded, tooltip: 'Rimuovi la chiave', onPressed: _removeKey),
+                    ToolButton(icon: AppIcons.delete, tooltip: 'Rimuovi la chiave', onPressed: _removeKey),
                 ],
               ),
             ),
@@ -185,7 +185,7 @@ class _AiSettingsSectionState extends State<_AiSettingsSection> {
                     const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                   else if (_verifyResult != null)
                     Icon(
-                      _verifyOk ? Icons.check_circle_outline_rounded : Icons.error_outline_rounded,
+                      _verifyOk ? AppIcons.checkCircle : AppIcons.error,
                       size: 15,
                       color: _verifyOk ? c.success : c.danger,
                     ),
@@ -228,7 +228,7 @@ class _AiSettingsSectionState extends State<_AiSettingsSection> {
                   PopupMenuButton<String>(
                     tooltip: 'Modelli consigliati',
                     position: PopupMenuPosition.under,
-                    icon: Icon(Icons.expand_more_rounded, size: 16, color: c.textSecondary),
+                    icon: Icon(AppIcons.chevronDown, size: 16, color: c.textSecondary),
                     onSelected: (v) => _apply(() {
                       _model.text = v;
                       s.aiModel = v;
@@ -333,10 +333,10 @@ Future<bool> ensureAiReady(BuildContext context) async {
                 padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.md, Gap.xs),
                 child: Row(
                   children: [
-                    Icon(Icons.auto_awesome_outlined, size: 18, color: c.accent),
+                    Icon(AppIcons.ai, size: 18, color: c.accent),
                     const SizedBox(width: Gap.sm),
                     Expanded(child: Text('Configura l\'assistente AI', style: Theme.of(ctx).textTheme.titleLarge)),
-                    ToolButton(icon: Icons.close_rounded, tooltip: 'Chiudi', onPressed: () => Navigator.pop(ctx)),
+                    ToolButton(icon: AppIcons.close, tooltip: 'Chiudi', onPressed: () => Navigator.pop(ctx)),
                   ],
                 ),
               ),

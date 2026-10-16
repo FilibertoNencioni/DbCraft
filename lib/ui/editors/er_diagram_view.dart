@@ -798,23 +798,23 @@ class _ErDiagramViewState extends State<ErDiagramView> {
           ),
           child: Row(
             children: [
-              ToolButton(icon: Icons.zoom_in_rounded, tooltip: 'Zoom +', onPressed: () => _zoom(1.2)),
-              ToolButton(icon: Icons.zoom_out_rounded, tooltip: 'Zoom -', onPressed: () => _zoom(1 / 1.2)),
+              ToolButton(icon: AppIcons.zoomIn, tooltip: 'Zoom +', onPressed: () => _zoom(1.2)),
+              ToolButton(icon: AppIcons.zoomOut, tooltip: 'Zoom -', onPressed: () => _zoom(1 / 1.2)),
               ToolButton(
-                icon: Icons.fit_screen,
+                icon: AppIcons.fitScreen,
                 tooltip: 'Zoom 100%',
                 onPressed: () => _transform.value = Matrix4.identity(),
               ),
               ToolButton(
-                icon: Icons.auto_awesome_mosaic_outlined,
+                icon: AppIcons.mosaic,
                 tooltip: 'Disposizione automatica',
                 onPressed: _autoLayout,
               ),
-              ToolButton(icon: Icons.image_outlined, tooltip: 'Esporta PNG…', onPressed: _exportPng),
+              ToolButton(icon: AppIcons.image, tooltip: 'Esporta PNG…', onPressed: _exportPng),
               if (widget.connection.dialect.isSql) ...[
                 const ToolSeparator(),
                 ToolButton(
-                  icon: Icons.edit_outlined,
+                  icon: AppIcons.edit,
                   label: 'Modifica',
                   active: _editMode,
                   tooltip: _editMode ? 'Esci dalla modalità modifica' : 'Modifica lo schema nel diagramma',
@@ -822,13 +822,13 @@ class _ErDiagramViewState extends State<ErDiagramView> {
                 ),
                 if (_editMode) ...[
                   ToolButton(
-                    icon: Icons.add_box_outlined,
+                    icon: AppIcons.addBox,
                     label: 'Nuova tabella',
                     tooltip: 'Crea una nuova tabella',
                     onPressed: _newTable,
                   ),
                   ToolButton(
-                    icon: Icons.delete_outline_rounded,
+                    icon: AppIcons.delete,
                     tooltip: 'Elimina la tabella o la relazione selezionata',
                     onPressed: _selectedFk != null || (_selected != null && _byName(_selected!)?.mark != _Mark.deleted)
                         ? _deleteSelected
@@ -924,7 +924,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
     ),
     child: Row(
       children: [
-        Icon(Icons.edit_note_rounded, size: 18, color: count > 0 ? c.warning : c.textTertiary),
+        Icon(AppIcons.script, size: 18, color: count > 0 ? c.warning : c.textTertiary),
         const SizedBox(width: Gap.sm),
         Text(
           count == 0 ? 'Nessuna modifica' : (count == 1 ? '1 modifica' : '$count modifiche'),
@@ -940,13 +940,13 @@ class _ErDiagramViewState extends State<ErDiagramView> {
         ],
         const Spacer(),
         ToolButton(
-          icon: Icons.undo_rounded,
+          icon: AppIcons.undo,
           label: 'Annulla modifiche',
           tooltip: 'Scarta tutte le modifiche non applicate',
           onPressed: count > 0 ? _discardAll : null,
         ),
         const SizedBox(width: Gap.sm),
-        PrimaryButton(label: 'Rivedi script…', icon: Icons.description_outlined, onPressed: count > 0 ? _review : null),
+        PrimaryButton(label: 'Rivedi script…', icon: AppIcons.document, onPressed: count > 0 ? _review : null),
       ],
     ),
   );
@@ -985,7 +985,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
             ),
             child: Row(
               children: [
-                Icon(Icons.table_chart_outlined, size: 14, color: markColor ?? c.accent),
+                Icon(AppIcons.table, size: 14, color: markColor ?? c.accent),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -1065,10 +1065,10 @@ class _ErDiagramViewState extends State<ErDiagramView> {
           children: [
             Icon(
               isPk
-                  ? Icons.key
+                  ? AppIcons.key
                   : fkCols.contains(col.name)
-                  ? Icons.link
-                  : Icons.circle,
+                  ? AppIcons.link
+                  : AppIcons.dot,
               size: isPk || fkCols.contains(col.name) ? 11 : 5,
               color: isPk
                   ? const Color(0xFFFFB300)

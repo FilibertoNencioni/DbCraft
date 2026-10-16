@@ -23,9 +23,9 @@ Future<CloudAccount?> showCloudAccountDialog(BuildContext context, {CloudAccount
 }
 
 IconData cloudProviderIcon(CloudProvider p) => switch (p) {
-  CloudProvider.aws => Icons.cloud_queue_rounded,
-  CloudProvider.azure => Icons.cloud_circle_outlined,
-  CloudProvider.gcp => Icons.cloud_outlined,
+  CloudProvider.aws => AppIcons.cloud,
+  CloudProvider.azure => AppIcons.cloud,
+  CloudProvider.gcp => AppIcons.cloud,
 };
 
 Color cloudProviderColor(CloudProvider p) => switch (p) {
@@ -309,7 +309,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
     } else if (_testOk != null) {
       status = Row(
         children: [
-          Icon(Icons.check_rounded, size: 15, color: c.success),
+          Icon(AppIcons.check, size: 15, color: c.success),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
@@ -323,7 +323,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
     } else if (_testError != null) {
       status = Row(
         children: [
-          Icon(Icons.close_rounded, size: 15, color: c.danger),
+          Icon(AppIcons.close, size: 15, color: c.danger),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
@@ -406,7 +406,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
                     tooltip: 'Profili in ~/.aws',
                     padding: EdgeInsets.zero,
                     position: PopupMenuPosition.under,
-                    icon: Icon(Icons.unfold_more_rounded, size: 15, color: c.textSecondary),
+                    icon: Icon(AppIcons.upDown, size: 15, color: c.textSecondary),
                     onSelected: (v) => setState(() => _f(k).text = v),
                     itemBuilder: (_) => [
                       for (final p in _profiles)
@@ -426,7 +426,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
             _f(k),
             'Percorso del file .json',
             suffix: ToolButton(
-              icon: Icons.folder_open_outlined,
+              icon: AppIcons.folderOpen,
               tooltip: 'Sfoglia…',
               onPressed: () async {
                 final f = await openFile(
@@ -472,7 +472,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
 
   Widget _secretRow(String k) {
     final eye = ToolButton(
-      icon: _showSecrets ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+      icon: _showSecrets ? AppIcons.eyeOff : AppIcons.eye,
       tooltip: _showSecrets ? 'Nascondi' : 'Mostra',
       size: 15,
       onPressed: () => setState(() => _showSecrets = !_showSecrets),

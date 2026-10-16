@@ -325,7 +325,7 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                                   tooltip: 'Tipi comuni',
                                   padding: EdgeInsets.zero,
                                   iconSize: 18,
-                                  icon: const Icon(Icons.arrow_drop_down_rounded),
+                                  icon: const Icon(AppIcons.chevronDown),
                                   itemBuilder: (_) => [
                                     for (final t in types)
                                       PopupMenuItem(
@@ -366,7 +366,7 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 ToolButton(
-                                  icon: Icons.arrow_upward_rounded,
+                                  icon: AppIcons.arrowUp,
                                   size: 14,
                                   tooltip: 'Sposta su',
                                   onPressed: i == 0
@@ -374,7 +374,7 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                                       : () => setState(() => _rows.insert(i - 1, _rows.removeAt(i))),
                                 ),
                                 ToolButton(
-                                  icon: Icons.arrow_downward_rounded,
+                                  icon: AppIcons.arrowDown,
                                   size: 14,
                                   tooltip: 'Sposta giù',
                                   onPressed: i == _rows.length - 1
@@ -382,7 +382,7 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                                       : () => setState(() => _rows.insert(i + 1, _rows.removeAt(i))),
                                 ),
                                 ToolButton(
-                                  icon: Icons.remove_circle_outline_rounded,
+                                  icon: AppIcons.removeCircle,
                                   size: 14,
                                   color: c.danger,
                                   tooltip: 'Elimina colonna',
@@ -402,7 +402,7 @@ class _TableDefDialogState extends State<_TableDefDialog> {
             Row(
               children: [
                 ToolButton(
-                  icon: Icons.add_rounded,
+                  icon: AppIcons.add,
                   label: 'Aggiungi colonna',
                   tooltip: 'Aggiungi una colonna',
                   onPressed: () => setState(() => _rows.add(_ColRow(type: types.first))),
@@ -563,7 +563,7 @@ class _RelationDialogState extends State<_RelationDialog> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.warning_amber_rounded, size: 15, color: c.warning),
+                    Icon(AppIcons.warning, size: 15, color: c.warning),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(

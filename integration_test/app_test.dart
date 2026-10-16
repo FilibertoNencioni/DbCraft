@@ -17,6 +17,7 @@ import 'package:dbcraft/state/editor_tabs.dart';
 import 'package:dbcraft/ui/dialogs/app_dialogs.dart';
 import 'package:dbcraft/ui/editors/sql_code_editor.dart';
 import 'package:dbcraft/ui/home_page.dart';
+import 'package:dbcraft/ui/theme/app_icons.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -61,9 +62,12 @@ Future<void> settle(WidgetTester tester, [int ms = 800]) async {
 }
 
 Future<void> doubleTap(WidgetTester tester, Finder f) async {
-  await tester.tap(f);
+  // Resolve the target once: the first tap can change what [f] matches (the
+  // toolbar pill shows the selected connection's name).
+  final at = tester.getCenter(f);
+  await tester.tapAt(at);
   await tester.pump(const Duration(milliseconds: 60));
-  await tester.tap(f);
+  await tester.tapAt(at);
   await settle(tester, 400);
 }
 
@@ -278,7 +282,7 @@ void main() {
     await waitFor(tester, find.text('Query Manager'));
     await settle(tester);
     await shot(tester, '10f_history');
-    await tester.tap(find.byIcon(Icons.close).last);
+    await tester.tap(find.byIcon(AppIcons.close).last);
     await settle(tester);
 
     // Autocomplete helper data & ER diagram.

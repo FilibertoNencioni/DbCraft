@@ -124,7 +124,7 @@ class _DriverManagerDialogState extends State<_DriverManagerDialog> {
           ),
           Positioned(
             right: Gap.md,
-            child: ToolButton(icon: Icons.close_rounded, tooltip: 'Chiudi', onPressed: () => Navigator.pop(context)),
+            child: ToolButton(icon: AppIcons.close, tooltip: 'Chiudi', onPressed: () => Navigator.pop(context)),
           ),
         ],
       ),
@@ -134,13 +134,13 @@ class _DriverManagerDialogState extends State<_DriverManagerDialog> {
   Widget? _installAction() => canInstallDrivers
       ? PrimaryButton(
           label: 'Installa un driver',
-          icon: Icons.download_rounded,
+          icon: AppIcons.download,
           onPressed: () => setState(() => _page = DriverManagerPage.install),
         )
       : null;
 
   Widget _loadError(Object error) => EmptyState(
-    icon: Icons.cable_rounded,
+    icon: AppIcons.plug,
     title: 'Driver Manager ODBC non trovato',
     message: canInstallDrivers
         ? 'Serve unixODBC: viene installato insieme a qualunque driver.'
@@ -161,7 +161,7 @@ class _DriverManagerDialogState extends State<_DriverManagerDialog> {
     if (data.error case final Object e) return _loadError(e);
     if (data.drivers.isEmpty) {
       return EmptyState(
-        icon: Icons.memory_rounded,
+        icon: AppIcons.memory,
         title: 'Nessun driver registrato',
         message: canInstallDrivers
             ? 'Installa il driver del tuo database: pochi secondi con Homebrew.'
@@ -185,7 +185,7 @@ class _DriverManagerDialogState extends State<_DriverManagerDialog> {
     if (data.error case final Object e) return _loadError(e);
     if (data.dsns.isEmpty) {
       return const EmptyState(
-        icon: Icons.dns_outlined,
+        icon: AppIcons.server,
         title: 'Nessun DSN configurato',
         message:
             'I DSN si definiscono in odbc.ini. Non sono necessari: una connessione può usare direttamente il driver.',
@@ -293,7 +293,7 @@ class _DriverRowState extends State<_DriverRow> {
                   turns: _open ? 0.25 : 0,
                   duration: const Duration(milliseconds: 120),
                   curve: Curves.easeOut,
-                  child: Icon(Icons.chevron_right_rounded, size: 16, color: c.textTertiary),
+                  child: Icon(AppIcons.chevronRight, size: 16, color: c.textTertiary),
                 ),
               ],
             ),
@@ -365,7 +365,7 @@ class _OpenSslNotice extends StatelessWidget {
           children: [
             Expanded(child: SelectableText(issue.fixCommand, style: monoStyle(context, size: 12))),
             ToolButton(
-              icon: Icons.content_copy_rounded,
+              icon: AppIcons.copy,
               tooltip: 'Copia comando',
               size: 14,
               onPressed: () => Clipboard.setData(ClipboardData(text: issue.fixCommand)),

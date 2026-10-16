@@ -80,7 +80,7 @@ Future<void> showAiExplainObject(BuildContext context, DbConnection dc, DbTable 
       title: 'Spiegazione di ${table.name}',
       subtitle: _subtitle(app, dc),
       connection: dc,
-      icon: table.isView ? Icons.view_quilt_outlined : Icons.table_chart_outlined,
+      icon: table.isView ? AppIcons.erDiagram : AppIcons.table,
       build: (_) async {
         final md = dc.metadata;
         if (md == null) throw AiException('La connessione non è attiva.');
@@ -121,7 +121,7 @@ Future<void> showAiExplainProcedure(BuildContext context, DbConnection dc, DbPro
       title: 'Spiegazione di ${proc.cleanName}',
       subtitle: _subtitle(app, dc),
       connection: dc,
-      icon: Icons.functions,
+      icon: AppIcons.function,
       preview: source,
       build: (_) async {
         final md = dc.metadata;
@@ -160,7 +160,7 @@ class _ExplainDialog extends StatefulWidget {
     required this.build,
     this.preview,
     this.sampleLabel,
-    this.icon = Icons.auto_awesome_outlined,
+    this.icon = AppIcons.ai,
   });
 
   final String title;
@@ -249,7 +249,7 @@ class _ExplainDialogState extends State<_ExplainDialog> {
           Text(widget.sampleLabel!, style: const TextStyle(fontSize: TypeSize.small + 0.5)),
           const SizedBox(width: Gap.sm),
           ToolButton(
-            icon: Icons.refresh_rounded,
+            icon: AppIcons.refresh,
             tooltip: 'Rigenera la spiegazione',
             onPressed: _run.busy ? null : _start,
           ),
@@ -394,7 +394,7 @@ class _FixDialogState extends State<_FixDialog> {
         child: AiSheet(
           title: 'Correggi con AI',
           subtitle: _subtitle(app, widget.connection),
-          icon: Icons.healing_outlined,
+          icon: AppIcons.fix,
           body: ListView(
             padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.xl, Gap.xl),
             children: [
@@ -433,7 +433,7 @@ class _FixDialogState extends State<_FixDialog> {
             ),
             PrimaryButton(
               label: 'Sostituisci nell\'editor',
-              icon: Icons.check_rounded,
+              icon: AppIcons.check,
               tooltip: 'Sostituisce l\'istruzione nell\'editor (${mod}Invio)',
               onPressed: fixed == null || unchanged ? null : () => Navigator.pop(context, fixed),
             ),
@@ -518,7 +518,7 @@ class _GenerateDialogState extends State<_GenerateDialog> {
     return AiSheet(
       title: 'Genera query',
       subtitle: _subtitle(app, widget.connection),
-      icon: Icons.auto_awesome_outlined,
+      icon: AppIcons.ai,
       body: ListView(
         padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.xl, Gap.xl),
         children: [
@@ -565,7 +565,7 @@ class _GenerateDialogState extends State<_GenerateDialog> {
         if (code == null)
           PrimaryButton(
             label: _run.busy ? 'Generazione…' : 'Genera',
-            icon: Icons.auto_awesome_outlined,
+            icon: AppIcons.ai,
             onPressed: _run.busy || _prompt.text.trim().isEmpty ? null : _generate,
           )
         else ...[
@@ -576,7 +576,7 @@ class _GenerateDialogState extends State<_GenerateDialog> {
           ),
           PrimaryButton(
             label: 'Inserisci nell\'editor',
-            icon: Icons.input_rounded,
+            icon: AppIcons.insert,
             onPressed: () => Navigator.pop(context, code),
           ),
         ],

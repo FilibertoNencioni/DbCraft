@@ -217,7 +217,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   children: [
                     Expanded(child: _text(_lib, '/opt/homebrew/lib/libodbc.2.dylib')),
                     ToolButton(
-                      icon: Icons.folder_open_outlined,
+                      icon: AppIcons.folderOpen,
                       tooltip: 'Scegli la libreria',
                       onPressed: () async {
                         final f = await openFile();
@@ -244,13 +244,13 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     const pages = [
-      (Icons.palette_outlined, 'Aspetto'),
-      (Icons.edit_note_rounded, 'Editor SQL'),
-      (Icons.table_rows_outlined, 'Risultati'),
-      (Icons.insights_outlined, 'Analisi'),
-      (Icons.lock_outline_rounded, 'Sicurezza'),
-      (Icons.auto_awesome_outlined, 'Assistente AI'),
-      (Icons.cable_rounded, 'ODBC'),
+      (AppIcons.palette, 'Aspetto'),
+      (AppIcons.script, 'Editor SQL'),
+      (AppIcons.rows, 'Risultati'),
+      (AppIcons.insights, 'Analisi'),
+      (AppIcons.lock, 'Sicurezza'),
+      (AppIcons.ai, 'Assistente AI'),
+      (AppIcons.plug, 'ODBC'),
     ];
     return Dialog(
       insetPadding: const EdgeInsets.all(Gap.xl),
@@ -309,7 +309,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       children: [
                         Expanded(child: Text(pages[_page].$2, style: Theme.of(context).textTheme.titleLarge)),
                         ToolButton(
-                          icon: Icons.close_rounded,
+                          icon: AppIcons.close,
                           tooltip: 'Chiudi',
                           onPressed: () => Navigator.pop(context),
                         ),
@@ -378,7 +378,7 @@ class _HistoryDialogState extends State<_HistoryDialog> {
                     child: TextField(
                       decoration: const InputDecoration(
                         isDense: true,
-                        prefixIcon: Icon(Icons.search),
+                        prefixIcon: Icon(AppIcons.search),
                         hintText: 'Cerca nelle query…',
                       ),
                       onChanged: (v) => setState(() => _filter = v.toLowerCase()),
@@ -397,10 +397,10 @@ class _HistoryDialogState extends State<_HistoryDialog> {
                         await app.clearHistory();
                       }
                     },
-                    icon: const Icon(Icons.delete_sweep_outlined),
+                    icon: const Icon(AppIcons.clearAll),
                     label: const Text('Svuota'),
                   ),
-                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(AppIcons.close)),
                 ],
               ),
             ),
@@ -416,7 +416,7 @@ class _HistoryDialogState extends State<_HistoryDialog> {
                         return ListTile(
                           dense: true,
                           leading: Icon(
-                            h.success ? Icons.check_circle_outline : Icons.error_outline,
+                            h.success ? AppIcons.checkCircle : AppIcons.error,
                             color: h.success ? Colors.green : theme.colorScheme.error,
                             size: 18,
                           ),
@@ -437,12 +437,12 @@ class _HistoryDialogState extends State<_HistoryDialog> {
                             children: [
                               IconButton(
                                 tooltip: 'Copia',
-                                icon: const Icon(Icons.copy, size: 16),
+                                icon: const Icon(AppIcons.copy, size: 16),
                                 onPressed: () => Clipboard.setData(ClipboardData(text: h.sql)),
                               ),
                               IconButton(
                                 tooltip: 'Apri in editor SQL',
-                                icon: const Icon(Icons.open_in_new, size: 16),
+                                icon: const Icon(AppIcons.openExternal, size: 16),
                                 onPressed: () {
                                   final c = app.byId(h.connectionId);
                                   Navigator.pop(context);

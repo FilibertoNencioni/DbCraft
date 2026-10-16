@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/gestures.dart' show kDoubleTapSlop, kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,7 @@ import '../state/app_state.dart';
 import '../state/db_connection.dart';
 import '../state/editor_tabs.dart';
 import 'actions.dart';
+import 'dev/control_gallery.dart';
 import 'dialogs/app_dialogs.dart';
 import 'editors/misc_views.dart';
 import 'editors/sql_editor_view.dart';
@@ -249,6 +251,10 @@ class _HomePageState extends State<HomePage> {
       _MenuSpec('Aiuto', [
         _MenuAction('Scorciatoie da tastiera', _shortcutsHelp, null),
         if (!_mac) _MenuAction('Informazioni su DbCraft', _about, null),
+        if (kDebugMode) ...[
+          const _MenuDivider(),
+          _MenuAction('Galleria controlli', () => showControlGallery(context), null),
+        ],
       ]),
     ];
   }
@@ -365,10 +371,10 @@ class _HomePageState extends State<HomePage> {
         SidebarTabs<int>(
           value: _leftTab,
           items: const [
-            (0, 'Database', Icons.storage_rounded),
-            (1, 'Script', Icons.description_outlined),
-            (2, 'Cloud', Icons.cloud_outlined),
-            (3, 'Git', Icons.cloud_sync_outlined),
+            (0, 'Database', AppIcons.database),
+            (1, 'Script', AppIcons.document),
+            (2, 'Cloud', AppIcons.cloud),
+            (3, 'Git', AppIcons.git),
           ],
           onChanged: (v) => setState(() => _leftTab = v),
         ),
@@ -443,7 +449,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           ToolButton(
-            icon: Icons.add_rounded,
+            icon: AppIcons.add,
             tooltip: 'Nuovo editor SQL (${_mac ? '⌘N' : 'Ctrl+N'})',
             onPressed: () => openSqlEditor(context),
           ),
@@ -682,7 +688,7 @@ class _AppToolbar extends StatelessWidget {
           decoration: BoxDecoration(color: c.chrome, border: Border(bottom: BorderSide(color: c.separator))),
           child: Row(children: [
             ToolButton(
-              icon: Icons.view_sidebar_outlined,
+              icon: AppIcons.sidebar,
               tooltip: '${showSidebar ? 'Nascondi' : 'Mostra'} barra laterale (${mac ? '⌘0' : 'Ctrl+0'})',
               size: 19,
               extent: 32,
@@ -690,14 +696,14 @@ class _AppToolbar extends StatelessWidget {
             ),
             const SizedBox(width: Gap.md),
             ToolButton(
-              icon: Icons.add_link_rounded,
+              icon: AppIcons.addLink,
               tooltip: 'Nuova connessione (${mac ? '⌘⇧N' : 'Ctrl+Shift+N'})',
               size: 19,
               extent: 32,
               onPressed: () => newConnection(context),
             ),
             ToolButton(
-              icon: Icons.edit_note_rounded,
+              icon: AppIcons.script,
               tooltip: 'Nuovo editor SQL (${mac ? '⌘N' : 'Ctrl+N'})',
               size: 21,
               extent: 32,
@@ -708,7 +714,7 @@ class _AppToolbar extends StatelessWidget {
             const SizedBox(width: Gap.sm),
             if (dc != null)
               ToolButton(
-                icon: connected ? Icons.power_settings_new_rounded : Icons.power_rounded,
+                icon: connected ? AppIcons.power : AppIcons.connect,
                 tooltip: connected ? 'Disconnetti' : 'Connetti',
                 color: connected ? c.success : null,
                 size: 19,
@@ -719,7 +725,7 @@ class _AppToolbar extends StatelessWidget {
             if (connected) _TransactionControl(dc: dc!, onToggle: () => onToggleAutoCommit(dc)),
             const SizedBox(width: Gap.sm),
             ToolButton(
-              icon: Icons.history_rounded,
+              icon: AppIcons.history,
               tooltip: 'Query Manager (${mac ? '⌘⇧H' : 'Ctrl+Shift+H'})',
               size: 19,
               extent: 32,
@@ -727,7 +733,7 @@ class _AppToolbar extends StatelessWidget {
             ),
             if (!mac)
               ToolButton(
-                icon: Icons.settings_outlined,
+                icon: AppIcons.settings,
                 tooltip: 'Preferenze',
                 size: 19,
                 extent: 32,
@@ -840,7 +846,7 @@ class _ConnectionPill extends StatelessWidget {
                 style: TextStyle(fontSize: TypeSize.small, color: statusColor)),
           ),
           const SizedBox(width: 6),
-          Icon(Icons.unfold_more_rounded, size: 14, color: c.textTertiary),
+          Icon(AppIcons.upDown, size: 14, color: c.textTertiary),
         ]),
       ),
     );
@@ -872,14 +878,14 @@ class _TransactionControl extends StatelessWidget {
       if (manual) ...[
         const SizedBox(width: Gap.xs),
         ToolButton(
-          icon: Icons.check_rounded,
+          icon: AppIcons.check,
           tooltip: 'Commit',
           color: c.success,
           label: dc.pendingStatements > 0 ? 'Commit (${dc.pendingStatements})' : 'Commit',
           onPressed: () => guarded(context, dc.commit),
         ),
         ToolButton(
-          icon: Icons.undo_rounded,
+          icon: AppIcons.undo,
           tooltip: 'Rollback',
           color: c.danger,
           onPressed: () => guarded(context, dc.rollback),
@@ -957,7 +963,7 @@ class _EditorTabChipState extends State<_EditorTabChip> {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Icon(
-              t.isDirty && !_hover ? Icons.circle : Icons.close_rounded,
+              t.isDirty && !_hover ? AppIcons.dot : AppIcons.close,
               size: t.isDirty && !_hover ? 7 : 12,
               color: (_hover || widget.active) ? c.textSecondary : Colors.transparent,
             ),
@@ -965,7 +971,7 @@ class _EditorTabChipState extends State<_EditorTabChip> {
         ),
       );
     } else {
-      trailing = SizedBox(width: 16, child: Icon(Icons.circle, size: 7, color: c.textSecondary));
+      trailing = SizedBox(width: 16, child: Icon(AppIcons.dot, size: 7, color: c.textSecondary));
     }
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -1034,7 +1040,7 @@ class _AppMark extends StatelessWidget {
         borderRadius: BorderRadius.circular(size * 0.23),
         boxShadow: [BoxShadow(color: const Color(0x29000000), blurRadius: size * 0.08, offset: Offset(0, size * 0.03))],
       ),
-      child: Icon(Icons.storage_rounded, color: Colors.white, size: size * 0.52),
+      child: Icon(AppIcons.database, color: Colors.white, size: size * 0.52),
     );
   }
 }
@@ -1068,21 +1074,21 @@ class _Welcome extends StatelessWidget {
                         style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary)),
                     const SizedBox(height: Gap.xl),
                     _WelcomeAction(
-                      icon: Icons.add_link_rounded,
+                      icon: AppIcons.addLink,
                       title: 'Nuova connessione',
                       detail: 'Driver ODBC, DSN o stringa di connessione',
                       shortcut: '$m⇧N',
                       onTap: () => newConnection(context),
                     ),
                     _WelcomeAction(
-                      icon: Icons.edit_note_rounded,
+                      icon: AppIcons.script,
                       title: 'Nuovo editor SQL',
                       detail: 'Scrivi ed esegui query sulla connessione attiva',
                       shortcut: '${m}N',
                       onTap: () => openSqlEditor(context),
                     ),
                     _WelcomeAction(
-                      icon: Icons.folder_open_outlined,
+                      icon: AppIcons.folderOpen,
                       title: 'Apri script',
                       detail: 'Riprendi un file .sql salvato',
                       shortcut: '${m}O',
@@ -1299,14 +1305,14 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
           padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             ToolButton(
-              icon: Icons.add_rounded,
+              icon: AppIcons.add,
               tooltip: 'Nuovo script',
               onPressed: () async {
                 await openSqlEditor(context);
                 _reload();
               },
             ),
-            ToolButton(icon: Icons.refresh_rounded, tooltip: 'Aggiorna', onPressed: _reload),
+            ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', onPressed: _reload),
           ])),
       Expanded(
         child: FutureBuilder<List<File>>(
@@ -1315,7 +1321,7 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
             final files = snap.data ?? const <File>[];
             if (files.isEmpty) {
               return const EmptyState(
-                icon: Icons.description_outlined,
+                icon: AppIcons.document,
                 title: 'Nessuno script',
                 message: 'Gli editor SQL vengono salvati qui automaticamente.',
               );
@@ -1331,7 +1337,7 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 1),
                   child: SidebarRow(
-                    icon: Icons.description_outlined,
+                    icon: AppIcons.document,
                     iconColor: open ? c.accent : null,
                     title: p.basenameWithoutExtension(f.path),
                     detail: _ago(f.lastModifiedSync()),

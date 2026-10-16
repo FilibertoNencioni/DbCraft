@@ -415,7 +415,7 @@ class _TablePickerState extends State<_TablePicker> {
                 builder: (context, snap) {
                   if (snap.hasError) {
                     return EmptyState(
-                      icon: Icons.error_outline_rounded,
+                      icon: AppIcons.error,
                       title: 'Tabelle non disponibili',
                       message: '${snap.error}',
                     );
@@ -425,7 +425,7 @@ class _TablePickerState extends State<_TablePicker> {
                   final list = snap.data!.where((t) => f.isEmpty || t.displayPath.toLowerCase().contains(f)).toList();
                   if (list.isEmpty) {
                     return const EmptyState(
-                      icon: Icons.table_chart_outlined,
+                      icon: AppIcons.table,
                       title: 'Nessuna tabella',
                       message: 'Modifica il filtro.',
                     );
@@ -438,7 +438,7 @@ class _TablePickerState extends State<_TablePicker> {
                       child: Row(
                         children: [
                           const SizedBox(width: Gap.sm),
-                          Icon(Icons.table_chart_outlined, size: 15, color: c.accent),
+                          Icon(AppIcons.table, size: 15, color: c.accent),
                           const SizedBox(width: Gap.sm),
                           Expanded(
                             child: Text(

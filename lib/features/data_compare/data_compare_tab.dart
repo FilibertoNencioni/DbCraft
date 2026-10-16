@@ -148,7 +148,7 @@ class DataCompareTab extends FeatureTab {
   }
 
   @override
-  IconData get icon => Icons.compare_arrows_rounded;
+  IconData get icon => AppIcons.compare;
 
   @override
   DbConnection? get connection => src.conn;
@@ -631,17 +631,17 @@ class _DataCompareViewState extends State<_DataCompareView> {
       child: Row(
         children: [
           if (tab.running)
-            PrimaryButton(label: 'Interrompi', icon: Icons.stop_rounded, color: c.danger, onPressed: tab.cancel)
+            PrimaryButton(label: 'Interrompi', icon: AppIcons.stop, color: c.danger, onPressed: tab.cancel)
           else
             PrimaryButton(
               label: 'Confronta',
-              icon: Icons.compare_arrows_rounded,
+              icon: AppIcons.compare,
               tooltip: 'Legge le due tabelle e confronta le righe per chiave',
               onPressed: _run,
             ),
           const SizedBox(width: Gap.xs),
           ToolButton(
-            icon: Icons.sync_rounded,
+            icon: AppIcons.sync,
             label: 'Script di sincronizzazione',
             tooltip: 'Genera INSERT / UPDATE / DELETE per allineare la destinazione all\'origine',
             onPressed: r == null || tab.running || r.inSync ? null : _sync,
@@ -809,12 +809,12 @@ class _DataCompareViewState extends State<_DataCompareView> {
               ),
             ),
             ToolButton(
-              icon: Icons.done_all_rounded,
+              icon: AppIcons.doneAll,
               tooltip: 'Seleziona tutte',
               onPressed: () => tab.setAllCompared(true),
             ),
             ToolButton(
-              icon: Icons.remove_done_rounded,
+              icon: AppIcons.deselectAll,
               tooltip: 'Deseleziona tutte',
               onPressed: () => tab.setAllCompared(false),
             ),
@@ -850,7 +850,7 @@ class _DataCompareViewState extends State<_DataCompareView> {
                   ),
                 ),
                 ToolButton(
-                  icon: Icons.key_rounded,
+                  icon: AppIcons.key,
                   size: 14,
                   active: keys.contains(col.name.toLowerCase()),
                   tooltip: keys.contains(col.name.toLowerCase()) ? 'Rimuovi dalla chiave' : 'Usa come colonna chiave',
@@ -1039,7 +1039,7 @@ class _DataCompareViewState extends State<_DataCompareView> {
     final r = tab.result;
     if (tab.error != null) {
       return EmptyState(
-        icon: Icons.error_outline_rounded,
+        icon: AppIcons.error,
         title: 'Confronto non riuscito',
         message: tab.error is OdbcException ? (tab.error as OdbcException).message : tab.error.toString(),
         action: OutlinedButton(onPressed: _run, child: const Text('Riprova')),
@@ -1048,7 +1048,7 @@ class _DataCompareViewState extends State<_DataCompareView> {
     if (r == null) {
       if (tab.running) {
         return EmptyState(
-          icon: Icons.hourglass_top_rounded,
+          icon: AppIcons.hourglass,
           title: 'Confronto in corso…',
           message:
               '${_n(tab.readSource)} righe lette dall\'origine, ${_n(tab.readTarget)} dalla destinazione.'
@@ -1056,7 +1056,7 @@ class _DataCompareViewState extends State<_DataCompareView> {
         );
       }
       return EmptyState(
-        icon: Icons.compare_arrows_rounded,
+        icon: AppIcons.compare,
         title: tab.note ?? 'Confronta i dati di due tabelle',
         message:
             'Scegli origine e destinazione (anche su connessioni diverse), le colonne chiave e premi Confronta. '
@@ -1074,11 +1074,11 @@ class _DataCompareViewState extends State<_DataCompareView> {
         if (tab.stale)
           _banner(
             c,
-            Icons.info_outline_rounded,
+            AppIcons.info,
             c.accent,
             'La destinazione è stata modificata: i risultati non sono aggiornati.',
             action: ToolButton(
-              icon: Icons.refresh_rounded,
+              icon: AppIcons.refresh,
               label: 'Ricalcola',
               tooltip: 'Ripeti il confronto',
               onPressed: _run,
@@ -1087,21 +1087,21 @@ class _DataCompareViewState extends State<_DataCompareView> {
         if (r.truncated)
           _banner(
             c,
-            Icons.warning_amber_rounded,
+            AppIcons.warning,
             c.warning,
             'Raggiunto il limite di ${_n(tab.rowCapValue)} righe per lato: il confronto copre solo una parte dei dati.',
           ),
-        if (tab.note != null) _banner(c, Icons.info_outline_rounded, c.accent, tab.note!),
+        if (tab.note != null) _banner(c, AppIcons.info, c.accent, tab.note!),
         Expanded(
           child: r.inSync && !tab.filter.contains(RowDiff.identical)
               ? const EmptyState(
-                  icon: Icons.check_circle_outline_rounded,
+                  icon: AppIcons.checkCircle,
                   title: 'Le tabelle sono allineate',
                   message: 'Tutte le righe confrontate sono identiche.',
                 )
               : _lines.isEmpty
               ? const EmptyState(
-                  icon: Icons.filter_alt_off_outlined,
+                  icon: AppIcons.filterOff,
                   title: 'Nessuna riga con questi filtri',
                   message: 'Attiva le categorie da mostrare con i contatori qui sopra.',
                 )
@@ -1173,7 +1173,7 @@ class _DataCompareViewState extends State<_DataCompareView> {
               child: Row(
                 children: [
                   if (j < r.keyCount) ...[
-                    Icon(Icons.key_rounded, size: 12, color: c.warning),
+                    Icon(AppIcons.key, size: 12, color: c.warning),
                     const SizedBox(width: 3),
                   ],
                   Flexible(

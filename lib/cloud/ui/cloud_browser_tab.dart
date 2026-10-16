@@ -40,7 +40,7 @@ class CloudBrowserTab extends FeatureTab {
   String get tooltip => '${account.name} · ${account.provider.storageLabel} · $bucket/$prefix';
 
   @override
-  IconData get icon => Icons.cloud_outlined;
+  IconData get icon => AppIcons.cloud;
 
   @override
   DbConnection? get connection => null;
@@ -204,11 +204,11 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
       child: Row(
         children: [
           ToolButton(
-            icon: Icons.arrow_upward_rounded,
+            icon: AppIcons.arrowUp,
             tooltip: 'Cartella superiore',
             onPressed: t.prefix.isEmpty ? null : () => _go(CloudObject(bucket: t.bucket, key: t.prefix).parent),
           ),
-          ToolButton(icon: Icons.refresh_rounded, tooltip: 'Aggiorna (F5)', onPressed: _loading ? null : _reload),
+          ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna (F5)', onPressed: _loading ? null : _reload),
           const ToolSeparator(),
           // Breadcrumbs.
           Expanded(
@@ -217,9 +217,9 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
               reverse: true,
               child: Row(
                 children: [
-                  _crumb(t.bucket, '', icon: Icons.inventory_2_outlined),
+                  _crumb(t.bucket, '', icon: AppIcons.archive),
                   for (var i = 0; i < parts.length; i++) ...[
-                    Icon(Icons.chevron_right_rounded, size: 14, color: c.textTertiary),
+                    Icon(AppIcons.chevronRight, size: 14, color: c.textTertiary),
                     _crumb(parts[i], '${parts.sublist(0, i + 1).join('/')}/', current: i == parts.length - 1),
                   ],
                 ],
@@ -228,22 +228,22 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
           ),
           const ToolSeparator(),
           ToolButton(
-            icon: Icons.create_new_folder_outlined,
+            icon: AppIcons.newFolder,
             tooltip: 'Nuova cartella',
             onPressed: () => _act((s) => cloudNewFolder(context, s, t.bucket, t.prefix)),
           ),
           ToolButton(
-            icon: Icons.upload_outlined,
+            icon: AppIcons.upload,
             tooltip: 'Carica file…',
             onPressed: () => _act((s) => cloudUploadFiles(context, s, t.bucket, t.prefix)),
           ),
           ToolButton(
-            icon: Icons.download_outlined,
+            icon: AppIcons.download,
             tooltip: 'Scarica…',
             onPressed: sel.isEmpty ? null : () => _downloadSelection(sel),
           ),
           ToolButton(
-            icon: Icons.link_rounded,
+            icon: AppIcons.link,
             tooltip: 'Copia link di condivisione…',
             onPressed: single == null || single.isFolder
                 ? null
@@ -253,7 +253,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
                   }),
           ),
           ToolButton(
-            icon: Icons.delete_outline_rounded,
+            icon: AppIcons.delete,
             tooltip: 'Elimina…',
             onPressed: sel.isEmpty ? null : () => _act((s) => cloudDelete(context, s, sel)),
           ),
@@ -334,7 +334,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
                 label,
                 style: TextStyle(fontSize: TypeSize.small, fontWeight: FontWeight.w600, color: c.text),
               ),
-              if (active) Icon(_asc ? Icons.arrow_drop_up : Icons.arrow_drop_down, size: 16, color: c.textSecondary),
+              if (active) Icon(_asc ? AppIcons.chevronUp : AppIcons.chevronDown, size: 16, color: c.textSecondary),
             ],
           ),
         ),
@@ -360,7 +360,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     final c = DbColors.of(context);
     if (_error != null) {
       return EmptyState(
-        icon: Icons.cloud_off_outlined,
+        icon: AppIcons.cloudOff,
         title: 'Impossibile elencare i file',
         message: _error,
         action: OutlinedButton(onPressed: _reload, child: const Text('Riprova')),
@@ -369,7 +369,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     if (_loading && t.items.isEmpty) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     if (visible.isEmpty) {
       return EmptyState(
-        icon: Icons.folder_open_outlined,
+        icon: AppIcons.folderOpen,
         title: _filter.text.isEmpty ? 'Cartella vuota' : 'Nessun elemento corrispondente',
         message: _filter.text.isEmpty ? 'Usa "Carica file…" per aggiungere file qui.' : 'Modifica il filtro.',
       );
@@ -409,7 +409,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
               child: Row(
                 children: [
                   Icon(
-                    o.isFolder ? Icons.folder_outlined : cloudFileIcon(o.extension),
+                    o.isFolder ? AppIcons.folder : cloudFileIcon(o.extension),
                     size: 15,
                     color: strong ? Colors.white : (o.isFolder ? c.accent : c.textSecondary),
                   ),
@@ -560,23 +560,23 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     final single = sel.length == 1 ? sel.first : null;
     final ext = single?.extension ?? '';
     final items = <PopupMenuEntry<VoidCallback>>[
-      if (single != null && single.isFolder) _item('Apri', Icons.folder_open_outlined, () => _go(single.key)),
+      if (single != null && single.isFolder) _item('Apri', AppIcons.folderOpen, () => _go(single.key)),
       if (single != null && !single.isFolder && cloudTextExtensions.contains(ext))
-        _item('Apri nell\'editor SQL', Icons.edit_note_rounded, () => _openItem(single)),
+        _item('Apri nell\'editor SQL', AppIcons.script, () => _openItem(single)),
       if (single != null && !single.isFolder && cloudCsvExtensions.contains(ext))
         _item(
           'Importa in tabella…',
-          Icons.table_chart_outlined,
+          AppIcons.table,
           () => _act((s) async {
             await cloudImportCsv(context, s, single);
             return false;
           }),
         ),
-      _item('Scarica…', Icons.download_outlined, () => _downloadSelection(sel)),
+      _item('Scarica…', AppIcons.download, () => _downloadSelection(sel)),
       if (single != null && !single.isFolder)
         _item(
           'Copia link di condivisione…',
-          Icons.link_rounded,
+          AppIcons.link,
           () => _act((s) async {
             await cloudShareLink(context, s, single);
             return false;
@@ -585,7 +585,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
       if (single != null)
         _item(
           'Copia URI',
-          Icons.content_copy,
+          AppIcons.copy,
           () => _act((s) async {
             await cloudCopyUri(context, s, single.bucket, single.key);
             return false;
@@ -593,13 +593,13 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
         ),
       const PopupMenuDivider(height: 9),
       if (single != null)
-        _item('Rinomina…', Icons.drive_file_rename_outline, () => _act((s) => cloudRename(context, s, single))),
-      _item('Elimina…', Icons.delete_outline, () => _act((s) => cloudDelete(context, s, sel))),
+        _item('Rinomina…', AppIcons.rename, () => _act((s) => cloudRename(context, s, single))),
+      _item('Elimina…', AppIcons.delete, () => _act((s) => cloudDelete(context, s, sel))),
       if (single != null && !single.isFolder) ...[
         const PopupMenuDivider(height: 9),
         _item(
           'Proprietà',
-          Icons.info_outline,
+          AppIcons.info,
           () => _act((s) async {
             await cloudProperties(context, s, single);
             return false;

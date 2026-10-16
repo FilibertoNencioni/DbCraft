@@ -45,7 +45,6 @@ dependencies:
   http: ^1.6.0
   crypto: ^3.0.7
   xml: ^7.1.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -69,6 +68,19 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Phosphor icons (MIT, see assets/fonts/phosphor/LICENSE), used through
+  # lib/ui/theme/app_icons.dart. Only the three weights the UI uses.
+  fonts:
+    - family: PhosphorRegular
+      fonts:
+        - asset: assets/fonts/phosphor/Phosphor-Regular.ttf
+    - family: PhosphorBold
+      fonts:
+        - asset: assets/fonts/phosphor/Phosphor-Bold.ttf
+    - family: PhosphorFill
+      fonts:
+        - asset: assets/fonts/phosphor/Phosphor-Fill.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

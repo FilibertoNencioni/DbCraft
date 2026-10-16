@@ -153,13 +153,13 @@ class _ValueDialogState extends State<_ValueDialog> {
               Row(
                 children: [
                   TextButton.icon(
-                    icon: const Icon(Icons.content_copy, size: 16),
+                    icon: const Icon(AppIcons.copy, size: 16),
                     label: const Text('Copia'),
                     onPressed: () => Clipboard.setData(ClipboardData(text: _ctrl.text)),
                   ),
                   if (isBinary || v is String)
                     TextButton.icon(
-                      icon: const Icon(Icons.save_alt, size: 16),
+                      icon: const Icon(AppIcons.download, size: 16),
                       label: const Text('Salva su file…'),
                       onPressed: () async {
                         final loc = await getSaveLocation(suggestedName: '${widget.column.name}.bin');
@@ -170,7 +170,7 @@ class _ValueDialogState extends State<_ValueDialog> {
                     ),
                   if (widget.editable)
                     TextButton.icon(
-                      icon: const Icon(Icons.upload_file, size: 16),
+                      icon: const Icon(AppIcons.upload, size: 16),
                       label: const Text('Carica da file…'),
                       onPressed: () async {
                         final f = await openFile();

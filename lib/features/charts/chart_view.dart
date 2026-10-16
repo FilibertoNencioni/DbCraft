@@ -191,13 +191,13 @@ class _ChartViewState extends State<ChartView> {
   }
 
   static const _kinds = [
-    (ChartKind.bar, Icons.bar_chart_rounded),
-    (ChartKind.barHorizontal, Icons.align_horizontal_left_rounded),
-    (ChartKind.line, Icons.show_chart_rounded),
-    (ChartKind.area, Icons.area_chart_outlined),
-    (ChartKind.pie, Icons.pie_chart_outline_rounded),
-    (ChartKind.donut, Icons.donut_large_rounded),
-    (ChartKind.scatter, Icons.scatter_plot_outlined),
+    (ChartKind.bar, AppIcons.barChart),
+    (ChartKind.barHorizontal, AppIcons.alignLeft),
+    (ChartKind.line, AppIcons.lineChart),
+    (ChartKind.area, AppIcons.areaChart),
+    (ChartKind.pie, AppIcons.pieChart),
+    (ChartKind.donut, AppIcons.donutChart),
+    (ChartKind.scatter, AppIcons.scatterChart),
   ];
 
   Widget _toolbar(DbColors c) {
@@ -231,7 +231,7 @@ class _ChartViewState extends State<ChartView> {
           if (model != null && model.hasMore && !capped) ...[
             const SizedBox(width: Gap.xs),
             ToolButton(
-              icon: Icons.keyboard_double_arrow_down_rounded,
+              icon: AppIcons.expandAll,
               tooltip: 'Carica tutte le righe nel grafico (fino a ${formatNumber(kChartRowCap.toDouble())})',
               label: 'Carica tutte le righe',
               onPressed: _loadingAll || model.loading ? null : _loadAll,
@@ -244,17 +244,17 @@ class _ChartViewState extends State<ChartView> {
             ),
           const Spacer(),
           ToolButton(
-            icon: Icons.content_copy_rounded,
+            icon: AppIcons.copy,
             tooltip: 'Copia i dati del grafico (CSV)',
             onPressed: _data.isEmpty ? null : _copyCsv,
           ),
           ToolButton(
-            icon: Icons.image_outlined,
+            icon: AppIcons.image,
             tooltip: 'Esporta il grafico come PNG…',
             onPressed: _data.isEmpty ? null : _exportPng,
           ),
           ToolButton(
-            icon: Icons.tune_rounded,
+            icon: AppIcons.tune,
             tooltip: _panel ? 'Nascondi impostazioni' : 'Mostra impostazioni',
             active: _panel,
             onPressed: () => setState(() => _panel = !_panel),
@@ -268,18 +268,18 @@ class _ChartViewState extends State<ChartView> {
     final d = _data;
     final cfg = _config;
     if (_cols.isEmpty) {
-      return const EmptyState(icon: Icons.insert_chart_outlined_rounded, title: 'Il risultato non ha colonne');
+      return const EmptyState(icon: AppIcons.chart, title: 'Il risultato non ha colonne');
     }
     if (_rows.isEmpty) {
       return const EmptyState(
-        icon: Icons.insert_chart_outlined_rounded,
+        icon: AppIcons.chart,
         title: 'Nessuna riga da rappresentare',
         message: 'Il risultato è vuoto o il filtro rapido esclude tutte le righe.',
       );
     }
     if (d.isEmpty) {
       return EmptyState(
-        icon: Icons.insert_chart_outlined_rounded,
+        icon: AppIcons.chart,
         title: 'Scegli cosa rappresentare',
         message: _profiles.any((p) => p.numeric)
             ? 'Seleziona almeno una colonna numerica come serie (asse Y) nelle impostazioni.'
@@ -340,7 +340,7 @@ class _ChartViewState extends State<ChartView> {
             padding: const EdgeInsets.fromLTRB(Gap.md, Gap.xs, Gap.md, 0),
             child: Row(
               children: [
-                Icon(Icons.info_outline_rounded, size: 13, color: c.textTertiary),
+                Icon(AppIcons.info, size: 13, color: c.textTertiary),
                 const SizedBox(width: Gap.xs),
                 Expanded(
                   child: Text(

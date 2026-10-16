@@ -263,12 +263,12 @@ class _ExportDialogState extends State<_ExportDialog> {
         TextButton(onPressed: _running ? null : () => Navigator.pop(context), child: const Text('Annulla')),
         OutlinedButton.icon(
           onPressed: _running ? null : _toClipboard,
-          icon: const Icon(Icons.content_paste, size: 16),
+          icon: const Icon(AppIcons.paste, size: 16),
           label: const Text('Copia negli appunti'),
         ),
         FilledButton.icon(
           onPressed: _running ? null : _toFile,
-          icon: const Icon(Icons.save_alt, size: 16),
+          icon: const Icon(AppIcons.download, size: 16),
           label: const Text('Salva su file…'),
         ),
       ],

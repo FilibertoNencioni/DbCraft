@@ -10,6 +10,7 @@ import 'services/storage.dart';
 import 'services/vault.dart';
 import 'state/app_state.dart';
 import 'ui/home_page.dart';
+import 'ui/platform/window_bridge.dart';
 import 'ui/security/lock_screen.dart';
 import 'ui/theme/app_theme.dart';
 
@@ -63,6 +64,7 @@ class _UnlockAppState extends State<_UnlockApp> {
       themeMode: widget.settings.themeMode,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
+      themeAnimationDuration: Duration.zero,
       home: Scaffold(body: LockScreen(onUnlock: _unlock, onReset: _reset)),
     );
   }
@@ -78,6 +80,7 @@ class DbCraftApp extends StatefulWidget {
 
 class _DbCraftAppState extends State<DbCraftApp> {
   late final AppLifecycleListener _lifecycle;
+  final _window = WindowBridge.instance;
   Timer? _idle;
 
   @override
@@ -114,13 +117,15 @@ class _DbCraftAppState extends State<DbCraftApp> {
     return AppScope(
       state: app,
       child: ListenableBuilder(
-        listenable: app,
+        listenable: Listenable.merge([app, _window.isKey, _window.accentColor]),
         builder: (context, _) => MaterialApp(
           title: 'DbCraft',
           debugShowCheckedModeBanner: false,
           themeMode: app.settings.themeMode,
-          theme: buildTheme(Brightness.light),
-          darkTheme: buildTheme(Brightness.dark),
+          theme: buildTheme(Brightness.light, accent: _window.accentColor.value, active: _window.isKey.value),
+          darkTheme: buildTheme(Brightness.dark, accent: _window.accentColor.value, active: _window.isKey.value),
+          // Key-state and appearance changes switch instantly, as in AppKit.
+          themeAnimationDuration: Duration.zero,
           builder: (context, child) => Listener(
             behavior: HitTestBehavior.translucent,
             onPointerDown: (_) => _armIdleTimer(),

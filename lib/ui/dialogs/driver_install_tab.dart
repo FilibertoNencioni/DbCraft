@@ -156,7 +156,7 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
                                 ),
                               ),
                               ToolButton(
-                                icon: Icons.open_in_new_rounded,
+                                icon: AppIcons.openExternal,
                                 label: 'Leggi',
                                 tooltip: pkg.eulaUrl!,
                                 size: 14,
@@ -236,7 +236,7 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
         DriverStatus.ready => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.check_rounded, size: 15, color: c.success),
+            Icon(AppIcons.check, size: 15, color: c.success),
             const SizedBox(width: 4),
             Text(
               'Installato',
@@ -320,7 +320,7 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
                   const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5))
                 else if (result != null)
                   Icon(
-                    result.$1 ? Icons.check_circle_rounded : Icons.error_rounded,
+                    result.$1 ? AppIcons.checkCircleFill : AppIcons.errorFill,
                     size: 15,
                     color: result.$1 ? c.success : c.danger,
                   ),
@@ -338,14 +338,14 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
                   ),
                 ),
                 ToolButton(
-                  icon: Icons.content_copy_rounded,
+                  icon: AppIcons.copy,
                   tooltip: 'Copia log',
                   size: 14,
                   onPressed: () => Clipboard.setData(ClipboardData(text: _log.join('\n'))),
                 ),
                 if (running)
                   ToolButton(
-                    icon: Icons.stop_rounded,
+                    icon: AppIcons.stop,
                     label: 'Interrompi',
                     tooltip: 'Interrompi l\'installazione',
                     color: c.danger,
@@ -353,7 +353,7 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
                   )
                 else
                   ToolButton(
-                    icon: Icons.close_rounded,
+                    icon: AppIcons.close,
                     tooltip: 'Chiudi log',
                     size: 14,
                     onPressed: () => setState(() {
@@ -391,12 +391,12 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
   }
 
   Widget _noHomebrew() => EmptyState(
-    icon: Icons.download_rounded,
+    icon: AppIcons.download,
     title: 'Serve Homebrew',
     message: 'I driver si installano con Homebrew. Installalo seguendo le istruzioni su brew.sh, poi riapri questa finestra.',
     action: PrimaryButton(
       label: 'Apri brew.sh',
-      icon: Icons.open_in_new_rounded,
+      icon: AppIcons.openExternal,
       onPressed: () => Process.run('open', ['https://brew.sh']),
     ),
   );

@@ -14,6 +14,7 @@ import '../../odbc/odbc_types.dart';
 import '../db_session.dart';
 import '../native_driver.dart';
 import 'bigquery_values.dart';
+import '../../ui/theme/app_icons.dart';
 
 const bigQueryDriver = BigQueryDriver();
 
@@ -29,7 +30,7 @@ class BigQueryDriver extends NativeDriver {
   @override
   String get description => 'Data warehouse di Google Cloud tramite API REST (senza driver ODBC)';
   @override
-  IconData get icon => Icons.query_stats_rounded;
+  IconData get icon => AppIcons.insights;
   @override
   Color get color => const Color(0xFF4285F4);
   @override
