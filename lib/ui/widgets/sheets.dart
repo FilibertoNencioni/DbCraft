@@ -62,9 +62,9 @@ class SheetSurface extends StatelessWidget {
 // Route
 // ---------------------------------------------------------------------------
 
-/// Window-modal route for sheets, alerts and panels. No dimming: the window
-/// stays visible and clicks outside are ignored (or close a [dismissible]
-/// panel). Esc pops (respecting [PopScope]); Invio runs [submit], the
+/// Window-modal route for sheets, alerts and panels: centered in the window
+/// over a dimmed backdrop, it fades and scales in. Clicks outside are ignored
+/// (or close a [dismissible] panel). Esc pops (respecting [PopScope]); Invio runs [submit], the
 /// default button registered by [SheetScaffold] or [AlertPanel], unless the
 /// focus is in a multi-line field (⌘Invio always runs it).
 class _SheetRoute<T> extends PopupRoute<T> {
@@ -73,7 +73,7 @@ class _SheetRoute<T> extends PopupRoute<T> {
     required this.width,
     required this.height,
     required this.capturedThemes,
-    this.centered = false,
+    required this.barrierColor,
     this.dismissible = false,
     this.size,
   });
@@ -82,9 +82,6 @@ class _SheetRoute<T> extends PopupRoute<T> {
   final double width;
   final double? height;
   final CapturedThemes capturedThemes;
-
-  /// Centered in the window (About) instead of hanging from the toolbar.
-  final bool centered;
   final bool dismissible;
   final SheetSize? size;
 
@@ -121,7 +118,7 @@ class _SheetRoute<T> extends PopupRoute<T> {
   }
 
   @override
-  Color? get barrierColor => null;
+  final Color barrierColor;
 
   @override
   bool get barrierDismissible => dismissible;
@@ -139,55 +136,35 @@ class _SheetRoute<T> extends PopupRoute<T> {
           builder: (context, box) {
             // Key events from anywhere in the route bubble up to its scope.
             FocusScope.of(context).onKeyEvent = _onKey;
-            final top = centered ? 0.0 : BarHeight.toolbar;
             final w = math.min(width, box.maxWidth - Gap.lg * 2);
-            final maxH = box.maxHeight - top - Gap.lg;
-            Widget sheet = ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxH),
-              child: SheetSurface(
-                width: w,
-                height: height == null ? null : math.min(height!, maxH),
-                child: Builder(builder: builder),
-              ),
-            );
-            if (centered) return Center(child: sheet);
-            if (!(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
-              sheet = SlideTransition(
-                position: Tween(begin: const Offset(0, -1), end: Offset.zero).animate(
-                  CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic),
+            final maxH = box.maxHeight - Gap.lg * 2;
+            return Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxH),
+                child: SheetSurface(
+                  width: w,
+                  height: height == null ? null : math.min(height!, maxH),
+                  child: Builder(builder: builder),
                 ),
-                child: sheet,
-              );
-            }
-            return Padding(
-              padding: EdgeInsets.only(top: top),
-              child: Align(
-                alignment: Alignment.topCenter,
-                // The sheet slides out from under the toolbar: clip only the top.
-                child: ClipRect(clipper: const _BelowTopClipper(), child: sheet),
               ),
             );
           },
         ),
       );
 
+  /// Fades in while growing from 96%; Reduce Motion keeps only the fade.
   @override
   Widget buildTransitions(
     BuildContext context,
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) => centered ? FadeTransition(opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut), child: child) : child;
-}
-
-class _BelowTopClipper extends CustomClipper<Rect> {
-  const _BelowTopClipper();
-
-  @override
-  Rect getClip(Size size) => Rect.fromLTRB(-100, 0, size.width + 100, size.height + 100);
-
-  @override
-  bool shouldReclip(_BelowTopClipper oldClipper) => false;
+  ) {
+    final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+    final faded = FadeTransition(opacity: curved, child: child);
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return faded;
+    return ScaleTransition(scale: Tween(begin: 0.96, end: 1.0).animate(curved), child: faded);
+  }
 }
 
 Future<T?> _present<T>(
@@ -195,7 +172,6 @@ Future<T?> _present<T>(
   required WidgetBuilder builder,
   required double width,
   double? height,
-  bool centered = false,
   bool dismissible = false,
   SheetSize? size,
 }) {
@@ -205,8 +181,8 @@ Future<T?> _present<T>(
       builder: builder,
       width: width,
       height: height,
-      centered: centered,
       dismissible: dismissible,
+      barrierColor: Elevation.scrim(Theme.of(context).brightness),
       size: size,
       capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
     ),
@@ -217,8 +193,8 @@ Future<T?> _present<T>(
 // Sheet
 // ---------------------------------------------------------------------------
 
-/// Opens a sheet (NSWindow sheet): hangs from under the toolbar and slides
-/// down over 200ms, no dimming, Esc closes it. Build the content with a
+/// Opens a sheet: centered in the window over a dimmed backdrop, it fades
+/// and scales in over 200ms. Esc closes it. Build the content with a
 /// [SheetScaffold].
 Future<T?> showSheet<T>(BuildContext context, {required WidgetBuilder builder, SheetSize size = SheetSize.medium}) =>
     _present<T>(context, builder: builder, width: size.width, height: size.height, size: size);
@@ -501,7 +477,7 @@ class _AlertIcon extends StatelessWidget {
   }
 }
 
-/// Opens an alert attached to the window (sheet position). Returns the
+/// Opens an alert centered in the window, like a sheet. Returns the
 /// value of the pressed button, or null on Esc.
 Future<T?> showAlert<T>(
   BuildContext context, {
@@ -867,7 +843,6 @@ Future<void> showAboutPanel(
 }) => _present<void>(
   context,
   width: 280,
-  centered: true,
   dismissible: true,
   builder: (_) => AboutPanel(
     name: name,

@@ -83,7 +83,7 @@ void main() {
       await tester.tap(find.text('Apri'));
       await tester.pumpAndSettle();
       expect(tester.getSize(find.byType(SheetSurface)), const Size(780, 560));
-      expect(tester.getTopLeft(find.byType(SheetSurface)).dy, BarHeight.toolbar);
+      expect(tester.getCenter(find.byType(SheetSurface)), const Offset(600, 450));
       expect(tester.widget<Text>(find.text('Grande')).style!.fontSize, TypeSize.sheetTitle);
     });
   });

@@ -65,9 +65,20 @@ abstract final class Elevation {
 
   static List<BoxShadow> popover(Brightness b) => menu(b);
 
+  /// A tight contact shadow plus a wide, soft one: the sheet floats well
+  /// above the dimmed window.
   static List<BoxShadow> sheet(Brightness b) => b == Brightness.dark
-      ? const [BoxShadow(color: Color(0x99000000), blurRadius: 40, offset: Offset(0, 14))]
-      : const [BoxShadow(color: Color(0x4D000000), blurRadius: 40, offset: Offset(0, 14))];
+      ? const [
+          BoxShadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
+          BoxShadow(color: Color(0xA6000000), blurRadius: 60, offset: Offset(0, 24)),
+        ]
+      : const [
+          BoxShadow(color: Color(0x24000000), blurRadius: 4, offset: Offset(0, 1)),
+          BoxShadow(color: Color(0x47000000), blurRadius: 60, offset: Offset(0, 24)),
+        ];
+
+  /// Dims the window behind a modal sheet or alert.
+  static Color scrim(Brightness b) => b == Brightness.dark ? const Color(0x73000000) : const Color(0x38000000);
 }
 
 /// Durations. Keyboard-initiated changes and Reduce Motion skip them.
