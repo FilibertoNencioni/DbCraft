@@ -3,7 +3,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../model/connection_config.dart';
 import '../../odbc/driver_installer.dart';
@@ -38,7 +37,6 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
   late final Future<DriverInstaller?> _installer = widget.findInstaller();
   late Future<Map<String, DriverStatus>> _statuses = _loadStatuses();
   final _log = <String>[];
-  final _logScroll = ScrollController();
   DriverInstaller? _active;
   DriverPackage? _running;
   (bool ok, String message)? _result;
@@ -59,7 +57,6 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
   void dispose() {
     // Closing the Driver Manager stops a running install.
     _active?.cancel();
-    _logScroll.dispose();
     super.dispose();
   }
 
@@ -68,9 +65,6 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
     setState(() {
       _log.add(line);
       if (_log.length > _maxLogLines) _log.removeRange(0, _log.length - _maxLogLines);
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_logScroll.hasClients) _logScroll.jumpTo(_logScroll.position.maxScrollExtent);
     });
   }
 
@@ -242,86 +236,47 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
   }
 
   Widget _logPanel() {
-    final c = DbColors.of(context);
     final result = _result;
     final running = _running != null;
-    return Container(
+    return SizedBox(
       height: 210,
-      decoration: BoxDecoration(
-        color: c.codeBackground,
-        border: Border.all(color: c.separator, width: 0.5),
-        borderRadius: BorderRadius.circular(Radii.menu),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          PaneHeader(
-            title: 'Output di Homebrew',
-            actions: [
-              ToolButton(
-                icon: AppIcons.copy,
-                tooltip: 'Copia log',
-                extent: 18,
-                onPressed: () => Clipboard.setData(ClipboardData(text: _log.join('\n'))),
-              ),
-              if (!running)
-                ToolButton(
-                  icon: AppIcons.close,
-                  tooltip: 'Chiudi log',
-                  extent: 18,
-                  onPressed: () => setState(() {
-                    _log.clear();
-                    _result = null;
-                  }),
-                ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.sm, Gap.xs),
-            child: Row(
-              children: [
-                Expanded(
-                  child: running
-                      ? StatusLine.busy('Installazione di ${_running!.label}…')
-                      : StatusLine(
-                          result?.$2 ?? '',
-                          kind: result == null ? StatusKind.info : (result.$1 ? StatusKind.success : StatusKind.danger),
-                          selectable: result != null && !result.$1,
-                        ),
-                ),
-                if (running)
-                  PushButton(
-                    label: 'Interrompi',
-                    kind: PushButtonKind.destructive,
-                    size: ControlScale.small,
-                    tooltip: 'Interrompi l\'installazione',
-                    onPressed: () => _active?.cancel(),
-                  ),
-              ],
+      child: CodeBox.lines(
+        _log,
+        label: 'Output di Homebrew',
+        emphasize: (line) => line.startsWith(r'$ '),
+        actions: [
+          if (!running)
+            ToolButton(
+              icon: AppIcons.close,
+              tooltip: 'Chiudi log',
+              extent: 18,
+              onPressed: () => setState(() {
+                _log.clear();
+                _result = null;
+              }),
             ),
-          ),
-          Expanded(
-            child: SelectionArea(
-              child: ListView.builder(
-                controller: _logScroll,
-                padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.xs),
-                itemCount: _log.length,
-                itemBuilder: (context, i) {
-                  final command = _log[i].startsWith(r'$ ');
-                  return Text(
-                    _log[i],
-                    style: monoStyle(
-                      context,
-                      size: TypeSize.monoSmall,
-                      color: command ? c.text : c.textSecondary,
-                    ).copyWith(fontWeight: command ? FontWeight.w600 : null, height: 1.45),
-                  );
-                },
-              ),
-            ),
-          ),
         ],
+        status: Row(
+          children: [
+            Expanded(
+              child: running
+                  ? StatusLine.busy('Installazione di ${_running!.label}…')
+                  : StatusLine(
+                      result?.$2 ?? '',
+                      kind: result == null ? StatusKind.info : (result.$1 ? StatusKind.success : StatusKind.danger),
+                      selectable: result != null && !result.$1,
+                    ),
+            ),
+            if (running)
+              PushButton(
+                label: 'Interrompi',
+                kind: PushButtonKind.destructive,
+                size: ControlScale.small,
+                tooltip: 'Interrompi l\'installazione',
+                onPressed: () => _active?.cancel(),
+              ),
+          ],
+        ),
       ),
     );
   }

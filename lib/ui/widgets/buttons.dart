@@ -385,6 +385,14 @@ class DisclosureChevron extends StatelessWidget {
 
 /// Section header that shows or hides its content: "Avanzate", driver
 /// groups, comparison groups. Chevron plus a 13pt semibold label.
+///
+/// With an [icon] or a [subtitle] it is an item that discloses its details
+/// (a driver and its library): regular label, 11 secondary subtitle
+/// ([monoSubtitle] for paths), both ellipsized to the available width, which
+/// must then be bounded. A null
+/// [onChanged] disables it and hides the chevron, keeping its slot so rows
+/// stay aligned; [contentIndent] is where the label starts, to indent the
+/// disclosed content.
 class DisclosureButton extends StatelessWidget {
   const DisclosureButton({
     super.key,
@@ -392,38 +400,109 @@ class DisclosureButton extends StatelessWidget {
     required this.expanded,
     required this.onChanged,
     this.trailing,
+    this.icon,
+    this.iconColor,
+    this.subtitle,
+    this.monoSubtitle = false,
   });
 
   final String label;
   final bool expanded;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool>? onChanged;
 
   /// Accessory after the label (count, status).
   final Widget? trailing;
 
+  /// 16pt glyph between the chevron and the label.
+  final IconData? icon;
+
+  /// Secondary when null.
+  final Color? iconColor;
+
+  /// Second line under the label.
+  final String? subtitle;
+  final bool monoSubtitle;
+
+  static const double _chevronSlot = 10;
+  static const double _gap = 6;
+  static const double _iconSize = 16;
+
+  /// Offset of the label from the leading edge, with or without an icon.
+  static double contentIndent({bool icon = false}) => _chevronSlot + _gap + (icon ? _iconSize + _gap : 0);
+
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
+    final onChanged = this.onChanged;
+    final sub = subtitle;
+    final item = icon != null || sub != null;
     return Pressable(
-      onPressed: () => onChanged(!expanded),
+      onPressed: onChanged == null ? null : () => onChanged(!expanded),
       toggled: expanded,
       semanticLabel: label,
-      builder: (context, s) => FocusRing(
-        visible: s.contains(WidgetState.focused),
-        radius: Radii.small,
-        child: SizedBox(
-          height: ControlSize.regular,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DisclosureChevron(expanded: expanded, color: s.contains(WidgetState.hovered) ? c.textSecondary : null),
-              const SizedBox(width: 6),
-              Text(label, style: uiText(TypeSize.body, weight: FontWeight.w600, color: c.text)),
-              if (trailing != null) ...[const SizedBox(width: Gap.sm), trailing!],
-            ],
+      builder: (context, s) {
+        final enabled = onChanged != null;
+        final Widget title = Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: uiText(TypeSize.body, weight: item ? null : FontWeight.w600, color: c.text),
+        );
+        final Widget text = !item
+            ? title
+            : Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    title,
+                    if (sub != null)
+                      Text(
+                        sub,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: monoSubtitle
+                            ? TextStyle(
+                                fontFamily: kMonoFamily,
+                                fontFamilyFallback: kMonoFallback,
+                                fontSize: TypeSize.monoSmall,
+                                height: 1.35,
+                                color: c.textSecondary,
+                              )
+                            : uiText(TypeSize.caption, color: c.textSecondary),
+                      ),
+                  ],
+                ),
+              );
+        return FocusRing(
+          visible: s.contains(WidgetState.focused),
+          radius: Radii.small,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: ControlSize.regular),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: _chevronSlot,
+                  child: enabled
+                      ? DisclosureChevron(
+                          expanded: expanded,
+                          color: s.contains(WidgetState.hovered) ? c.textSecondary : null,
+                        )
+                      : null,
+                ),
+                const SizedBox(width: _gap),
+                if (icon != null) ...[
+                  Icon(icon, size: _iconSize, color: iconColor ?? c.textSecondary),
+                  const SizedBox(width: _gap),
+                ],
+                text,
+                if (trailing != null) ...[const SizedBox(width: Gap.sm), trailing!],
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

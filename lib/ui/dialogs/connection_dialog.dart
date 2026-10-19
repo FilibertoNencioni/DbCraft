@@ -420,53 +420,49 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         title: 'Connessione',
         footer: _drivers.isEmpty
             ? (canInstallDrivers
-                  ? 'Nessun driver ODBC registrato: installane uno con «Installa driver…» o indica la libreria.'
+                  ? 'Nessun driver ODBC registrato: installane uno con «Installa driver…» nel menu del campo '
+                        'o indica la libreria.'
                   : 'Nessun driver ODBC registrato: indica il percorso della libreria del driver.')
             : null,
         children: [
           _modeRow(),
           FormRow(
             label: 'Driver',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Icon(t.icon, size: 16, color: generic ? c.textTertiary : t.color),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: ComboField(
-                        controller: _driver,
-                        hint: 'Nome o percorso del driver',
-                        options: () => [for (final d in _drivers) d.name],
-                        // Picking (or typing) a registered driver resets the port to its default.
-                        onChanged: (v) {
-                          if (!_drivers.any((d) => d.name == v)) return;
-                          _port.clear();
-                          _applyTemplateDefaults();
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    PushButton(
-                      label: 'Scegli…',
-                      tooltip: 'Scegli la libreria del driver',
-                      onPressed: () async {
-                        final f = await openFile();
-                        if (f != null) {
-                          _driver.text = f.path;
-                          _applyTemplateDefaults();
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                if (canInstallDrivers)
-                  Padding(
-                    padding: const EdgeInsets.only(top: Gap.xs, left: 22),
-                    child: LinkButton(label: 'Installa driver…', small: true, onPressed: _openInstaller),
+                Expanded(
+                  child: ComboField(
+                    controller: _driver,
+                    hint: 'Nome o percorso del driver',
+                    leading: Icon(t.icon, size: 16, color: generic ? c.textTertiary : t.color),
+                    options: () => [for (final d in _drivers) d.name],
+                    optionIcon: (name) {
+                      final dt = DriverTemplate.forDriver(name);
+                      return dt == DriverTemplate.generic ? null : (dt.icon, dt.color);
+                    },
+                    actions: [
+                      if (canInstallDrivers) MenuEntry<String>('Installa driver…', onSelected: _openInstaller),
+                    ],
+                    // Picking (or typing) a registered driver resets the port to its default.
+                    onChanged: (v) {
+                      if (!_drivers.any((d) => d.name == v)) return;
+                      _port.clear();
+                      _applyTemplateDefaults();
+                    },
                   ),
+                ),
+                const SizedBox(width: 6),
+                PushButton(
+                  label: 'Scegli…',
+                  tooltip: 'Scegli la libreria del driver',
+                  onPressed: () async {
+                    final f = await openFile();
+                    if (f != null) {
+                      _driver.text = f.path;
+                      _applyTemplateDefaults();
+                    }
+                  },
+                ),
               ],
             ),
           ),

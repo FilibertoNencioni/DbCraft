@@ -101,6 +101,7 @@ class _ControlGalleryState extends State<ControlGallery> {
     ('Sheet e alert', _sheets),
     ('Codice e diff', _code),
     ('Form', _forms),
+    ('Pannelli', _panels),
   ];
 
   List<Widget> _colors(BuildContext context) {
@@ -1091,6 +1092,63 @@ class _ControlGalleryState extends State<ControlGallery> {
       ],
     ),
   ];
+
+  List<Widget> _panels(BuildContext context) {
+    final c = DbColors.of(context);
+    return [
+      // An inspector docked beside a content pane, framed by an InsetBox.
+      InsetBox(
+        height: 300,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Center(
+                child: Text('Contenuto', style: uiText(TypeSize.small, color: c.textTertiary)),
+              ),
+            ),
+            Inspector(
+              children: [
+                InspectorSection(
+                  title: 'Dati',
+                  children: [
+                    SelectField<int>(
+                      value: 0,
+                      items: const [(0, 'reparto', null), (1, 'data_assunzione', null)],
+                      onChanged: (_) {},
+                    ),
+                    CheckboxRow(label: 'stipendio', value: true, onChanged: (_) {}),
+                  ],
+                ),
+                InspectorSection(
+                  title: 'Aspetto',
+                  children: [CheckboxRow(label: 'Legenda', value: true, onChanged: (_) {})],
+                ),
+                InspectorSection(
+                  title: 'Avanzate',
+                  initiallyExpanded: false,
+                  children: [CheckboxRow(label: 'Serie impilate', value: false, onChanged: (_) {})],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: Gap.md),
+      _Row([
+        const StatTile(label: 'Connessioni attive', value: '42'),
+        StatTile(
+          label: 'Cache hit',
+          value: '87,5%',
+          warning: true,
+          tooltip: 'Sotto la soglia del 90%',
+          child: ProgressBar(value: 0.875, width: StatTile.defaultWidth - Gap.md * 2),
+        ),
+        const DragChip(label: 'dipendenti', icon: AppIcons.table),
+        const DragChip(label: 'd.reparto_id'),
+      ]),
+    ];
+  }
 }
 
 const _samplePatch = """diff --git a/ordini.sql b/ordini.sql

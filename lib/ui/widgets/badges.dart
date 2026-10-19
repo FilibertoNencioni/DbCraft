@@ -300,17 +300,25 @@ class DirtyDot extends StatelessWidget {
 /// A column type next to its name (grid header, record view, ER boxes):
 /// 11 regular tertiary, lowercase. [mono] when it is an exact SQL type
 /// (`numeric(10,2)`), not a family (`numero`).
+///
+/// [color] marks a state of the column (a changed type in amber); on an
+/// emphasized selection the label stays white.
 class TypeLabel extends StatelessWidget {
-  const TypeLabel(this.type, {super.key, this.mono = false, this.size = TypeSize.caption});
+  const TypeLabel(this.type, {super.key, this.mono = false, this.size = TypeSize.caption, this.color});
 
   final String type;
   final bool mono;
   final double size;
 
+  /// Tertiary when null.
+  final Color? color;
+
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final color = RowTint.emphasizedOf(context) ? c.onSelectionEmphasized.withValues(alpha: 0.75) : c.textTertiary;
+    final color = RowTint.emphasizedOf(context)
+        ? c.onSelectionEmphasized.withValues(alpha: 0.75)
+        : (this.color ?? c.textTertiary);
     return Text(
       type,
       maxLines: 1,

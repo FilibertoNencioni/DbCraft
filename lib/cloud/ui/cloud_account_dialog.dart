@@ -68,7 +68,6 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
   final _name = TextEditingController();
   final Map<String, TextEditingController> _fields = {};
   final Map<String, TextEditingController> _secrets = {};
-  bool _showSecrets = false;
   bool _testing = false;
   String? _testOk;
   Object? _testError;
@@ -295,17 +294,8 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
     _testError = null;
   });
 
-  Widget _field(TextEditingController ctrl, String hint, {bool obscure = false, Widget? trailing, int maxLines = 1}) =>
-      MacTextField(
-        controller: ctrl,
-        hint: hint,
-        obscure: obscure,
-        maxLines: obscure ? 1 : maxLines,
-        minLines: 1,
-        mono: maxLines > 1,
-        trailing: trailing,
-        onChanged: (_) => _clearTest(),
-      );
+  Widget _field(TextEditingController ctrl, String hint) =>
+      MacTextField(controller: ctrl, hint: hint, onChanged: (_) => _clearTest());
 
   Widget _fieldRow(String k) {
     switch (k) {
@@ -389,31 +379,35 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
       CloudSecret.sas => ('Token SAS', 'sv=…&ss=b&srt=…&sp=rl&sig=…', false),
       CloudSecret.connectionString => ('Stringa di connessione', 'DefaultEndpointsProtocol=https;AccountName=…', true),
       CloudSecret.clientSecret => ('Client secret', '', false),
-      CloudSecret.keyJson => ('Oppure JSON', 'Incolla il contenuto della chiave (salvato nel vault)', true),
+      CloudSecret.keyJson => ('Oppure JSON', 'Incolla o scegli il file della chiave (salvata nel vault)', true),
       CloudSecret.token => ('Access token', 'ya29.…', false),
       _ => (k, '', false),
     };
-    if (!multiline) {
-      return FormRow(
-        label: label,
-        child: SecureField(controller: _s(k), hint: hint, onChanged: (_) => _clearTest()),
-      );
-    }
-    // Multiline secrets are hidden on one line and edited on four once revealed:
-    // SecureField is single-line only.
-    final eye = Padding(
-      padding: const EdgeInsets.only(right: 2),
-      child: ToolButton(
-        icon: _showSecrets ? AppIcons.eyeOff : AppIcons.eye,
-        tooltip: _showSecrets ? 'Nascondi' : 'Mostra',
-        extent: 18,
-        onPressed: () => setState(() => _showSecrets = !_showSecrets),
-      ),
-    );
+    // Multi-line secrets stay on one masked line until revealed, then grow to four.
     return FormRow(
       label: label,
-      help: !_showSecrets && _s(k).text.isNotEmpty ? 'Contenuto nascosto' : null,
-      child: _field(_s(k), hint, obscure: !_showSecrets, maxLines: 4, trailing: eye),
+      child: SecureField(
+        controller: _s(k),
+        hint: hint,
+        maxLines: multiline ? 4 : 1,
+        onChanged: (_) => _clearTest(),
+        onChoose: k == CloudSecret.keyJson ? () => _loadSecret(k) : null,
+        chooseTooltip: 'Carica il contenuto da un file .json',
+      ),
     );
+  }
+
+  /// Reads a JSON key file into the secret [k] (stored in the vault).
+  Future<void> _loadSecret(String k) async {
+    final f = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+    );
+    if (f == null) return;
+    final text = await f.readAsString();
+    if (!mounted) return;
+    _s(k).text = text.trim();
+    _clearTest();
   }
 }

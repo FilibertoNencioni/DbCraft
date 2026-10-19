@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import 'badges.dart';
 import 'buttons.dart';
 import 'control_base.dart';
 import 'menus.dart';
@@ -32,7 +33,9 @@ TextStyle _fieldText(DbColors c, {required bool small, required bool mono, bool 
 /// Variants: [mono] for SQL and values, multiline ([maxLines] > 1 or null),
 /// a [unit] after the text ("secondi"), a [token] before it ("WHERE" in mono
 /// accent), [leading]/[trailing] accessories. A non-null [error] turns the
-/// hairline red; a non-empty one also shows it under the field.
+/// hairline red; a non-empty one also shows it under the field. With
+/// [expands] the field fills its parent's height (text from the top), as a
+/// text view inside a sheet.
 class MacTextField extends StatelessWidget {
   const MacTextField({
     super.key,
@@ -62,6 +65,8 @@ class MacTextField extends StatelessWidget {
     this.error,
     this.width,
     this.autocorrect = false,
+    this.expands = false,
+    this.color,
   });
 
   final TextEditingController? controller;
@@ -69,6 +74,12 @@ class MacTextField extends StatelessWidget {
   final String? hint;
   final bool small;
   final bool mono;
+
+  /// Fill the parent's (bounded) height; ignores [maxLines] and [minLines].
+  final bool expands;
+
+  /// Text color in place of the primary text (a new column in success).
+  final Color? color;
 
   /// Tabular figures (numbers that line up).
   final bool tabular;
@@ -97,12 +108,12 @@ class MacTextField extends StatelessWidget {
   final double? width;
   final bool autocorrect;
 
-  bool get _multiline => maxLines == null || maxLines! > 1;
+  bool get _multiline => !obscure && (expands || maxLines == null || maxLines! > 1);
 
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final style = _fieldText(c, small: small, mono: mono, tabular: tabular, color: enabled ? null : c.textTertiary);
+    final style = _fieldText(c, small: small, mono: mono, tabular: tabular, color: enabled ? color : c.textTertiary);
     final h = small ? ControlSize.small : ControlSize.regular;
     final vPad = _multiline ? 4.0 : ((h - style.fontSize! * _kLineHeight) / 2).clamp(1.0, 8.0);
     final hasError = error != null;
@@ -141,8 +152,10 @@ class MacTextField extends StatelessWidget {
       enabled: enabled,
       readOnly: readOnly,
       obscureText: obscure,
-      maxLines: obscure ? 1 : maxLines,
-      minLines: minLines,
+      maxLines: obscure ? 1 : (expands ? null : maxLines),
+      minLines: expands ? null : minLines,
+      expands: expands && !obscure,
+      textAlignVertical: expands ? TextAlignVertical.top : null,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
       onTap: onTap,
@@ -176,9 +189,9 @@ class MacTextField extends StatelessWidget {
     if (width != null) field = SizedBox(width: width, child: field);
     if (error == null || error!.isEmpty) return field;
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: expands ? MainAxisSize.max : MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [field, FieldMessage(error!, error: true)],
+      children: [expands ? Expanded(child: field) : field, FieldMessage(error!, error: true)],
     );
   }
 }
@@ -200,6 +213,11 @@ class FieldMessage extends StatelessWidget {
 }
 
 /// Password field with an inline eye button that reveals the text.
+///
+/// Multi-line secrets (a connection string, a JSON key) set [maxLines]: the
+/// field stays on one masked line while hidden and grows up to [maxLines]
+/// once revealed. With [onChoose] a "Scegli…" push button follows the field
+/// (the caller loads the secret from a file).
 class SecureField extends StatefulWidget {
   const SecureField({
     super.key,
@@ -213,6 +231,11 @@ class SecureField extends StatefulWidget {
     this.error,
     this.width,
     this.revealable = true,
+    this.maxLines = 1,
+    this.mono,
+    this.onChoose,
+    this.chooseLabel = 'Scegli…',
+    this.chooseTooltip,
   });
 
   final TextEditingController? controller;
@@ -228,6 +251,17 @@ class SecureField extends StatefulWidget {
   /// Show the eye button.
   final bool revealable;
 
+  /// Lines shown once revealed (the field grows from one line).
+  final int maxLines;
+
+  /// Monospaced text; defaults to on for multi-line secrets.
+  final bool? mono;
+
+  /// Shows a "Scegli…" button after the field.
+  final VoidCallback? onChoose;
+  final String chooseLabel;
+  final String? chooseTooltip;
+
   @override
   State<SecureField> createState() => _SecureFieldState();
 }
@@ -236,30 +270,52 @@ class _SecureFieldState extends State<SecureField> {
   bool _obscure = true;
 
   @override
-  Widget build(BuildContext context) => MacTextField(
-    controller: widget.controller,
-    focusNode: widget.focusNode,
-    hint: widget.hint,
-    obscure: _obscure,
-    onChanged: widget.onChanged,
-    onSubmitted: widget.onSubmitted,
-    autofocus: widget.autofocus,
-    enabled: widget.enabled,
-    error: widget.error,
-    width: widget.width,
-    trailing: !widget.revealable
-        ? null
-        : Padding(
-            padding: const EdgeInsets.only(right: 2),
-            child: ToolButton(
-              icon: _obscure ? AppIcons.eye : AppIcons.eyeOff,
-              tooltip: _obscure ? 'Mostra password' : 'Nascondi password',
-              extent: 18,
-              size: 13,
-              onPressed: widget.enabled ? () => setState(() => _obscure = !_obscure) : null,
+  Widget build(BuildContext context) {
+    final multiline = widget.maxLines > 1;
+    final field = MacTextField(
+      controller: widget.controller,
+      focusNode: widget.focusNode,
+      hint: widget.hint,
+      obscure: _obscure,
+      maxLines: widget.maxLines,
+      minLines: multiline ? 1 : null,
+      mono: widget.mono ?? multiline,
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
+      autofocus: widget.autofocus,
+      enabled: widget.enabled,
+      error: widget.error,
+      width: widget.onChoose == null ? widget.width : null,
+      trailing: !widget.revealable
+          ? null
+          : Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: ToolButton(
+                icon: _obscure ? AppIcons.eye : AppIcons.eyeOff,
+                tooltip: _obscure ? 'Mostra password' : 'Nascondi password',
+                extent: 18,
+                size: 13,
+                onPressed: widget.enabled ? () => setState(() => _obscure = !_obscure) : null,
+              ),
             ),
+    );
+    if (widget.onChoose == null) return field;
+    return SizedBox(
+      width: widget.width,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: field),
+          const SizedBox(width: 6),
+          PushButton(
+            label: widget.chooseLabel,
+            tooltip: widget.chooseTooltip,
+            onPressed: widget.enabled ? widget.onChoose : null,
           ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 /// NSSearchField: rounded, filled, magnifier on the left and a clear ⓧ while
@@ -354,6 +410,11 @@ class SearchField extends StatelessWidget {
 /// the list from the keyboard, narrowed to the suggestions that contain the
 /// typed text. With [autocomplete], typing at the end completes inline the
 /// first suggestion that starts with the text, the added part selected.
+///
+/// Menu rows can carry a secondary [optionDetail] on the right ("più
+/// veloce") and an [optionIcon]; [actions] are commands listed after a
+/// divider ("Installa driver…"). [onChanged] runs for typing and picking,
+/// [onSelected] only for a suggestion chosen from the menu.
 class ComboField extends StatefulWidget {
   const ComboField({
     super.key,
@@ -361,6 +422,7 @@ class ComboField extends StatefulWidget {
     required this.options,
     this.hint,
     this.onChanged,
+    this.onSelected,
     this.mono = false,
     this.small = false,
     this.enabled = true,
@@ -368,6 +430,10 @@ class ComboField extends StatefulWidget {
     this.focusNode,
     this.error,
     this.autocomplete = true,
+    this.leading,
+    this.optionDetail,
+    this.optionIcon,
+    this.actions = const [],
   });
 
   final TextEditingController controller;
@@ -377,12 +443,30 @@ class ComboField extends StatefulWidget {
   final bool autocomplete;
   final String? hint;
   final ValueChanged<String>? onChanged;
+
+  /// A suggestion was chosen from the menu (after [onChanged]).
+  final ValueChanged<String>? onSelected;
   final bool mono;
   final bool small;
   final bool enabled;
   final double? width;
   final FocusNode? focusNode;
   final String? error;
+
+  /// Inside the field before the text, typically a 16pt icon (the driver's).
+  final Widget? leading;
+
+  /// Secondary text on the right of a suggestion's menu row.
+  final String? Function(String option)? optionDetail;
+
+  /// Icon (and its color) of a suggestion's menu row; the ✓ of the current
+  /// suggestion takes its place.
+  final (IconData, Color?)? Function(String option)? optionIcon;
+
+  /// Commands after the suggestions, separated by a divider. They act through
+  /// [MenuEntry.onSelected]; an action with a value fills the field like a
+  /// suggestion.
+  final List<MenuEntry<String>> actions;
 
   @override
   State<ComboField> createState() => _ComboFieldState();
@@ -424,6 +508,18 @@ class _ComboFieldState extends State<ComboField> {
     widget.onChanged?.call(text);
   }
 
+  MenuEntry<String> _entry(String o) {
+    final icon = widget.optionIcon?.call(o);
+    final detail = widget.optionDetail?.call(o);
+    return MenuEntry<String>(
+      o,
+      value: o,
+      checked: o == widget.controller.text,
+      leading: icon == null ? null : Icon(icon.$1, size: 13, color: icon.$2),
+      trailing: detail == null ? null : _MenuDetail(detail),
+    );
+  }
+
   Future<void> _open() async {
     final ctx = _key.currentContext;
     final all = widget.options();
@@ -432,18 +528,24 @@ class _ComboFieldState extends State<ComboField> {
         ? all
         : all.where((o) => o.toLowerCase().contains(typed)).toList();
     final options = narrowed.isEmpty ? all : narrowed;
-    if (ctx == null || options.isEmpty) return;
+    final actions = widget.actions;
+    if (ctx == null || (options.isEmpty && actions.isEmpty)) return;
     final rect = anchorRect(ctx);
     final v = await showMacMenu<String>(
       context,
       anchor: rect,
       minWidth: rect.width,
-      entries: [for (final o in options) MenuEntry<String>(o, value: o, checked: o == widget.controller.text)],
+      entries: [
+        for (final o in options) _entry(o),
+        if (options.isNotEmpty && actions.isNotEmpty) const MenuEntry.divider(),
+        ...actions,
+      ],
     );
-    if (v == null) return;
+    if (v == null || !mounted) return;
     widget.controller.value = TextEditingValue(text: v, selection: TextSelection.collapsed(offset: v.length));
     _last = v;
     widget.onChanged?.call(v);
+    widget.onSelected?.call(v);
   }
 
   @override
@@ -464,6 +566,9 @@ class _ComboFieldState extends State<ComboField> {
           enabled: widget.enabled,
           width: widget.width,
           error: widget.error,
+          leading: widget.leading == null
+              ? null
+              : Padding(padding: const EdgeInsets.only(left: 5), child: widget.leading),
           trailing: Pressable(
             onPressed: widget.enabled ? _open : null,
             focusable: false,
@@ -484,6 +589,22 @@ class _ComboFieldState extends State<ComboField> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Secondary text on the right of a menu row; white on the highlighted row.
+class _MenuDetail extends StatelessWidget {
+  const _MenuDetail(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    return Text(
+      text,
+      maxLines: 1,
+      style: uiText(TypeSize.body, color: RowTint.emphasizedOf(context) ? c.onAccent : c.textSecondary),
     );
   }
 }
@@ -832,9 +953,10 @@ const _kMonths = [
 int _daysIn(int year, int month) => DateTime(year, month + 1, 0).day;
 
 /// NSDatePicker (text field with stepper style): day, month and year are
-/// separate segments. Click or ←/→ select a segment, digits type it, ↑/↓
-/// change it. The calendar button opens a mini calendar in a popover. With
-/// [clearable], ⌫ or Canc with nothing typed empties the date (`null`).
+/// separate segments, plus hours and minutes with [time]. Click or ←/→
+/// select a segment, digits type it, ↑/↓ change it. The calendar button opens
+/// a mini calendar in a popover (it keeps the time). With [clearable], ⌫ or
+/// Canc with nothing typed empties the date (`null`).
 class DateField extends StatefulWidget {
   const DateField({
     super.key,
@@ -843,6 +965,7 @@ class DateField extends StatefulWidget {
     this.enabled = true,
     this.focusNode,
     this.clearable = true,
+    this.time = false,
   });
 
   final DateTime? value;
@@ -850,6 +973,9 @@ class DateField extends StatefulWidget {
   final bool enabled;
   final FocusNode? focusNode;
   final bool clearable;
+
+  /// Date and time (hh:mm, seconds kept from [value]) for timestamps.
+  final bool time;
 
   @override
   State<DateField> createState() => _DateFieldState();
@@ -860,6 +986,8 @@ class _DateFieldState extends State<DateField> {
   FocusNode get _focus => widget.focusNode ?? (_own ??= FocusNode(debugLabel: 'DateField'));
   int _seg = 0;
   String _typed = '';
+
+  int get _lastSeg => widget.time ? 4 : 2;
 
   @override
   void initState() {
@@ -881,12 +1009,14 @@ class _DateFieldState extends State<DateField> {
     return widget.value ?? DateTime(now.year, now.month, now.day);
   }
 
-  void _set({int? day, int? month, int? year}) {
+  void _set({int? day, int? month, int? year, int? hour, int? minute}) {
     final b = _base;
     final y = year ?? b.year;
     final m = month ?? b.month;
     final d = (day ?? b.day).clamp(1, _daysIn(y, m));
-    widget.onChanged(DateTime(y, m, d));
+    widget.onChanged(
+      widget.time ? DateTime(y, m, d, hour ?? b.hour, minute ?? b.minute, b.second) : DateTime(y, m, d),
+    );
   }
 
   void _adjust(int delta) {
@@ -897,8 +1027,12 @@ class _DateFieldState extends State<DateField> {
         _set(day: (b.day - 1 + delta) % n + 1);
       case 1:
         _set(month: (b.month - 1 + delta) % 12 + 1);
-      default:
+      case 2:
         _set(year: (b.year + delta).clamp(1, 9999));
+      case 3:
+        _set(hour: (b.hour + delta) % 24);
+      default:
+        _set(minute: (b.minute + delta) % 60);
     }
   }
 
@@ -912,18 +1046,24 @@ class _DateFieldState extends State<DateField> {
       case 1:
         if (v > 0) _set(month: v.clamp(1, 12));
         if (_typed.length == 2 || v > 1) _advance();
-      default:
+      case 2:
         if (_typed.length == 4) {
           _set(year: v.clamp(1, 9999));
-          _typed = '';
+          _advance();
         }
+      case 3:
+        _set(hour: v.clamp(0, 23));
+        if (_typed.length == 2 || v > 2) _advance();
+      default:
+        _set(minute: v.clamp(0, 59));
+        if (_typed.length == 2 || v > 5) _typed = '';
     }
     setState(() {});
   }
 
   void _advance() {
     _typed = '';
-    if (_seg < 2) _seg++;
+    if (_seg < _lastSeg) _seg++;
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
@@ -938,12 +1078,12 @@ class _DateFieldState extends State<DateField> {
     } else if (k == LogicalKeyboardKey.arrowLeft) {
       setState(() {
         _typed = '';
-        _seg = (_seg - 1).clamp(0, 2);
+        _seg = (_seg - 1).clamp(0, _lastSeg);
       });
     } else if (k == LogicalKeyboardKey.arrowRight) {
       setState(() {
         _typed = '';
-        _seg = (_seg + 1).clamp(0, 2);
+        _seg = (_seg + 1).clamp(0, _lastSeg);
       });
     } else if ((k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete) && _typed.isEmpty) {
       if (!widget.clearable || widget.value == null) return KeyEventResult.ignored;
@@ -966,7 +1106,11 @@ class _DateFieldState extends State<DateField> {
       padding: const EdgeInsets.all(Gap.sm),
       builder: (ctx) => MiniCalendar(selected: widget.value, onPick: (d) => Navigator.of(ctx).pop(d)),
     );
-    if (picked != null) widget.onChanged(picked);
+    if (picked == null) return;
+    final b = _base;
+    widget.onChanged(
+      widget.time ? DateTime(picked.year, picked.month, picked.day, b.hour, b.minute, b.second) : picked,
+    );
   }
 
   @override
@@ -975,6 +1119,7 @@ class _DateFieldState extends State<DateField> {
     final focused = _focus.hasFocus;
     final v = widget.value;
     final style = uiText(TypeSize.body, color: widget.enabled ? c.text : c.textTertiary, features: kTabular, height: 1);
+    String two(int n) => n.toString().padLeft(2, '0');
     Widget seg(int i, String text, String placeholder) {
       final on = focused && _seg == i;
       final shown = on && _typed.isNotEmpty ? _typed : (v == null ? placeholder : text);
@@ -1004,7 +1149,7 @@ class _DateFieldState extends State<DateField> {
       );
     }
 
-    final sep = Text('/', style: style.copyWith(color: c.textTertiary));
+    Text sep(String s) => Text(s, style: style.copyWith(color: c.textTertiary));
     return Focus(
       focusNode: _focus,
       canRequestFocus: widget.enabled,
@@ -1022,11 +1167,17 @@ class _DateFieldState extends State<DateField> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                seg(0, v == null ? '' : v.day.toString().padLeft(2, '0'), 'gg'),
-                sep,
-                seg(1, v == null ? '' : v.month.toString().padLeft(2, '0'), 'mm'),
-                sep,
+                seg(0, v == null ? '' : two(v.day), 'gg'),
+                sep('/'),
+                seg(1, v == null ? '' : two(v.month), 'mm'),
+                sep('/'),
                 seg(2, v == null ? '' : v.year.toString().padLeft(4, '0'), 'aaaa'),
+                if (widget.time) ...[
+                  const SizedBox(width: 5),
+                  seg(3, v == null ? '' : two(v.hour), 'hh'),
+                  sep(':'),
+                  seg(4, v == null ? '' : two(v.minute), 'mm'),
+                ],
               ],
             ),
           ),

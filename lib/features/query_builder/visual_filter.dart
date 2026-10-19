@@ -286,19 +286,10 @@ class _FilterPopoverState extends State<_FilterPopover> {
     return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
-  /// Calendar for a timestamp: replaces the date and keeps the time typed
-  /// after it.
-  Future<void> _pickDay(BuildContext anchor, TextEditingController ctrl) async {
-    final text = ctrl.text.trim();
-    final d = await showPopover<DateTime>(
-      context,
-      anchor: anchorRect(anchor),
-      padding: const EdgeInsets.all(Gap.sm),
-      builder: (ctx) => MiniCalendar(selected: DateTime.tryParse(text), onPick: (d) => Navigator.of(ctx).pop(d)),
-    );
-    if (d == null) return;
-    final time = text.length > 10 ? text.substring(10) : '';
-    setState(() => ctrl.text = '${_day(d)}$time');
+  /// A timestamp literal: "aaaa-mm-gg hh:mm", with the seconds when set.
+  static String _stamp(DateTime d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${_day(d)} ${two(d.hour)}:${two(d.minute)}${d.second == 0 ? '' : ':${two(d.second)}'}';
   }
 
   Widget _valueField(TextEditingController ctrl, String hint) {
@@ -313,14 +304,16 @@ class _FilterPopoverState extends State<_FilterPopover> {
         ),
       );
     }
-    if (_col.kind == ValueKind.date && _op != FilterOp.inList) {
+    final stamp = _col.kind == ValueKind.timestamp;
+    if ((stamp || _col.kind == ValueKind.date) && _op != FilterOp.inList) {
       return Align(
         alignment: Alignment.centerLeft,
         child: CallbackShortcuts(
           bindings: {const SingleActivator(LogicalKeyboardKey.enter): _submit},
           child: DateField(
             value: DateTime.tryParse(ctrl.text.trim()),
-            onChanged: (d) => setState(() => ctrl.text = d == null ? '' : _day(d)),
+            time: stamp,
+            onChanged: (d) => setState(() => ctrl.text = d == null ? '' : (stamp ? _stamp(d) : _day(d))),
           ),
         ),
       );
@@ -330,16 +323,6 @@ class _FilterPopoverState extends State<_FilterPopover> {
       autofocus: ctrl == _v1,
       hint: hint,
       tabular: true,
-      trailing: _col.kind == ValueKind.timestamp && _op != FilterOp.inList
-          ? Builder(
-              builder: (anchor) => ToolButton(
-                icon: AppIcons.calendar,
-                tooltip: 'Calendario',
-                extent: 18,
-                onPressed: () => _pickDay(anchor, ctrl),
-              ),
-            )
-          : null,
       onChanged: (_) => setState(() {}),
       onSubmitted: (_) => _submit(),
     );

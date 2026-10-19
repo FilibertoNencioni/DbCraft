@@ -367,17 +367,20 @@ class MarkdownView extends StatelessWidget {
       case MdTable(:final header, :final rows):
         final cols = [header.length, for (final r in rows) r.length].reduce((a, b) => a > b ? a : b);
         List<String> pad(List<String> r) => [...r, for (var k = r.length; k < cols; k++) ''];
-        // Cells are single-line plain text: inline marks are dropped and long
-        // values show in full in the tooltip.
+        // Cells keep their inline marks and wrap; the plain text sizes the
+        // columns (at most 320 wide).
         String plain(String md) => parseInline(md).map((e) => e.text).join();
-        final cells = [for (final r in rows) pad(r).map(plain).toList()];
+        final raw = [for (final r in rows) pad(r)];
+        final cells = [for (final r in raw) r.map(plain).toList()];
+        final cellText = uiText(fontSize, color: c.text);
         return Align(
           alignment: Alignment.topLeft,
           child: MacTable(
             headers: pad(header).map(plain).toList(),
             rowCount: cells.length,
             cell: (r, col) => cells[r][col],
-            tooltip: (r, col) => cells[r][col].length > 40 ? cells[r][col] : null,
+            cellBuilder: (context, r, col) => Text.rich(_spans(context, raw[r][col], cellText)),
+            wrap: true,
             shrinkWrap: true,
             bordered: true,
           ),

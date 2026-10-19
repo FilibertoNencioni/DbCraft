@@ -12,6 +12,14 @@ Widget aiSettingsSection(BuildContext context) => const _AiSettingsSection();
 
 const _effortLabels = [('low', 'Bassa'), ('medium', 'Media'), ('high', 'Alta'), ('xhigh', 'Extra'), ('max', 'Max')];
 
+/// What sets the suggested models apart, on the right of the model menu.
+const _modelNotes = {
+  'claude-opus-5-5': 'Consigliato',
+  'claude-sonnet-5-5': 'Più veloce',
+  'claude-haiku-5-5': 'Il più economico',
+  'claude-fable-5-1': 'Il più capace',
+};
+
 class _AiSettingsSection extends StatefulWidget {
   const _AiSettingsSection();
   @override
@@ -192,7 +200,8 @@ class _AiSettingsSectionState extends State<_AiSettingsSection> {
                 controller: _model,
                 mono: true,
                 hint: kAiDefaultModel,
-                options: () => const ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
+                options: () => kAiModels,
+                optionDetail: (m) => _modelNotes[m],
                 onChanged: (v) => _apply(() => s.aiModel = v.trim().isEmpty ? kAiDefaultModel : v.trim()),
               ),
             ),

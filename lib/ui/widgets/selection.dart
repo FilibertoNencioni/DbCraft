@@ -124,6 +124,8 @@ class CheckboxRow extends StatelessWidget {
     this.help,
     this.small = false,
     this.focusNode,
+    this.tooltip,
+    this.labelColor,
   });
 
   final bool? value;
@@ -134,6 +136,11 @@ class CheckboxRow extends StatelessWidget {
   /// 11pt label for bars.
   final bool small;
   final FocusNode? focusNode;
+  final String? tooltip;
+
+  /// Label color while enabled ([DbColors.danger] for a dangerous option
+  /// that is on).
+  final Color? labelColor;
 
   @override
   Widget build(BuildContext context) {
@@ -143,6 +150,7 @@ class CheckboxRow extends StatelessWidget {
       onPressed: enabled ? () => onChanged!(value != true) : null,
       toggled: value ?? false,
       focusNode: focusNode,
+      tooltip: tooltip,
       semanticLabel: label,
       builder: (context, s) => Row(
         mainAxisSize: MainAxisSize.min,
@@ -168,7 +176,10 @@ class CheckboxRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: uiText(small ? TypeSize.caption : TypeSize.body, color: enabled ? c.text : c.textTertiary),
+                  style: uiText(
+                    small ? TypeSize.caption : TypeSize.body,
+                    color: enabled ? (labelColor ?? c.text) : c.textTertiary,
+                  ),
                 ),
                 if (help != null)
                   Text(help!, style: uiText(TypeSize.caption, color: c.textSecondary, height: 1.3)),
@@ -228,6 +239,10 @@ class MacRadio<T> extends StatelessWidget {
 }
 
 /// A column (or row) of labelled radio buttons for one choice.
+///
+/// As in AppKit the group is a single Tab stop: the focus ring sits on the
+/// selected radio (the first when none is) and the arrow keys move the
+/// selection, ↑/↓ in a column and ←/→ in a row.
 class MacRadioGroup<T> extends StatelessWidget {
   const MacRadioGroup({
     super.key,
@@ -235,6 +250,7 @@ class MacRadioGroup<T> extends StatelessWidget {
     required this.items,
     required this.onChanged,
     this.axis = Axis.vertical,
+    this.focusNode,
   });
 
   final T value;
@@ -243,54 +259,77 @@ class MacRadioGroup<T> extends StatelessWidget {
   final List<(T, String, String?)> items;
   final ValueChanged<T>? onChanged;
   final Axis axis;
+  final FocusNode? focusNode;
+
+  void _step(int delta) {
+    final i = items.indexWhere((it) => it.$1 == value);
+    final j = i < 0 ? 0 : (i + delta).clamp(0, items.length - 1);
+    if (j != i) onChanged?.call(items[j].$1);
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final enabled = onChanged != null;
-    final children = [
-      for (final (v, label, help) in items)
-        Pressable(
-          onPressed: enabled ? () => onChanged!(v) : null,
-          toggled: v == value,
-          semanticLabel: label,
-          builder: (context, s) => Padding(
-            padding: axis == Axis.vertical ? const EdgeInsets.symmetric(vertical: 3) : EdgeInsets.zero,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: help == null ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: EdgeInsets.only(top: help == null ? 0 : 2),
-                  child: ExcludeFocus(
-                    child: IgnorePointer(
-                      child: FocusRing(
-                        visible: s.contains(WidgetState.focused),
-                        radius: 7,
-                        child: MacRadio<T>(value: v, groupValue: value, onChanged: enabled ? (_) {} : null),
+    final enabled = onChanged != null && items.isNotEmpty;
+    final vertical = axis == Axis.vertical;
+    final selected = items.indexWhere((it) => it.$1 == value);
+    final ringAt = selected < 0 ? 0 : selected;
+    return Pressable(
+      onPressed: enabled ? () {} : null,
+      focusNode: focusNode,
+      shortcuts: {
+        SingleActivator(vertical ? LogicalKeyboardKey.arrowUp : LogicalKeyboardKey.arrowLeft): const _StepIntent(-1),
+        SingleActivator(vertical ? LogicalKeyboardKey.arrowDown : LogicalKeyboardKey.arrowRight): const _StepIntent(1),
+      },
+      actions: {_StepIntent: CallbackAction<_StepIntent>(onInvoke: (i) => _step(i.delta))},
+      builder: (context, group) {
+        final focused = group.contains(WidgetState.focused);
+        final children = [
+          for (final (i, (v, label, help)) in items.indexed)
+            Pressable(
+              onPressed: enabled ? () => onChanged!(v) : null,
+              focusable: false,
+              toggled: v == value,
+              semanticLabel: label,
+              builder: (context, s) => Padding(
+                padding: vertical ? const EdgeInsets.symmetric(vertical: 3) : EdgeInsets.zero,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: help == null ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.only(top: help == null ? 0 : 2),
+                      child: ExcludeFocus(
+                        child: IgnorePointer(
+                          child: FocusRing(
+                            visible: focused && i == ringAt,
+                            radius: 7,
+                            child: MacRadio<T>(value: v, groupValue: value, onChanged: enabled ? (_) {} : null),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(label, style: uiText(TypeSize.body, color: enabled ? c.text : c.textTertiary)),
+                          if (help != null) Text(help, style: uiText(TypeSize.caption, color: c.textSecondary)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(label, style: uiText(TypeSize.body, color: enabled ? c.text : c.textTertiary)),
-                      if (help != null) Text(help, style: uiText(TypeSize.caption, color: c.textSecondary)),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
-    ];
-    return axis == Axis.vertical
-        ? Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: children)
-        : Wrap(spacing: Gap.lg, runSpacing: Gap.xs, children: children);
+        ];
+        return vertical
+            ? Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: children)
+            : Wrap(spacing: Gap.lg, runSpacing: Gap.xs, children: children);
+      },
+    );
   }
 }
 
@@ -512,6 +551,9 @@ enum PopUpStyle {
 
 /// NSPopUpButton: shows the current choice and opens a menu of fixed choices
 /// with the current one aligned over the control.
+///
+/// With a nullable `T`, `null` can be one of the [items] ("Nessuno", "Numero
+/// di riga") and is selected like any other value.
 class PopUpButton<T> extends StatelessWidget {
   const PopUpButton({
     super.key,
@@ -534,7 +576,8 @@ class PopUpButton<T> extends StatelessWidget {
   final List<(T, String, (IconData, Color)?)> items;
 
   /// Custom menu rows (`MenuEntry.connection`) in place of the ones built
-  /// from [items]; their values must be the [items] values.
+  /// from [items]; their values must be the [items] values (not `null`, which
+  /// the menu reports as a dismissal).
   final List<MenuEntry<T>> Function()? entries;
   final ValueChanged<T>? onChanged;
   final PopUpStyle style;
@@ -550,26 +593,42 @@ class PopUpButton<T> extends StatelessWidget {
   final FocusNode? focusNode;
 
   Future<void> _open(BuildContext context) async {
+    final anchor = anchorRect(context);
+    final alignInitial = style != PopUpStyle.toolbar;
+    final minWidth = style == PopUpStyle.toolbar ? anchor.width : 0.0;
+    final custom = entries?.call();
+    if (custom != null) {
+      final picked = await showMacMenu<T>(
+        context,
+        anchor: anchor,
+        initial: value,
+        alignInitial: alignInitial,
+        minWidth: minWidth,
+        entries: custom,
+      );
+      if (picked != null && picked != value) onChanged?.call(picked);
+      return;
+    }
+    // The menu returns indices, so a `null` value is a choice like any other.
     final hasIcons = items.any((it) => it.$3 != null);
-    final picked = await showMacMenu<T>(
+    final current = items.indexWhere((it) => it.$1 == value);
+    final picked = await showMacMenu<int>(
       context,
-      anchor: anchorRect(context),
-      initial: value,
-      alignInitial: style != PopUpStyle.toolbar,
-      minWidth: style == PopUpStyle.toolbar ? anchorRect(context).width : 0,
-      entries:
-          entries?.call() ??
-          [
-            for (final it in items)
-              MenuEntry<T>(
-                it.$2,
-                value: it.$1,
-                checked: it.$1 == value,
-                leading: hasIcons && it.$3 != null ? Icon(it.$3!.$1, size: 13, color: it.$3!.$2) : null,
-              ),
-          ],
+      anchor: anchor,
+      initial: current < 0 ? null : current,
+      alignInitial: alignInitial,
+      minWidth: minWidth,
+      entries: [
+        for (final (i, it) in items.indexed)
+          MenuEntry<int>(
+            it.$2,
+            value: i,
+            checked: i == current,
+            leading: hasIcons && it.$3 != null ? Icon(it.$3!.$1, size: 13, color: it.$3!.$2) : null,
+          ),
+      ],
     );
-    if (picked != null && picked != value) onChanged?.call(picked);
+    if (picked != null && picked != current) onChanged?.call(items[picked].$1);
   }
 
   @override
@@ -759,7 +818,7 @@ class SelectField<T> extends PopUpButton<T> {
 // ---------------------------------------------------------------------------
 
 /// A recessed toggle (Finder scope bar button): transparent when off, the
-/// pressed fill when on. Optional dot and count.
+/// pressed fill when on. Optional dot and count (with thousands separators).
 class ToggleButton extends StatelessWidget {
   const ToggleButton({
     super.key,
@@ -770,6 +829,7 @@ class ToggleButton extends StatelessWidget {
     this.count,
     this.icon,
     this.small = false,
+    this.tooltip,
   });
 
   final String label;
@@ -779,6 +839,7 @@ class ToggleButton extends StatelessWidget {
   final int? count;
   final IconData? icon;
   final bool small;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -786,6 +847,7 @@ class ToggleButton extends StatelessWidget {
     return Pressable(
       onPressed: onChanged == null ? null : () => onChanged!(!selected),
       toggled: selected,
+      tooltip: tooltip,
       semanticLabel: label,
       builder: (context, s) {
         final disabled = s.contains(WidgetState.disabled);
@@ -813,7 +875,7 @@ class ToggleButton extends StatelessWidget {
                 Text(label, style: uiText(TypeSize.small, color: fg, weight: selected ? FontWeight.w500 : null)),
                 if (count != null) ...[
                   const SizedBox(width: 5),
-                  Text('$count', style: uiText(TypeSize.small, color: c.textTertiary, features: kTabular)),
+                  Text(_grouped(count!), style: uiText(TypeSize.small, color: c.textTertiary, features: kTabular)),
                 ],
               ],
             ),
@@ -824,13 +886,25 @@ class ToggleButton extends StatelessWidget {
   }
 }
 
+/// An integer with "." between thousands, as Italian text does (12.345).
+String _grouped(int n) {
+  final digits = n.abs().toString();
+  final sb = StringBuffer(n < 0 ? '-' : '');
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) sb.write('.');
+    sb.write(digits[i]);
+  }
+  return sb.toString();
+}
+
 class ScopeItem<T> {
-  const ScopeItem(this.value, this.label, {this.dot, this.count, this.icon});
+  const ScopeItem(this.value, this.label, {this.dot, this.count, this.icon, this.tooltip});
   final T value;
   final String label;
   final Color? dot;
   final int? count;
   final IconData? icon;
+  final String? tooltip;
 }
 
 /// A row of [ToggleButton]s that filter a list (Finder scope bar). Multi
@@ -862,6 +936,7 @@ class ScopeBar<T> extends StatelessWidget {
           dot: it.dot,
           count: it.count,
           icon: it.icon,
+          tooltip: it.tooltip,
           small: small,
           selected: selected.contains(it.value),
           onChanged: (on) {

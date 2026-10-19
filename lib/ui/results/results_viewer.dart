@@ -331,6 +331,8 @@ class _ResultsViewerState extends State<ResultsViewer> {
             padding: const EdgeInsets.all(Gap.lg),
             child: RecordView(
               nullText: app.settings.nullText,
+              // The pull-down in the header stays as the keyboard path.
+              onFieldDoubleTap: _openValue,
               fields: [
                 for (var i = 0; i < m.columns.length; i++)
                   RecordField(

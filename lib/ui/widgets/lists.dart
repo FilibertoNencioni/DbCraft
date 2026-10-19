@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout, kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -339,7 +340,8 @@ class OutlineRow extends StatefulWidget {
   /// Status dot over the icon ([IconBadge]).
   final Color? iconBadge;
 
-  /// Replaces the icon (a spinner while loading, a checkbox).
+  /// A control before the icon (a checkbox); without [icon] it takes the
+  /// icon's place (a spinner while loading, a status letter).
   final Widget? leading;
   final int depth;
 
@@ -404,8 +406,9 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
     final showMenu = widget.onMenu != null && _hover;
     final slot = widget.expanded != null || widget.busy || widget.reserveDisclosure || widget.depth > 0;
 
-    Widget? icon = widget.leading;
-    if (icon == null && widget.icon != null) {
+    Widget? icon = widget.icon == null ? widget.leading : null;
+    final control = widget.icon == null ? null : widget.leading;
+    if (widget.icon != null) {
       icon = Icon(
         widget.icon,
         size: 16,
@@ -446,6 +449,7 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
               )
             else
               const SizedBox(width: 2),
+            if (control != null) ...[control, const SizedBox(width: 4)],
             if (icon != null) ...[SizedBox(width: 18, child: Center(child: icon)), const SizedBox(width: 6)],
             Expanded(
               child: Text(
@@ -559,7 +563,8 @@ class SidebarRow extends StatelessWidget {
 
 /// A row in a content list (history, log, commits, pickers, catalogs): 24pt
 /// single line, 38pt with a [subtitle] (11 secondary), 16pt leading icon,
-/// a [trailing] accessory (small [PushButton], [LinkButton], [Tag], text).
+/// a [trailing] accessory (small [PushButton], [LinkButton], [Tag], text)
+/// and a [trailingOnHover] one that shows only under the pointer.
 ///
 /// Selection follows [SourceList]; with [zebra] the rows alternate the
 /// `zebra` fill edge to edge (pass [index]).
@@ -572,6 +577,7 @@ class ListRow extends StatefulWidget {
     this.iconColor,
     this.leading,
     this.trailing,
+    this.trailingOnHover,
     this.selected = false,
     this.zebra = false,
     this.index = 0,
@@ -591,6 +597,11 @@ class ListRow extends StatefulWidget {
   /// Replaces the icon (a status dot, a spinner).
   final Widget? leading;
   final Widget? trailing;
+
+  /// An accessory after [trailing] shown only while the pointer is over the
+  /// row ("Apri" in the welcome); its space is kept, so the row does not
+  /// reflow.
+  final Widget? trailingOnHover;
   final bool selected;
   final bool zebra;
   final int index;
@@ -657,13 +668,17 @@ class _ListRowState extends State<ListRow> with _DoubleClick {
               ),
             ),
             if (widget.trailing != null) ...[const SizedBox(width: Gap.sm), widget.trailing!],
+            if (widget.trailingOnHover != null) ...[
+              const SizedBox(width: Gap.sm),
+              Visibility.maintain(visible: _hover, child: widget.trailingOnHover!),
+            ],
           ],
         ),
       ),
     );
 
     Widget child = row;
-    if (interactive || widget.onMenu != null) {
+    if (interactive || widget.onMenu != null || widget.trailingOnHover != null) {
       final scope = SourceListScope.maybeOf(context);
       child = MouseRegion(
         onEnter: (_) => setState(() => _hover = true),
@@ -706,71 +721,120 @@ class RecordField {
 /// A row shown as a form (record view of the results): read-only
 /// [FormGroup] with the name and its type on the left (200pt) and the
 /// selectable value on the right. Changed values take `diffChanged`.
-class RecordView extends StatelessWidget {
-  const RecordView({super.key, required this.fields, this.title, this.labelWidth = 200, this.nullText = 'NULL'});
+///
+/// With [onFieldDoubleTap] a double click on a field opens it for editing
+/// (the value editor of the results).
+class RecordView extends StatefulWidget {
+  const RecordView({
+    super.key,
+    required this.fields,
+    this.title,
+    this.labelWidth = 200,
+    this.nullText = 'NULL',
+    this.onFieldDoubleTap,
+  });
 
   final List<RecordField> fields;
   final String? title;
   final double labelWidth;
   final String nullText;
 
+  /// Called with the index of a field double clicked.
+  final ValueChanged<int>? onFieldDoubleTap;
+
+  @override
+  State<RecordView> createState() => _RecordViewState();
+}
+
+class _RecordViewState extends State<RecordView> {
+  // A first click starts the timer; a second click on the same field while
+  // it runs is a double click. Pointer events, because the selectable value
+  // takes the taps for itself.
+  Timer? _clickTimer;
+  int? _clickField;
+
+  @override
+  void dispose() {
+    _clickTimer?.cancel();
+    super.dispose();
+  }
+
+  void _down(PointerDownEvent e, int i) {
+    if (e.buttons != kPrimaryButton) return;
+    final isDouble = _clickField == i && (_clickTimer?.isActive ?? false);
+    _clickTimer?.cancel();
+    if (isDouble) {
+      _clickTimer = null;
+      _clickField = null;
+      widget.onFieldDoubleTap!(i);
+    } else {
+      _clickField = i;
+      _clickTimer = Timer(kDoubleTapTimeout, () => _clickField = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
+    final labelWidth = widget.labelWidth;
     return FormGroup(
-      title: title,
+      title: widget.title,
       labelWidth: labelWidth,
       children: [
-        for (final f in fields)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: labelWidth,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      f.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: uiText(TypeSize.body, color: c.text),
-                    ),
-                    if (f.type != null) TypeLabel(f.type!.toLowerCase(), mono: true),
-                  ],
-                ),
-              ),
-              const SizedBox(width: Gap.md),
-              Expanded(
-                child: Container(
-                  padding: f.changed ? const EdgeInsets.symmetric(horizontal: 4, vertical: 1) : null,
-                  decoration: f.changed
-                      ? BoxDecoration(
-                          color: c.diffChanged.withValues(alpha: Tint.regular),
-                          borderRadius: BorderRadius.circular(Radii.small),
-                        )
-                      : null,
-                  child: SelectableText(
-                    f.value ?? nullText,
-                    minLines: 1,
-                    maxLines: 8,
-                    style: f.value == null
-                        ? uiText(TypeSize.small, color: c.textTertiary, style: FontStyle.italic)
-                        : f.mono
-                        ? TextStyle(
-                            fontFamily: kMonoFamily,
-                            fontFamilyFallback: kMonoFallback,
-                            fontSize: TypeSize.mono,
-                            color: c.text,
-                            height: 1.35,
-                          )
-                        : uiText(TypeSize.body, color: c.text, features: kTabular),
+        for (final (i, f) in widget.fields.indexed)
+          () {
+            final Widget row = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: labelWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        f.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: uiText(TypeSize.body, color: c.text),
+                      ),
+                      if (f.type != null) TypeLabel(f.type!.toLowerCase(), mono: true),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: Gap.md),
+                Expanded(
+                  child: Container(
+                    padding: f.changed ? const EdgeInsets.symmetric(horizontal: 4, vertical: 1) : null,
+                    decoration: f.changed
+                        ? BoxDecoration(
+                            color: c.diffChanged.withValues(alpha: Tint.regular),
+                            borderRadius: BorderRadius.circular(Radii.small),
+                          )
+                        : null,
+                    child: SelectableText(
+                      f.value ?? widget.nullText,
+                      minLines: 1,
+                      maxLines: 8,
+                      style: f.value == null
+                          ? uiText(TypeSize.small, color: c.textTertiary, style: FontStyle.italic)
+                          : f.mono
+                          ? TextStyle(
+                              fontFamily: kMonoFamily,
+                              fontFamilyFallback: kMonoFallback,
+                              fontSize: TypeSize.mono,
+                              color: c.text,
+                              height: 1.35,
+                            )
+                          : uiText(TypeSize.body, color: c.text, features: kTabular),
+                    ),
+                  ),
+                ),
+              ],
+            );
+            if (widget.onFieldDoubleTap == null) return row;
+            return Listener(behavior: HitTestBehavior.opaque, onPointerDown: (e) => _down(e, i), child: row);
+          }(),
       ],
     );
   }

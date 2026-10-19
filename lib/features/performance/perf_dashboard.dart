@@ -388,7 +388,6 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
   }
 
   Widget _dashboard(BuildContext context) {
-    final c = DbColors.of(context);
     final p = ctl.provider!;
     if (!p.tables.any((t) => t.id == _table)) _table = p.tables.first.id;
     return Column(
@@ -408,30 +407,26 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
               maxLines: 1,
             ),
           ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: c.separator, width: 0.5)),
-          ),
-          child: PaneBar(
-            padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-            children: [
-              Flexible(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Segmented<String>(
-                    value: _table,
-                    items: [for (final t in p.tables) (t.id, t.title, null)],
-                    onChanged: (v) => setState(() {
-                      _table = v;
-                      _selected = null;
-                    }),
-                  ),
+        PaneBar(
+          hairline: BarHairline.both,
+          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Segmented<String>(
+                  value: _table,
+                  items: [for (final t in p.tables) (t.id, t.title, null)],
+                  onChanged: (v) => setState(() {
+                    _table = v;
+                    _selected = null;
+                  }),
                 ),
               ),
-              const SizedBox(width: Gap.sm),
-              ..._tableActions(context, p.tables.firstWhere((t) => t.id == _table)),
-            ],
-          ),
+            ),
+            const SizedBox(width: Gap.sm),
+            ..._tableActions(context, p.tables.firstWhere((t) => t.id == _table)),
+          ],
         ),
         Expanded(child: _tableBody(context, p.tables.firstWhere((t) => t.id == _table))),
       ],
@@ -471,22 +466,17 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
         ),
         const SizedBox(width: Gap.md),
         Expanded(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              StatusDot(ctl.paused ? c.textTertiary : c.success, size: 7),
-              const SizedBox(width: 6),
-              Flexible(
-                child: StatusLine(
-                  [
-                    ctl.provider!.label,
-                    if (widget.tab.dc.serverLabel.isNotEmpty) widget.tab.dc.serverLabel,
-                    if (t != null) 'aggiornato alle ${two(t.hour)}:${two(t.minute)}:${two(t.second)}',
-                  ].join(' · '),
-                  maxLines: 1,
-                ),
-              ),
-            ],
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: StatusLine(
+              [
+                ctl.provider!.label,
+                if (widget.tab.dc.serverLabel.isNotEmpty) widget.tab.dc.serverLabel,
+                if (t != null) 'aggiornato alle ${two(t.hour)}:${two(t.minute)}:${two(t.second)}',
+              ].join(' · '),
+              maxLines: 1,
+              dot: ctl.paused ? c.textTertiary : c.success,
+            ),
           ),
         ),
         const SizedBox(width: Gap.xs),
@@ -510,43 +500,15 @@ class _PerfDashboardViewState extends State<PerfDashboardView> {
     final warn = v != null && ((k.warnAbove != null && v > k.warnAbove!) || (k.warnBelow != null && v < k.warnBelow!));
     final buf = ctl.buffers[k.id];
     final color = warn ? c.warning : c.accent;
-    return Tooltip(
-      message: [
+    return StatTile(
+      label: k.label,
+      value: _kpiText(k, v),
+      warning: warn,
+      tooltip: [
         k.help ?? k.label,
         if (buf != null && buf.max != null) 'min ${_kpiText(k, buf.min)} · max ${_kpiText(k, buf.max)}',
       ].join('\n'),
-      child: Container(
-        width: 184,
-        padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.md, Gap.sm),
-        decoration: BoxDecoration(
-          color: c.content,
-          borderRadius: BorderRadius.circular(Radii.panel),
-          border: Border.all(color: c.separator, width: 0.5),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              k.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: uiText(TypeSize.caption, color: c.textSecondary),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              _kpiText(k, v),
-              style: uiText(
-                TypeSize.sheetTitle,
-                weight: FontWeight.w600,
-                color: warn ? c.warning : c.text,
-                features: kTabular,
-              ),
-            ),
-            const SizedBox(height: Gap.xs),
-            Sparkline(values: buf?.values ?? const [], color: color, capacity: buf?.capacity ?? 120, height: 26),
-          ],
-        ),
-      ),
+      child: Sparkline(values: buf?.values ?? const [], color: color, capacity: buf?.capacity ?? 120, height: 26),
     );
   }
 

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -9,6 +11,7 @@ import 'buttons.dart';
 import 'feedback.dart';
 import 'fields.dart';
 import 'lists.dart';
+import 'progress.dart';
 import 'surfaces.dart';
 
 /// Fixed sheet sizes. Small and medium take the height of their content
@@ -205,7 +208,8 @@ Future<T?> showSheet<T>(BuildContext context, {required WidgetBuilder builder, S
 ///   optional [subtitle]).
 /// - Body: inside 20pt margins. In small and medium sheets it scrolls when
 ///   taller than the window (so it must not be a [ListView]); in large ones
-///   it fills the space between title and footer.
+///   it fills the space between title and footer. Its [FormGroup]s share
+///   one label column ([FormScope]).
 /// - Footer, no fill: [leading] on the left (secondary actions, inline
 ///   status such as "Prova connessione"), [actions] on the right in the order
 ///   Annulla, default. No close X: Esc, Annulla or Fine.
@@ -305,9 +309,9 @@ class SheetScaffold extends StatelessWidget {
           children: [
             header,
             if (fixed)
-              Expanded(child: Padding(padding: padding, child: body))
+              Expanded(child: Padding(padding: padding, child: FormScope(child: body)))
             else
-              Flexible(child: SingleChildScrollView(padding: padding, child: body)),
+              Flexible(child: SingleChildScrollView(padding: padding, child: FormScope(child: body))),
             footer,
           ],
         );
@@ -532,30 +536,66 @@ Future<String?> promptText(
   bool obscure = false,
   int maxLines = 1,
 }) async {
-  final ctrl = TextEditingController(text: initial);
-  try {
-    final ok = await showAlert<bool>(
-      context,
-      title: title,
-      accessory: obscure
-          ? SecureField(controller: ctrl, hint: label.isEmpty ? null : label, autofocus: true)
-          : MacTextField(
-              controller: ctrl,
-              hint: label.isEmpty ? null : label,
-              autofocus: true,
-              maxLines: maxLines,
-              minLines: maxLines > 1 ? math.min(maxLines, 3) : null,
-            ),
-      buttons: const [
-        AlertButton('OK', true, role: AlertRole.defaultAction),
-        AlertButton('Annulla', false, role: AlertRole.cancel),
-      ],
-    );
-    return ok == true ? ctrl.text : null;
-  } finally {
-    // The route's exit animation still shows the field for a moment.
-    Future<void>.delayed(Motion.regular * 2, ctrl.dispose);
+  var text = initial;
+  final ok = await showAlert<bool>(
+    context,
+    title: title,
+    accessory: _PromptField(
+      initial: initial,
+      hint: label.isEmpty ? null : label,
+      obscure: obscure,
+      maxLines: maxLines,
+      onChanged: (v) => text = v,
+    ),
+    buttons: const [
+      AlertButton('OK', true, role: AlertRole.defaultAction),
+      AlertButton('Annulla', false, role: AlertRole.cancel),
+    ],
+  );
+  return ok == true ? text : null;
+}
+
+/// The field of [promptText]. It owns its controller, so the controller lives
+/// exactly as long as the field, exit animation included.
+class _PromptField extends StatefulWidget {
+  const _PromptField({
+    required this.initial,
+    required this.hint,
+    required this.obscure,
+    required this.maxLines,
+    required this.onChanged,
+  });
+
+  final String initial;
+  final String? hint;
+  final bool obscure;
+  final int maxLines;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_PromptField> createState() => _PromptFieldState();
+}
+
+class _PromptFieldState extends State<_PromptField> {
+  late final _ctrl = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) => widget.obscure
+      ? SecureField(controller: _ctrl, hint: widget.hint, autofocus: true, onChanged: widget.onChanged)
+      : MacTextField(
+          controller: _ctrl,
+          hint: widget.hint,
+          autofocus: true,
+          maxLines: widget.maxLines,
+          minLines: widget.maxLines > 1 ? math.min(widget.maxLines, 3) : null,
+          onChanged: widget.onChanged,
+        );
 }
 
 /// Error alert: the first line of the message, the full text (copyable)
@@ -592,46 +632,71 @@ Future<bool> guarded(BuildContext context, Future<void> Function() action, {Stri
 /// Medium sheet to pick one item: search field, list, Annulla / [choose].
 /// Arrows move the selection from the search field, Invio or a double click
 /// chooses.
+///
+/// Pass either [items] or [load]: with [load] the list shows a [Spinner]
+/// until the items arrive, and the error (titled [loadError]) if they do not.
+/// [empty] is the text of an empty list (as opposed to a search with no
+/// match). [iconColor] tints the [icon]s (driver brand, accent for tables);
+/// secondary when it returns null.
 Future<T?> showListPicker<T>(
   BuildContext context, {
   required String title,
-  required List<T> items,
+  List<T>? items,
+  Future<List<T>> Function()? load,
   required String Function(T) label,
   String Function(T)? detail,
   IconData Function(T)? icon,
+  Color? Function(T)? iconColor,
   String choose = 'Scegli',
   String searchHint = 'Cerca',
-}) => showSheet<T>(
-  context,
-  builder: (_) => _ListPicker<T>(
-    title: title,
-    items: items,
-    label: label,
-    detail: detail,
-    icon: icon,
-    choose: choose,
-    searchHint: searchHint,
-  ),
-);
+  String empty = 'Nessun elemento',
+  String loadError = 'Impossibile caricare l\'elenco',
+}) {
+  assert((items == null) != (load == null), 'Pass exactly one of items and load');
+  return showSheet<T>(
+    context,
+    builder: (_) => _ListPicker<T>(
+      title: title,
+      items: items,
+      load: load,
+      label: label,
+      detail: detail,
+      icon: icon,
+      iconColor: iconColor,
+      choose: choose,
+      searchHint: searchHint,
+      empty: empty,
+      loadError: loadError,
+    ),
+  );
+}
 
 class _ListPicker<T> extends StatefulWidget {
   const _ListPicker({
     required this.title,
     required this.items,
+    required this.load,
     required this.label,
     required this.detail,
     required this.icon,
+    required this.iconColor,
     required this.choose,
     required this.searchHint,
+    required this.empty,
+    required this.loadError,
   });
 
   final String title;
-  final List<T> items;
+  final List<T>? items;
+  final Future<List<T>> Function()? load;
   final String Function(T) label;
   final String Function(T)? detail;
   final IconData Function(T)? icon;
+  final Color? Function(T)? iconColor;
   final String choose;
   final String searchHint;
+  final String empty;
+  final String loadError;
 
   @override
   State<_ListPicker<T>> createState() => _ListPickerState<T>();
@@ -643,22 +708,50 @@ class _ListPickerState<T> extends State<_ListPicker<T>> {
 
   final _query = TextEditingController();
   final _scroll = ScrollController();
-  late List<T> _shown = widget.items;
+
+  /// All the items; null while [_ListPicker.load] runs.
+  late List<T>? _items = widget.items;
+  Object? _error;
+  late List<T> _shown = _items ?? const [];
   int _selected = 0;
+
+  /// The row of the last click, while a second one would make it a double
+  /// click.
+  int? _lastTap;
+  Timer? _tapTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    final load = widget.load;
+    if (load != null) {
+      load().then(
+        (items) {
+          if (!mounted) return;
+          setState(() => _items = items);
+          _filter(_query.text);
+        },
+        onError: (Object e) {
+          if (mounted) setState(() => _error = e);
+        },
+      );
+    }
+  }
 
   @override
   void dispose() {
+    _tapTimer?.cancel();
     _query.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
   void _filter(String q) {
+    final items = _items;
+    if (items == null) return;
     final needle = q.trim().toLowerCase();
     setState(() {
-      _shown = needle.isEmpty
-          ? widget.items
-          : widget.items.where((i) => widget.label(i).toLowerCase().contains(needle)).toList();
+      _shown = needle.isEmpty ? items : items.where((i) => widget.label(i).toLowerCase().contains(needle)).toList();
       _selected = 0;
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
@@ -681,10 +774,46 @@ class _ListPickerState<T> extends State<_ListPicker<T>> {
     if (_selected < _shown.length) Navigator.of(context).pop(_shown[_selected]);
   }
 
+  /// Mouse down on row [i]: selects it; a second click on it within
+  /// [kDoubleTapTimeout] chooses it.
+  void _tapRow(int i) {
+    final second = _lastTap == i && (_tapTimer?.isActive ?? false);
+    _tapTimer?.cancel();
+    setState(() => _selected = i);
+    if (second) {
+      _lastTap = null;
+      _pick();
+    } else {
+      _lastTap = i;
+      _tapTimer = Timer(kDoubleTapTimeout, () => _lastTap = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final canPick = _selected < _shown.length;
+    final Widget list;
+    if (_error != null) {
+      list = EmptyState.error(_error!, title: widget.loadError);
+    } else if (_items == null) {
+      list = const Center(child: Spinner());
+    } else if (_shown.isEmpty) {
+      list = Center(
+        child: Text(
+          _items!.isEmpty ? widget.empty : 'Nessun risultato',
+          style: uiText(TypeSize.body, color: c.textTertiary),
+        ),
+      );
+    } else {
+      list = ListView.builder(
+        controller: _scroll,
+        padding: const EdgeInsets.all(Gap.xs),
+        itemExtent: _rowHeight,
+        itemCount: _shown.length,
+        itemBuilder: (context, i) => _row(c, i),
+      );
+    }
     return SheetScaffold(
       title: widget.title,
       onSubmit: canPick ? _pick : null,
@@ -717,15 +846,7 @@ class _ListPickerState<T> extends State<_ListPicker<T>> {
               border: Border.all(color: c.separator, width: 0.5),
             ),
             clipBehavior: Clip.antiAlias,
-            child: _shown.isEmpty
-                ? Center(child: Text('Nessun risultato', style: uiText(TypeSize.body, color: c.textTertiary)))
-                : ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.all(Gap.xs),
-                    itemExtent: _rowHeight,
-                    itemCount: _shown.length,
-                    itemBuilder: (context, i) => _row(c, i),
-                  ),
+            child: list,
           ),
         ],
       ),
@@ -743,8 +864,7 @@ class _ListPickerState<T> extends State<_ListPicker<T>> {
     final detail = widget.detail?.call(item);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => setState(() => _selected = i),
-      onDoubleTap: _pick,
+      onTapDown: (_) => _tapRow(i),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
         decoration: BoxDecoration(
@@ -754,7 +874,11 @@ class _ListPickerState<T> extends State<_ListPicker<T>> {
         child: Row(
           children: [
             if (widget.icon != null) ...[
-              Icon(widget.icon!(item), size: 16, color: selected ? fg : c.textSecondary),
+              Icon(
+                widget.icon!(item),
+                size: 16,
+                color: selected ? fg : (widget.iconColor?.call(item) ?? c.textSecondary),
+              ),
               const SizedBox(width: 6),
             ],
             Expanded(

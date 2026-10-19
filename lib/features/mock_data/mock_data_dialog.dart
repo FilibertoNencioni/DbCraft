@@ -514,15 +514,8 @@ class _MockDataDialogState extends State<_MockDataDialog> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Inset list box.
-        Container(
+        InsetBox(
           width: 340,
-          decoration: BoxDecoration(
-            color: c.content,
-            borderRadius: BorderRadius.circular(Radii.panel),
-            border: Border.all(color: c.separator, width: 0.5),
-          ),
-          clipBehavior: Clip.antiAlias,
           child: ListView.builder(
             itemCount: _configs.length,
             itemExtent: ListRow.doubleHeight,

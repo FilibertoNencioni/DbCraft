@@ -184,7 +184,7 @@ class _TransferRow extends StatelessWidget {
                   if (t.state == TransferState.running)
                     Padding(
                       padding: const EdgeInsets.only(top: 3),
-                      child: ProgressBar(value: t.fraction, semanticLabel: t.label),
+                      child: LevelIndicator(value: t.fraction, semanticLabel: t.label),
                     ),
                 ],
               ),

@@ -90,16 +90,19 @@ class PgDebuggerTab extends FeatureTab {
 }
 
 /// Lets the user choose one of the overloads of a function.
-Future<PgFunctionCandidate?> pickPgOverload(BuildContext context, List<PgFunctionCandidate> list) =>
-    showListPicker<PgFunctionCandidate>(
-      context,
-      title: 'Scegli la funzione da analizzare',
-      items: list,
-      label: (f) => f.signature,
-      detail: (f) => f.language,
-      icon: (f) => f.kind == 'p' ? AppIcons.procedure : AppIcons.function,
-      choose: 'Analizza',
-    );
+Future<PgFunctionCandidate?> pickPgOverload(BuildContext context, List<PgFunctionCandidate> list) {
+  final accent = DbColors.of(context).accent;
+  return showListPicker<PgFunctionCandidate>(
+    context,
+    title: 'Scegli la funzione da analizzare',
+    items: list,
+    label: (f) => f.signature,
+    detail: (f) => f.language,
+    icon: (f) => f.kind == 'p' ? AppIcons.procedure : AppIcons.function,
+    iconColor: (_) => accent,
+    choose: 'Analizza',
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Parameters dialog
@@ -480,7 +483,9 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
       DebugPhase.running || DebugPhase.waitingTarget || DebugPhase.starting => StatusLine.busy(ctl.status),
       DebugPhase.failed => StatusLine(ctl.status, kind: StatusKind.danger, maxLines: 1),
       DebugPhase.finished => StatusLine(ctl.status, kind: StatusKind.success, maxLines: 1),
-      DebugPhase.paused || DebugPhase.idle => StatusLine(ctl.status, maxLines: 1),
+      // Paused keeps the amber dot: the target is waiting for a step.
+      DebugPhase.paused => StatusLine(ctl.status, maxLines: 1, dot: c.warning),
+      DebugPhase.idle => StatusLine(ctl.status, maxLines: 1),
     };
     return PaneBar(
       children: [
@@ -525,14 +530,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
         ),
         const SizedBox(width: Gap.md),
         Expanded(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // Paused keeps the amber dot: the target is waiting for a step.
-              if (sm.phase == DebugPhase.paused) ...[StatusDot(c.warning, size: 7), const SizedBox(width: 6)],
-              Flexible(child: status),
-            ],
-          ),
+          child: Align(alignment: Alignment.centerRight, child: status),
         ),
         if (ctl.targetPid != null) ...[const SizedBox(width: Gap.sm), Tag('PID ${ctl.targetPid}')],
         const SizedBox(width: Gap.xs),

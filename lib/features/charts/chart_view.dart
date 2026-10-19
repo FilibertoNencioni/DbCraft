@@ -173,16 +173,7 @@ class _ChartViewState extends State<ChartView> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(child: _chartArea(c)),
-                if (_panel)
-                  // Inspector: window background, hairline on the left.
-                  Container(
-                    width: 260,
-                    decoration: BoxDecoration(
-                      color: c.windowBackground,
-                      border: Border(left: BorderSide(color: c.separator, width: 0.5)),
-                    ),
-                    child: _configPanel(c),
-                  ),
+                if (_panel) Inspector(width: 260, children: _configPanel(c)),
               ],
             ),
           ),
@@ -514,12 +505,12 @@ class _ChartViewState extends State<ChartView> {
   Widget _dropdown<T>(T value, List<(T, String)> items, ValueChanged<T> onChanged) =>
       SelectField<T>(value: value, items: [for (final (v, l) in items) (v, l, null)], onChanged: onChanged);
 
-  Widget _configPanel(DbColors c) {
+  List<Widget> _configPanel(DbColors c) {
     final cfg = _config;
     final palette = ChartPalette.of(context);
     final numeric = _profiles.where((p) => p.numeric).toList();
-    final xItems = <(int, String)>[
-      (-1, 'Numero di riga'),
+    final xItems = <(int?, String)>[
+      (null, 'Numero di riga'),
       for (final p in _profiles)
         if (!p.binary && (cfg.kind != ChartKind.scatter || p.numeric || p.date))
           (
@@ -537,80 +528,107 @@ class _ChartViewState extends State<ChartView> {
         ? 1
         : kMaxSeries;
     final label = uiText(TypeSize.caption, weight: FontWeight.w600, color: c.textSecondary);
-    return ListView(
-      padding: const EdgeInsets.all(Gap.md),
+    Widget field(String text, Widget control) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(cfg.kind == ChartKind.barHorizontal ? 'Categorie (asse Y)' : 'Asse X / categorie', style: label),
+        Text(text, style: label),
         const SizedBox(height: 4),
-        _dropdown<int>(
-          xItems.any((e) => e.$1 == cfg.x) ? cfg.x! : -1,
-          xItems,
-          (v) => _update((x) {
-            x.x = v < 0 ? null : v;
-            x.removeY(v);
-            if (v >= 0 && v < _profiles.length && _profiles[v].date) x.sort = ChartSort.x;
-          }),
-        ),
-        const SizedBox(height: Gap.md),
-        Text(cfg.kind.isPie ? 'Valore' : 'Serie (valori numerici)', style: label),
-        const SizedBox(height: 2),
-        if (numeric.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: Gap.xs),
-            child: Text('Nessuna colonna numerica', style: uiText(TypeSize.small, color: c.textTertiary)),
+        control,
+      ],
+    );
+    return [
+      InspectorSection(
+        title: 'Dati',
+        children: [
+          field(
+            cfg.kind == ChartKind.barHorizontal ? 'Categorie (asse Y)' : 'Asse X / categorie',
+            _dropdown<int?>(
+              xItems.any((e) => e.$1 == cfg.x) ? cfg.x : null,
+              xItems,
+              (v) => _update((x) {
+                x.x = v;
+                if (v == null) return;
+                x.removeY(v);
+                if (v < _profiles.length && _profiles[v].date) x.sort = ChartSort.x;
+              }),
+            ),
           ),
-        for (final p in numeric)
-          if (p.index != cfg.x)
-            SizedBox(
-              height: ListRow.height,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: CheckboxRow(
-                        label: p.name,
-                        value: cfg.y.contains(p.index),
-                        onChanged: (_) => _toggleSeries(p.index),
-                      ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(cfg.kind.isPie ? 'Valore' : 'Serie (valori numerici)', style: label),
+              const SizedBox(height: 2),
+              if (numeric.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: Gap.xs),
+                  child: Text('Nessuna colonna numerica', style: uiText(TypeSize.small, color: c.textTertiary)),
+                ),
+              for (final p in numeric)
+                if (p.index != cfg.x)
+                  SizedBox(
+                    height: ListRow.height,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: CheckboxRow(
+                              label: p.name,
+                              value: cfg.y.contains(p.index),
+                              onChanged: (_) => _toggleSeries(p.index),
+                            ),
+                          ),
+                        ),
+                        if (cfg.y.contains(p.index) && cfg.y.indexOf(p.index) < maxSeries && !cfg.kind.isPie)
+                          _swatch(palette[cfg.slotOf(p.index, 0)]),
+                      ],
                     ),
                   ),
-                  if (cfg.y.contains(p.index) && cfg.y.indexOf(p.index) < maxSeries && !cfg.kind.isPie)
-                    _swatch(palette[cfg.slotOf(p.index, 0)]),
-                ],
-              ),
-            ),
-        const SizedBox(height: Gap.md),
-        if (cfg.kind != ChartKind.scatter) ...[
-          Text('Aggregazione per categoria', style: label),
-          const SizedBox(height: 4),
-          _dropdown<ChartAgg>(cfg.agg, [
-            for (final a in ChartAgg.values) (a, a.label),
-          ], (v) => _update((x) => x.agg = v)),
-          const SizedBox(height: Gap.md),
-          Text('Ordinamento', style: label),
-          const SizedBox(height: 4),
-          _dropdown<ChartSort>(cfg.sort, [
-            for (final s in ChartSort.values) (s, s.label),
-          ], (v) => _update((x) => x.sort = v)),
-          const SizedBox(height: Gap.md),
-          Text('Categorie mostrate', style: label),
-          const SizedBox(height: 4),
-          _dropdown<int>(const [0, 5, 10, 20, 30, 50, 100].contains(cfg.topN) ? cfg.topN : 0, [
-            (0, 'Tutte'),
-            for (final n in [5, 10, 20, 30, 50, 100]) (n, 'Prime $n'),
-          ], (v) => _update((x) => x.topN = v)),
-          const SizedBox(height: Gap.md),
+            ],
+          ),
         ],
-        if (cfg.kind.canStack) _switchRow(c, 'Serie impilate', cfg.stacked, (v) => _update((x) => x.stacked = v)),
-        _switchRow(c, 'Legenda', cfg.legend, (v) => _update((x) => x.legend = v)),
-        const SizedBox(height: Gap.md),
-        Text(
+      ),
+      if (cfg.kind != ChartKind.scatter)
+        InspectorSection(
+          title: 'Categorie',
+          children: [
+            field(
+              'Aggregazione per categoria',
+              _dropdown<ChartAgg>(cfg.agg, [
+                for (final a in ChartAgg.values) (a, a.label),
+              ], (v) => _update((x) => x.agg = v)),
+            ),
+            field(
+              'Ordinamento',
+              _dropdown<ChartSort>(cfg.sort, [
+                for (final s in ChartSort.values) (s, s.label),
+              ], (v) => _update((x) => x.sort = v)),
+            ),
+            field(
+              'Categorie mostrate',
+              _dropdown<int>(const [0, 5, 10, 20, 30, 50, 100].contains(cfg.topN) ? cfg.topN : 0, [
+                (0, 'Tutte'),
+                for (final n in [5, 10, 20, 30, 50, 100]) (n, 'Prime $n'),
+              ], (v) => _update((x) => x.topN = v)),
+            ),
+          ],
+        ),
+      InspectorSection(
+        title: 'Aspetto',
+        spacing: 0,
+        children: [
+          if (cfg.kind.canStack) _switchRow(c, 'Serie impilate', cfg.stacked, (v) => _update((x) => x.stacked = v)),
+          _switchRow(c, 'Legenda', cfg.legend, (v) => _update((x) => x.legend = v)),
+        ],
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: Gap.sm),
+        child: Text(
           'Il grafico usa le righe caricate e il filtro rapido della griglia.',
           style: uiText(TypeSize.caption, color: c.textTertiary),
         ),
-      ],
-    );
+      ),
+    ];
   }
 
   void _toggleSeries(int column) => _update((x) {

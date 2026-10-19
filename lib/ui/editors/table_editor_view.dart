@@ -310,41 +310,20 @@ class _TableEditorViewState extends State<TableEditorView> {
   }
 
   /// Simplified analyst view: "Dati" first, developer pages under a
-  /// "Dettagli" pull-down (DDL hidden). Laid out like [PageSwitcher], on the
-  /// hairline under the header.
+  /// "Dettagli" pull-down (DDL hidden).
   Widget _simplePages() {
-    final c = DbColors.of(context);
     final cur = _page;
-    return SizedBox(
-      height: ControlSize.regular,
-      width: double.infinity,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned(left: 0, right: 0, child: Container(height: 0.5, color: c.separator)),
-          DecoratedBox(
-            decoration: BoxDecoration(color: c.content, borderRadius: BorderRadius.circular(Radii.control)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Segmented<int>(
-                  value: cur,
-                  items: [(_pageData, 'Dati', AppIcons.rows), if (cur != _pageData) (cur, _pageNames[cur], null)],
-                  onChanged: _setPage,
-                ),
-                const SizedBox(width: Gap.sm),
-                PulldownButton(
-                  icon: AppIcons.info,
-                  label: 'Dettagli',
-                  tooltip: 'Dettagli della tabella',
-                  entries: () => [
-                    for (final i in const [0, 2, 3, 4, 6])
-                      MenuEntry<Object?>(_pageNames[i], checked: cur == i, onSelected: () => _setPage(i)),
-                  ],
-                ),
-              ],
-            ),
-          ),
+    return PageSwitcher<int>(
+      value: cur,
+      items: [(_pageData, 'Dati', AppIcons.rows), if (cur != _pageData) (cur, _pageNames[cur], null)],
+      onChanged: _setPage,
+      trailing: PulldownButton(
+        icon: AppIcons.info,
+        label: 'Dettagli',
+        tooltip: 'Dettagli della tabella',
+        entries: () => [
+          for (final i in const [0, 2, 3, 4, 6])
+            MenuEntry<Object?>(_pageNames[i], checked: cur == i, onSelected: () => _setPage(i)),
         ],
       ),
     );

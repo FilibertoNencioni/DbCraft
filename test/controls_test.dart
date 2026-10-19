@@ -24,6 +24,23 @@ void main() {
     });
   });
 
+  testWidgets('menu rows keep the check and the leading icon in separate columns', (tester) async {
+    await tester.pumpWidget(_app(MacMenuPreview(entries: [
+      MenuEntry<Object?>('SQL Server', checked: true, leading: Icon(AppIcons.server, size: 14)),
+      MenuEntry<Object?>('PostgreSQL', leading: Icon(AppIcons.database, size: 14)),
+      const MenuEntry<Object?>('Senza icona'),
+    ])));
+    // The current item shows both marks: ✓ first, then its icon.
+    final check = tester.getCenter(find.byIcon(AppIcons.check));
+    final server = tester.getCenter(find.byIcon(AppIcons.server));
+    expect(check.dx, lessThan(server.dx));
+    expect(check.dy, server.dy);
+    // Icons and labels line up across rows, with or without a check or icon.
+    expect(tester.getTopLeft(find.byIcon(AppIcons.database)).dx, tester.getTopLeft(find.byIcon(AppIcons.server)).dx);
+    final labels = ['SQL Server', 'PostgreSQL', 'Senza icona'].map((t) => tester.getTopLeft(find.text(t)).dx).toSet();
+    expect(labels, hasLength(1));
+  });
+
   testWidgets('PushButton fires on click and on Space when focused', (tester) async {
     var n = 0;
     final focus = FocusNode();
@@ -365,28 +382,88 @@ void main() {
     expect(tester.widget<Opacity>(find.descendant(of: find.byType(DbSwitch), matching: find.byType(Opacity))).opacity, 0.5);
   });
 
-  testWidgets('MacRadioGroup selects by click and by Tab + Space', (tester) async {
+  testWidgets('MacRadioGroup selects by click, is one Tab stop and moves with the arrows', (tester) async {
     var value = 'b';
+    final after = FocusNode();
+    addTearDown(after.dispose);
     await tester.pumpWidget(_app(StatefulBuilder(
-      builder: (context, set) => MacRadioGroup<String>(
-        value: value,
-        items: const [('a', 'TCP/IP', null), ('b', 'Socket', 'Solo locale'), ('c', 'SSH', null)],
-        onChanged: (v) => set(() => value = v),
+      builder: (context, set) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MacRadioGroup<String>(
+            value: value,
+            items: const [('a', 'TCP/IP', null), ('b', 'Socket', 'Solo locale'), ('c', 'SSH', null)],
+            onChanged: (v) => set(() => value = v),
+          ),
+          PushButton(label: 'Dopo', focusNode: after, onPressed: () {}),
+        ],
       ),
     )));
     expect(find.text('Solo locale'), findsOneWidget);
     MacRadio<String> radio(int i) => tester.widget<MacRadio<String>>(find.byType(MacRadio<String>).at(i));
+    List<bool> rings() => [
+      for (var i = 0; i < 3; i++)
+        tester.widget<FocusRing>(find.ancestor(of: find.byType(MacRadio<String>).at(i), matching: find.byType(FocusRing)).first).visible,
+    ];
     expect(radio(1).groupValue, 'b');
     await tester.tap(find.text('SSH'));
     await tester.pump();
     expect(value, 'c');
     expect(radio(2).value == radio(2).groupValue, isTrue);
-    // Each radio is a tab stop; Space picks the focused one.
+    expect(rings(), [false, false, false]);
+
+    // Tab focuses the group: the ring sits on the selected radio; Space changes nothing.
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(rings(), [false, false, true]);
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
+    expect(value, 'c');
+
+    // The arrows move the selection and the ring, without wrapping.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(value, 'b');
+    expect(rings(), [false, true, false]);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
     expect(value, 'a');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(value, 'b');
+
+    // One Tab leaves the whole group.
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(after.hasFocus, isTrue);
+    expect(rings(), [false, false, false]);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+  testWidgets('horizontal MacRadioGroup moves with ←/→', (tester) async {
+    var value = 0;
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => MacRadioGroup<int>(
+        value: value,
+        axis: Axis.horizontal,
+        focusNode: focus,
+        items: const [(0, 'Uno', null), (1, 'Due', null), (2, 'Tre', null)],
+        onChanged: (v) => set(() => value = v),
+      ),
+    )));
+    focus.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(value, 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(value, 1, reason: '↑/↓ belong to vertical groups');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(value, 0);
   });
 
   testWidgets('disabled MacRadioGroup ignores taps', (tester) async {
@@ -609,5 +686,241 @@ void main() {
       expect(box.gradient != null, active, reason: 'the accent gradient only in the key window');
       expect(tester.widget<Text>(find.text('Connetti')).style?.color, active ? c.onAccent : c.text);
     }
+  });
+
+  testWidgets('ComboField menu shows details, icons and actions', (tester) async {
+    final ctrl = TextEditingController(text: 'opus');
+    addTearDown(ctrl.dispose);
+    var installs = 0;
+    await tester.pumpWidget(_app(SizedBox(
+      width: 260,
+      child: ComboField(
+        controller: ctrl,
+        options: () => const ['opus', 'sonnet', 'haiku'],
+        optionDetail: (o) => o == 'sonnet' ? 'Più veloce' : null,
+        optionIcon: (o) => o == 'haiku' ? (AppIcons.database, null) : null,
+        actions: [MenuEntry<String>('Installa driver…', onSelected: () => installs++)],
+      ),
+    )));
+    await tester.tap(find.bySemanticsLabel('Suggerimenti'));
+    await tester.pumpAndSettle();
+    expect(find.text('Più veloce'), findsOneWidget);
+    expect(find.byIcon(AppIcons.database), findsOneWidget);
+    expect(find.byIcon(AppIcons.check), findsOneWidget, reason: 'the current suggestion is checked');
+    // Actions sit below the suggestions and leave the text alone.
+    expect(tester.getTopLeft(find.text('Installa driver…')).dy, greaterThan(tester.getTopLeft(find.text('haiku')).dy));
+    await tester.tap(find.text('Installa driver…'));
+    await tester.pumpAndSettle();
+    expect(installs, 1);
+    expect(ctrl.text, 'opus');
+
+    // With no suggestions the menu still offers the actions.
+    await tester.pumpWidget(_app(SizedBox(
+      width: 260,
+      child: ComboField(
+        controller: ctrl,
+        options: () => const [],
+        actions: [MenuEntry<String>('Installa driver…', onSelected: () => installs++)],
+      ),
+    )));
+    await tester.tap(find.bySemanticsLabel('Suggerimenti'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Installa driver…'));
+    await tester.pumpAndSettle();
+    expect(installs, 2);
+  });
+
+  testWidgets('ComboField leading sits inside the field, before the text', (tester) async {
+    final ctrl = TextEditingController(text: 'PostgreSQL');
+    addTearDown(ctrl.dispose);
+    await tester.pumpWidget(_app(SizedBox(
+      width: 260,
+      child: ComboField(controller: ctrl, options: () => const [], leading: const Icon(AppIcons.database, size: 16)),
+    )));
+    final icon = find.descendant(of: find.byType(TextField), matching: find.byIcon(AppIcons.database));
+    expect(icon, findsOneWidget);
+    final field = tester.getRect(find.byType(TextField));
+    final iconRect = tester.getRect(icon);
+    expect(iconRect.left, greaterThan(field.left));
+    expect(tester.getRect(find.byType(EditableText)).left, greaterThanOrEqualTo(iconRect.right));
+  });
+
+  testWidgets('ComboField onSelected runs for menu picks only', (tester) async {
+    final ctrl = TextEditingController();
+    addTearDown(ctrl.dispose);
+    final changed = <String>[];
+    final selected = <String>[];
+    await tester.pumpWidget(_app(SizedBox(
+      width: 220,
+      child: ComboField(
+        controller: ctrl,
+        options: () => const ['integer', 'varchar'],
+        onChanged: changed.add,
+        onSelected: selected.add,
+      ),
+    )));
+    await tester.enterText(find.byType(TextField), 'int');
+    await tester.pump();
+    expect(changed, ['integer'], reason: 'typing completes inline');
+    expect(selected, isEmpty);
+    await tester.tap(find.bySemanticsLabel('Suggerimenti'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('varchar'));
+    await tester.pumpAndSettle();
+    expect(changed, ['integer', 'varchar']);
+    expect(selected, ['varchar']);
+  });
+
+  testWidgets('multi-line SecureField grows when revealed and offers Scegli…', (tester) async {
+    final ctrl = TextEditingController(text: '{"type": "service_account"}');
+    addTearDown(ctrl.dispose);
+    var chosen = 0;
+    await tester.pumpWidget(_app(SizedBox(
+      width: 320,
+      child: SecureField(controller: ctrl, maxLines: 4, onChoose: () => chosen++),
+    )));
+    TextField field() => tester.widget<TextField>(find.byType(TextField));
+    expect(field().obscureText, isTrue);
+    expect(field().maxLines, 1);
+    expect(tester.getSize(find.byType(TextField)).height, closeTo(ControlSize.regular, 0.6));
+    expect(field().style?.fontFamily, kMonoFamily);
+    await tester.tap(find.byTooltip('Mostra password'));
+    await tester.pump();
+    expect(field().obscureText, isFalse);
+    expect(field().maxLines, 4);
+    expect(field().minLines, 1);
+    await tester.tap(find.text('Scegli…'));
+    expect(chosen, 1);
+
+    await tester.pumpWidget(_app(const SizedBox(width: 320, child: SecureField())));
+    expect(find.text('Scegli…'), findsNothing);
+  });
+
+  testWidgets('MacTextField expands to its parent and takes a text color', (tester) async {
+    await tester.pumpWidget(_app(const SizedBox(width: 300, height: 200, child: MacTextField(expands: true, mono: true))));
+    expect(tester.getSize(find.byType(TextField)).height, 200);
+    expect(tester.widget<TextField>(find.byType(TextField)).expands, isTrue);
+
+    await tester.pumpWidget(_app(Builder(
+      builder: (context) => SizedBox(
+        width: 200,
+        child: MacTextField(controller: TextEditingController(text: 'nuova'), color: DbColors.of(context).success),
+      ),
+    )));
+    final c = DbColors.of(tester.element(find.byType(MacTextField)));
+    expect(tester.widget<TextField>(find.byType(TextField)).style?.color, c.success);
+  });
+
+  testWidgets('DateField with time types and steps hours and minutes', (tester) async {
+    DateTime? value;
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => DateField(value: value, time: true, onChanged: (v) => set(() => value = v)),
+    )));
+    expect(find.text('hh'), findsOneWidget);
+    await tester.tap(find.text('gg'));
+    await tester.pump();
+    for (final k in [
+      LogicalKeyboardKey.digit0, LogicalKeyboardKey.digit5, // day
+      LogicalKeyboardKey.digit3, // month
+      LogicalKeyboardKey.digit2, LogicalKeyboardKey.digit0, LogicalKeyboardKey.digit2, LogicalKeyboardKey.digit4, // year
+      LogicalKeyboardKey.digit0, LogicalKeyboardKey.digit9, // hour
+      LogicalKeyboardKey.digit0, LogicalKeyboardKey.digit7, // minute
+    ]) {
+      await tester.sendKeyEvent(k);
+      await tester.pump();
+    }
+    expect(value, DateTime(2024, 3, 5, 9, 7));
+    // ↑ on the minutes, then ← to the hours and ↓ (wrapping).
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    expect(value, DateTime(2024, 3, 5, 9, 8));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    for (var i = 0; i < 10; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+    expect(value, DateTime(2024, 3, 5, 23, 8));
+    // The calendar replaces the day and keeps the time.
+    await tester.tap(find.byTooltip('Calendario'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('12'));
+    await tester.pumpAndSettle();
+    expect(value, DateTime(2024, 3, 12, 23, 8));
+  });
+
+  testWidgets('PopUpButton can select a null value', (tester) async {
+    int? value = 0;
+    final picks = <int?>[];
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => SizedBox(
+        width: 220,
+        child: SelectField<int?>(
+          value: value,
+          items: const [(null, 'Numero di riga', null), (0, 'id', null), (1, 'nome', null)],
+          onChanged: (v) => set(() {
+            picks.add(v);
+            value = v;
+          }),
+        ),
+      ),
+    )));
+    await tester.tap(find.text('id'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Numero di riga'));
+    await tester.pumpAndSettle();
+    expect(picks, [null]);
+    expect(value, isNull);
+    expect(find.text('Numero di riga'), findsOneWidget, reason: 'the button shows the null choice');
+    // Reopening checks the null item; Esc changes nothing.
+    await tester.tap(find.text('Numero di riga'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(AppIcons.check), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(picks, [null]);
+    await tester.tap(find.text('Numero di riga'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('nome'));
+    await tester.pumpAndSettle();
+    expect(picks, [null, 1]);
+  });
+
+  testWidgets('CheckboxRow shows its tooltip and label color', (tester) async {
+    await tester.pumpWidget(_app(Builder(
+      builder: (context) => CheckboxRow(
+        label: 'Elimina oggetti in più',
+        value: true,
+        onChanged: (_) {},
+        tooltip: 'Pericoloso',
+        labelColor: DbColors.of(context).danger,
+      ),
+    )));
+    final c = DbColors.of(tester.element(find.byType(CheckboxRow)));
+    expect(find.byTooltip('Pericoloso'), findsOneWidget);
+    expect(tester.widget<Text>(find.text('Elimina oggetti in più')).style?.color, c.danger);
+
+    await tester.pumpWidget(_app(Builder(
+      builder: (context) => CheckboxRow(
+        label: 'Elimina oggetti in più',
+        value: true,
+        onChanged: null,
+        labelColor: DbColors.of(context).danger,
+      ),
+    )));
+    expect(tester.widget<Text>(find.text('Elimina oggetti in più')).style?.color, c.textTertiary);
+  });
+
+  testWidgets('ScopeItem shows its tooltip and groups thousands in the count', (tester) async {
+    await tester.pumpWidget(_app(ScopeBar<String>(
+      items: const [
+        ScopeItem('added', 'Nuove', count: 1234567, tooltip: 'Nascondi: nuove'),
+        ScopeItem('removed', 'Eliminate', count: 999),
+      ],
+      selected: const {'added'},
+      onChanged: (_) {},
+    )));
+    expect(find.text('1.234.567'), findsOneWidget);
+    expect(find.text('999'), findsOneWidget);
+    expect(find.byTooltip('Nascondi: nuove'), findsOneWidget);
   });
 }

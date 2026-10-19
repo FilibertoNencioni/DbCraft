@@ -41,6 +41,90 @@ double measureLabelWidth(BuildContext context, Iterable<(String, double)> labels
   return math.min(widest.ceilToDouble() + 1, max);
 }
 
+/// Shares one label column among the [FormGroup]s below it, so the fields
+/// of consecutive groups line up (Connessione and Autenticazione in the
+/// connection sheet). Every [SheetScaffold] body has one; nest another to
+/// give a part of a form its own column.
+///
+/// Each group measures its labels and helps; all of them use the widest, up
+/// to 30% of the group, past which helps wrap. A label wider than that
+/// keeps its own group's column (up to 40%), so a control placed at its
+/// natural width beside a short label is never squeezed by a long label
+/// elsewhere.
+class FormScope extends StatefulWidget {
+  const FormScope({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<FormScope> createState() => _FormScopeState();
+}
+
+class _FormScopeState extends State<FormScope> {
+  final _registry = _FormLabelRegistry();
+
+  @override
+  void dispose() {
+    _registry.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _FormScopeMarker(registry: _registry, child: widget.child);
+}
+
+class _FormScopeMarker extends InheritedWidget {
+  const _FormScopeMarker({required this.registry, required super.child});
+
+  final _FormLabelRegistry registry;
+
+  static _FormLabelRegistry? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_FormScopeMarker>()?.registry;
+
+  @override
+  bool updateShouldNotify(_FormScopeMarker old) => old.registry != registry;
+}
+
+/// Natural label widths of the groups in a [FormScope].
+///
+/// Groups report while building and read [max] while laying out, so the
+/// groups built in the same frame agree at once. Groups laid out before a
+/// wider one appears (lazy lists, a group shown later) are told after the
+/// frame and rebuild.
+class _FormLabelRegistry extends ChangeNotifier {
+  final _widths = <Object, double>{};
+  double _max = 0;
+  bool _scheduled = false;
+  bool _disposed = false;
+
+  double get max => _max;
+
+  /// Sets the width of [group], or removes it when null.
+  void report(Object group, double? width) {
+    if (width == null) {
+      _widths.remove(group);
+    } else {
+      _widths[group] = width;
+    }
+    final m = _widths.values.fold(0.0, math.max);
+    if (m == _max) return;
+    _max = m;
+    if (_scheduled) return;
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      if (!_disposed) notifyListeners();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+}
+
 /// Grouped settings box (System Settings form section) on a
 /// `windowBackground`: radius 8, `groupBackground` fill, 0.5 hairline, rows
 /// split by inset separators. Optional [title] above (13 semibold) and
@@ -48,7 +132,8 @@ double measureLabelWidth(BuildContext context, Iterable<(String, double)> labels
 ///
 /// The label column fits the widest label (or help) of the [FormRow]s in
 /// [children], at most 40% of the group, unless [labelWidth] fixes it.
-class FormGroup extends StatelessWidget {
+/// Inside a [FormScope] (every sheet) it is shared with the other groups.
+class FormGroup extends StatefulWidget {
   const FormGroup({super.key, this.title, required this.children, this.footer, this.labelWidth});
 
   final String? title;
@@ -56,16 +141,60 @@ class FormGroup extends StatelessWidget {
   final String? footer;
   final double? labelWidth;
 
-  double _measureLabels(BuildContext context, double max) => measureLabelWidth(context, [
-    for (final row in children.whereType<FormRow>()) ...[
+  @override
+  State<FormGroup> createState() => _FormGroupState();
+}
+
+class _FormGroupState extends State<FormGroup> {
+  _FormLabelRegistry? _scope;
+
+  /// The scope width the label column was last laid out with.
+  double? _laidOutWith;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final scope = _FormScopeMarker.maybeOf(context);
+    if (scope == _scope) return;
+    _scope?.removeListener(_scopeChanged);
+    _scope?.report(this, null);
+    _scope = scope?..addListener(_scopeChanged);
+  }
+
+  @override
+  void dispose() {
+    _scope?.removeListener(_scopeChanged);
+    _scope?.report(this, null);
+    super.dispose();
+  }
+
+  void _scopeChanged() {
+    if (mounted && _scope?.max != _laidOutWith) setState(() {});
+  }
+
+  /// Share of the group width the scope can give the label column.
+  static const _sharedFraction = 0.3;
+
+  /// Share of the group width its own labels can take.
+  static const _ownFraction = 0.4;
+
+  double _measureLabels(BuildContext context, {bool help = true}) => measureLabelWidth(context, [
+    for (final row in widget.children.whereType<FormRow>()) ...[
       (row.label, TypeSize.body),
-      if (row.help != null) (row.help!, TypeSize.caption),
+      if (help && row.help != null) (row.help!, TypeSize.caption),
     ],
-  ], max: max);
+  ]);
 
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
+    final title = widget.title;
+    final footer = widget.footer;
+    final children = widget.children;
+    final natural = widget.labelWidth == null ? _measureLabels(context) : null;
+    final scope = _scope;
+    final labelsOnly = natural != null && scope != null ? _measureLabels(context, help: false) : null;
+    scope?.report(this, natural);
     return Padding(
       padding: const EdgeInsets.only(bottom: Gap.lg),
       child: Column(
@@ -74,12 +203,23 @@ class FormGroup extends StatelessWidget {
           if (title != null)
             Padding(
               padding: const EdgeInsets.only(left: 2, bottom: 6),
-              child: Text(title!, style: uiText(TypeSize.body, weight: FontWeight.w600, color: c.text)),
+              child: Text(title, style: uiText(TypeSize.body, weight: FontWeight.w600, color: c.text)),
             ),
           LayoutBuilder(
             builder: (context, constraints) {
               final inner = constraints.maxWidth - Gap.md * 2;
-              final width = labelWidth ?? _measureLabels(context, inner * 0.4);
+              final double width;
+              if (natural == null) {
+                width = widget.labelWidth!;
+              } else if (scope == null) {
+                width = math.min(natural, inner * _ownFraction);
+              } else {
+                final shared = _laidOutWith = scope.max;
+                width = math.max(
+                  math.min(math.max(shared, natural), inner * _sharedFraction),
+                  math.min(labelsOnly!, inner * _ownFraction),
+                );
+              }
               return _FormLabelWidth(
                 width: width,
                 child: Container(
@@ -110,7 +250,7 @@ class FormGroup extends StatelessWidget {
           if (footer != null)
             Padding(
               padding: const EdgeInsets.only(left: 2, top: 6),
-              child: Text(footer!, style: uiText(TypeSize.caption, color: c.textSecondary, height: 1.3)),
+              child: Text(footer, style: uiText(TypeSize.caption, color: c.textSecondary, height: 1.3)),
             ),
         ],
       ),
@@ -174,6 +314,11 @@ double codeLineHeight(BuildContext context) => MediaQuery.textScalerOf(context).
 /// (the language) on the left and the actions plus Copia on the right.
 /// [maxLines] caps the height (the rest scrolls); without [wrap] long lines
 /// scroll sideways.
+///
+/// [CodeBox.lines] is the variant for streaming logs (an install, a
+/// command): a lazily built list of [lines] that fills the height its parent
+/// gives it (or [maxLines] lines), wraps, and stays pinned to the last line
+/// while the user has not scrolled up.
 class CodeBox extends StatelessWidget {
   const CodeBox(
     this.code, {
@@ -184,9 +329,35 @@ class CodeBox extends StatelessWidget {
     this.maxLines,
     this.wrap = false,
     this.color,
-  });
+  }) : lines = null,
+       status = null,
+       emphasize = null;
+
+  /// A streaming log. [lines] may grow (or be trimmed) in place between
+  /// rebuilds. [status] sits under the header (progress, Interrompi);
+  /// [emphasize] picks the lines drawn in `text` semibold (the commands),
+  /// the others are secondary.
+  const CodeBox.lines(
+    List<String> this.lines, {
+    super.key,
+    this.label,
+    this.actions = const [],
+    this.copy = true,
+    this.maxLines,
+    this.status,
+    this.emphasize,
+    this.color,
+  }) : code = '',
+       wrap = true;
 
   final String code;
+
+  /// The log lines of [CodeBox.lines].
+  final List<String>? lines;
+
+  /// Row under the header of [CodeBox.lines].
+  final Widget? status;
+  final bool Function(String line)? emphasize;
   final String? label;
 
   /// Header buttons before Copia (mini [ToolButton]s).
@@ -203,7 +374,8 @@ class CodeBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final text = code.trimRight();
+    final lines = this.lines;
+    final text = lines == null ? code.trimRight() : null;
     final style = TextStyle(
       fontFamily: kMonoFamily,
       fontFamilyFallback: kMonoFallback,
@@ -213,14 +385,22 @@ class CodeBox extends StatelessWidget {
       fontFeatures: kTabular,
     );
     const pad = EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.sm + 2);
-    Widget body = SelectableText(text, style: style);
-    if (!wrap) body = SingleChildScrollView(scrollDirection: Axis.horizontal, padding: pad, child: body);
-    if (wrap) body = Padding(padding: pad, child: body);
-    if (maxLines != null) {
-      body = ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxLines! * codeLineHeight(context) + pad.vertical),
-        child: SingleChildScrollView(child: body),
-      );
+    Widget body;
+    if (lines != null) {
+      body = _CodeLines(lines: lines, style: style, emphasize: emphasize);
+      body = maxLines != null
+          ? SizedBox(height: maxLines! * codeLineHeight(context) + _CodeLines.padding.vertical, child: body)
+          : Expanded(child: body);
+    } else {
+      body = SelectableText(text!, style: style);
+      if (!wrap) body = SingleChildScrollView(scrollDirection: Axis.horizontal, padding: pad, child: body);
+      if (wrap) body = Padding(padding: pad, child: body);
+      if (maxLines != null) {
+        body = ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxLines! * codeLineHeight(context) + pad.vertical),
+          child: SingleChildScrollView(child: body),
+        );
+      }
     }
     final header = label != null || actions.isNotEmpty;
     return Container(
@@ -231,7 +411,7 @@ class CodeBox extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: lines != null && maxLines == null ? MainAxisSize.max : MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (header)
@@ -258,13 +438,73 @@ class CodeBox extends StatelessWidget {
                       icon: AppIcons.copy,
                       tooltip: 'Copia',
                       extent: 18,
-                      onPressed: () => Clipboard.setData(ClipboardData(text: text)),
+                      onPressed: () => Clipboard.setData(ClipboardData(text: text ?? lines!.join('\n'))),
                     ),
                 ],
               ),
             ),
+          if (status != null)
+            Padding(padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.sm, Gap.xs), child: status),
           body,
         ],
+      ),
+    );
+  }
+}
+
+/// The lazily built lines of [CodeBox.lines], pinned to the end.
+class _CodeLines extends StatefulWidget {
+  const _CodeLines({required this.lines, required this.style, this.emphasize});
+
+  static const padding = EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.xs);
+
+  final List<String> lines;
+  final TextStyle style;
+  final bool Function(String line)? emphasize;
+
+  @override
+  State<_CodeLines> createState() => _CodeLinesState();
+}
+
+class _CodeLinesState extends State<_CodeLines> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Whether the view shows the last line, judged before this frame lays
+  /// out the new ones.
+  bool get _atEnd {
+    if (!_scroll.hasClients) return true;
+    final p = _scroll.position;
+    return p.pixels >= p.maxScrollExtent - 1;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    if (_atEnd) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      });
+    }
+    final lines = widget.lines;
+    final emphasize = widget.emphasize;
+    final secondary = widget.style.copyWith(color: c.textSecondary);
+    final strong = widget.style.copyWith(fontWeight: FontWeight.w600);
+    return SelectionArea(
+      child: ListView.builder(
+        controller: _scroll,
+        padding: _CodeLines.padding,
+        itemCount: lines.length,
+        itemBuilder: (context, i) {
+          final line = lines[i];
+          final style = emphasize == null ? widget.style : (emphasize(line) ? strong : secondary);
+          return Text(line, style: style);
+        },
       ),
     );
   }

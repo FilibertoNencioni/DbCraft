@@ -128,31 +128,25 @@ class _ValueDialogState extends State<_ValueDialog> {
     final v = _value;
     final isBinary = v is Uint8List || widget.column.isBinary;
     final readOnly = !widget.editable || _view == _View.hex;
-    // The editors fill the sheet: size them in whole lines of mono text.
-    final body = LayoutBuilder(
-      builder: (context, box) {
-        final mono = MediaQuery.textScalerOf(context).scale(TypeSize.mono);
-        if (_view == _View.hex && v is Uint8List) {
-          final lines = ((box.maxHeight - Gap.md * 2) / (mono * 1.35)).floor().clamp(1, 1000);
-          return Align(
-            alignment: Alignment.topCenter,
-            child: CodeBox(_hexDump(v), copy: false, maxLines: lines),
-          );
-        }
-        final lines = ((box.maxHeight - 8) / (mono * 1.3)).floor().clamp(1, 1000);
-        return Align(
-          alignment: Alignment.topCenter,
-          child: MacTextField(
+    // The editors fill the sheet; the hex dump is sized in whole lines of mono text.
+    final body = _view == _View.hex && v is Uint8List
+        ? LayoutBuilder(
+            builder: (context, box) {
+              final mono = MediaQuery.textScalerOf(context).scale(TypeSize.mono);
+              final lines = ((box.maxHeight - Gap.md * 2) / (mono * 1.35)).floor().clamp(1, 1000);
+              return Align(
+                alignment: Alignment.topCenter,
+                child: CodeBox(_hexDump(v), copy: false, maxLines: lines),
+              );
+            },
+          )
+        : MacTextField(
             controller: _ctrl,
             readOnly: readOnly,
             mono: true,
-            minLines: lines,
-            maxLines: lines,
+            expands: true,
             onChanged: (_) => _changed = true,
-          ),
-        );
-      },
-    );
+          );
     return SheetScaffold(
       title: widget.column.name,
       subtitle: [

@@ -753,4 +753,299 @@ void main() {
     expect(order, ['b.sql', 'c.sql', 'a.sql']);
     expect(tester.getCenter(find.text('a.sql')).dx, greaterThan(tester.getCenter(find.text('c.sql')).dx));
   });
+
+  group('table refinements', () {
+    /// First filled Container above [text]: the cell when it is tinted,
+    /// the row otherwise.
+    Color? fill(WidgetTester tester, String text) => tester
+        .widgetList<Container>(find.ancestor(of: find.text(text), matching: find.byType(Container)))
+        .map((w) => w.color)
+        .firstWhere((c) => c != null, orElse: () => null);
+
+    double width(WidgetTester tester, String header) =>
+        tester.getSize(find.ancestor(of: find.text(header), matching: find.byType(TableHeaderCell))).width;
+
+    testWidgets('multiple selection: click, ⇧-click, ⌘-click, ⇧↑, ⌘A and ⌘C', (tester) async {
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      var sel = <int>{};
+      int? opened;
+      int? menuRow;
+      await tester.pumpWidget(
+        _app(
+          StatefulBuilder(
+            builder: (context, setState) => SizedBox(
+              width: 500,
+              height: 300,
+              child: MacTable(
+                headers: const ['id', 'nome'],
+                rowCount: 5,
+                cell: (r, c) => c == 0 ? '${r + 1}' : 'riga ${r + 1}',
+                selection: sel,
+                onSelectionChanged: (s) => setState(() => sel = s),
+                onDoubleTap: (r) => opened = r,
+                onContextMenu: (r, _, _) => menuRow = r,
+              ),
+            ),
+          ),
+        ),
+      );
+      Future<void> click(String text, [LogicalKeyboardKey? modifier]) async {
+        if (modifier != null) await tester.sendKeyDownEvent(modifier);
+        await tester.tap(find.text(text));
+        if (modifier != null) await tester.sendKeyUpEvent(modifier);
+        // Past the double click timeout, so the next click is a new one.
+        await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 50));
+      }
+
+      await click('riga 2');
+      expect(sel, {1});
+      await click('riga 4', LogicalKeyboardKey.shiftLeft);
+      expect(sel, {1, 2, 3}, reason: '⇧-click selects the range from the anchor');
+      await click('riga 1', LogicalKeyboardKey.metaLeft);
+      expect(sel, {0, 1, 2, 3}, reason: '⌘-click adds a row');
+      await click('riga 3', LogicalKeyboardKey.metaLeft);
+      expect(sel, {0, 1, 3}, reason: '⌘-click removes a selected row');
+      expect(opened, isNull, reason: 'clicks apart are not a double click');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      expect(copied, '1\triga 1\n2\triga 2\n4\triga 4', reason: '⌘C copies the rows in order, tab-separated');
+
+      await click('riga 5');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(sel, {2, 3, 4}, reason: '⇧↑ extends from the anchor');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(sel, {3}, reason: 'an arrow alone moves a single selection');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+      expect(sel, {0, 1, 2, 3, 4});
+
+      await tester.tap(find.text('riga 3'), buttons: kSecondaryButton);
+      await tester.pump();
+      expect(sel, {0, 1, 2, 3, 4}, reason: 'right click on a selected row keeps the selection');
+      expect(menuRow, 2);
+      await click('riga 1');
+      await tester.tap(find.text('riga 3'), buttons: kSecondaryButton);
+      await tester.pump();
+      expect(sel, {2}, reason: 'right click elsewhere selects that row');
+
+      await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 50));
+      await tester.tap(find.text('riga 2'));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.text('riga 2'));
+      expect(opened, 1);
+      expect(sel, {1});
+      opened = null;
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(opened, 1, reason: 'Invio opens the current row');
+      await tester.pump(kDoubleTapTimeout);
+    });
+
+    testWidgets('emphasized selection: solid accent with focus, muted without', (tester) async {
+      final other = FocusNode();
+      addTearDown(other.dispose);
+      await tester.pumpWidget(
+        _app(
+          Column(
+            children: [
+              Focus(focusNode: other, child: const SizedBox(height: 10)),
+              Expanded(
+                child: MacTable(
+                  headers: const ['nome'],
+                  rowCount: 2,
+                  cell: (r, _) => 'riga ${r + 1}',
+                  selection: const {0},
+                  onSelectionChanged: (_) {},
+                  emphasizeSelection: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      final c = DbColors.of(tester.element(find.byType(MacTable)));
+      expect(fill(tester, 'riga 1'), Color.alphaBlend(c.selectionMuted, c.content));
+      // The selection is fixed here: the click only focuses the table.
+      await tester.tap(find.text('riga 2'));
+      await tester.pump();
+      expect(fill(tester, 'riga 1'), Color.alphaBlend(c.selectionEmphasized, c.content));
+      expect(tester.widget<Text>(find.text('riga 1')).style?.color, c.onSelectionEmphasized);
+      other.requestFocus();
+      await tester.pump();
+      await tester.pump();
+      expect(fill(tester, 'riga 1'), Color.alphaBlend(c.selectionMuted, c.content));
+      await tester.pump(kDoubleTapTimeout);
+    });
+
+    testWidgets('cell tint, header icon and footer', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          SizedBox(
+            width: 400,
+            height: 200,
+            child: MacTable(
+              headers: const ['id', 'nome'],
+              rowCount: 2,
+              cell: (r, c) => c == 0 ? '${r + 1}' : 'riga ${r + 1}',
+              cellTint: (r, c) => r == 1 && c == 1 ? const Color(0x38FF9500) : null,
+              headerLeading: (c) => c == 0 ? const Icon(AppIcons.key, size: 11) : null,
+              footer: const Text('Carica altri'),
+            ),
+          ),
+        ),
+      );
+      expect(fill(tester, 'riga 2'), const Color(0x38FF9500));
+      expect(fill(tester, '2'), isNot(const Color(0x38FF9500)));
+      expect(find.descendant(of: find.byType(TableHeaderCell), matching: find.byIcon(AppIcons.key)), findsOneWidget);
+      expect(find.text('Carica altri'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Carica altri')).dy,
+        greaterThan(tester.getBottomLeft(find.text('riga 2')).dy),
+      );
+    });
+
+    testWidgets('flex columns share the width left by the fixed ones', (tester) async {
+      Widget table(double w) => _app(
+        Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: w,
+            child: MacTable(
+              headers: const ['nome', 'a', 'b'],
+              rowCount: 1,
+              cell: (_, c) => 'x',
+              shrinkWrap: true,
+              resizable: false,
+              width: (c) => c == 0 ? 100 : 60,
+              flex: (c) => c == 0 ? null : c.toDouble(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(table(400));
+      expect(width(tester, 'nome'), 100);
+      expect(width(tester, 'a'), closeTo(100, 0.01));
+      expect(width(tester, 'b'), closeTo(200, 0.01));
+      await tester.pumpWidget(table(200));
+      expect(width(tester, 'a'), 60, reason: 'width is the minimum of a flex column');
+      expect(width(tester, 'b'), closeTo(66.67, 0.01));
+    });
+
+    testWidgets('wrap: long cells wrap and the row grows', (tester) async {
+      const long = 'una descrizione molto lunga che non entra in una sola riga della colonna';
+      Widget table({required bool wrap}) => _app(
+        Align(
+          alignment: Alignment.topLeft,
+          child: MacTable(
+            headers: const ['nome', 'nota'],
+            rowCount: 2,
+            cell: (r, c) => c == 0 ? 'riga ${r + 1}' : (r == 0 ? long : 'breve'),
+            width: (c) => c == 0 ? 120 : 160,
+            shrinkWrap: true,
+            wrap: wrap,
+          ),
+        ),
+      );
+      double rowHeight(String text) =>
+          tester.getSize(find.ancestor(of: find.text(text), matching: find.byType(RowTint)).first).height;
+      await tester.pumpWidget(table(wrap: false));
+      expect(rowHeight('riga 1'), GridMetrics.row);
+      await tester.pumpWidget(table(wrap: true));
+      expect(rowHeight('riga 1'), greaterThan(GridMetrics.row * 2));
+      // 24 with SF; the test font's line is 1pt taller.
+      expect(rowHeight('riga 2'), closeTo(GridMetrics.row, 1), reason: 'a one-line row keeps its height');
+      expect(tester.getTopLeft(find.text('riga 1')).dy, tester.getTopLeft(find.text(long)).dy, reason: 'top aligned');
+    });
+  });
+
+  testWidgets('record view: a double click on a field opens it', (tester) async {
+    final opened = <int>[];
+    await tester.pumpWidget(
+      _app(
+        SingleChildScrollView(
+          child: RecordView(
+            fields: const [RecordField('id', '20'), RecordField('nome', 'Annalisa')],
+            onFieldDoubleTap: opened.add,
+          ),
+        ),
+      ),
+    );
+    Finder value(String text) => find.byWidgetPredicate((w) => w is SelectableText && w.data == text);
+    await tester.tap(value('Annalisa'));
+    await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 50));
+    await tester.tap(value('Annalisa'));
+    expect(opened, isEmpty, reason: 'two clicks apart');
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(value('Annalisa'));
+    expect(opened, [1]);
+    await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 50));
+    await tester.tap(find.text('id'));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('id'));
+    expect(opened, [1, 0], reason: 'the name opens the field too');
+    await tester.pump(kDoubleTapTimeout);
+  });
+
+  testWidgets('list row: the hover accessory shows only under the pointer', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        ListRow(
+          title: 'demo_pg',
+          trailing: const Text('dot'),
+          trailingOnHover: LinkButton(label: 'Apri', small: true, onPressed: () {}),
+          onTap: () {},
+        ),
+      ),
+    );
+    bool shown() =>
+        tester.widget<Visibility>(find.ancestor(of: find.text('Apri'), matching: find.byType(Visibility))).visible;
+    final before = tester.getTopLeft(find.text('dot'));
+    expect(shown(), isFalse);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: tester.getCenter(find.text('demo_pg')));
+    await tester.pump();
+    expect(shown(), isTrue);
+    expect(tester.getTopLeft(find.text('dot')), before, reason: 'the space is kept');
+    await mouse.moveTo(const Offset(1000, 1000));
+    await tester.pump();
+    expect(shown(), isFalse);
+  });
+
+  testWidgets('outline row: leading sits before the icon, or replaces a missing one', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        Column(
+          children: [
+            OutlineRow(
+              title: 'clienti',
+              icon: AppIcons.table,
+              leading: MacCheckbox(value: true, onChanged: (_) {}),
+            ),
+            const OutlineRow(title: 'ordini.sql', leading: Text('M')),
+          ],
+        ),
+      ),
+    );
+    final box = tester.getRect(find.byType(MacCheckbox));
+    final icon = tester.getRect(find.byIcon(AppIcons.table));
+    expect(box.right, lessThanOrEqualTo(icon.left), reason: 'checkbox, then the icon');
+    expect(icon.right, lessThan(tester.getTopLeft(find.text('clienti')).dx));
+    expect(tester.getTopLeft(find.text('M')).dx, lessThan(tester.getTopLeft(find.text('ordini.sql')).dx));
+  });
 }

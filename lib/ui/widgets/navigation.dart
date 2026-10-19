@@ -243,7 +243,7 @@ class WindowTabBar extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class PaneTab<T> {
-  const PaneTab(this.value, this.label, {this.count, this.icon, this.onClose, this.tooltip});
+  const PaneTab(this.value, this.label, {this.count, this.icon, this.iconColor, this.onClose, this.tooltip});
 
   final T value;
   final String label;
@@ -252,14 +252,18 @@ class PaneTab<T> {
   final Object? count;
   final IconData? icon;
 
-  /// Shows ⓧ on hover.
+  /// Tints [icon] (`danger` for a result in error); the label color
+  /// otherwise.
+  final Color? iconColor;
+
+  /// Shows ⓧ on hover; a middle click closes the tab too.
   final VoidCallback? onClose;
   final String? tooltip;
 }
 
 /// Tabs inside a pane (result sets, Output / Log): small recessed buttons
-/// as in a scope bar, with a [CountBadge] and a ⓧ on hover, in a `subbar`
-/// strip (unless [bar] is false).
+/// as in a scope bar, with a [CountBadge] and a ⓧ on hover (or a middle
+/// click) to close, in a `subbar` strip (unless [bar] is false).
 class PaneTabs<T> extends StatelessWidget {
   const PaneTabs({
     super.key,
@@ -332,63 +336,67 @@ class _PaneTabButtonState<T> extends State<_PaneTabButton<T>> {
     final c = DbColors.of(context);
     final t = widget.tab;
     final selected = widget.selected;
+    final close = t.onClose;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: Pressable(
-        onPressed: widget.onTap,
-        toggled: selected,
-        tooltip: t.tooltip,
-        semanticLabel: t.label,
-        builder: (context, s) {
-          Color? bg;
-          if (selected || s.contains(WidgetState.pressed)) {
-            bg = c.pressed;
-          } else if (s.contains(WidgetState.hovered)) {
-            bg = c.hover;
-          }
-          final fg = selected ? c.text : c.textSecondary;
-          return FocusRing(
-            visible: s.contains(WidgetState.focused),
-            child: Container(
-              height: ControlSize.small,
-              padding: EdgeInsets.only(left: 8, right: t.onClose == null ? 8 : 4),
-              decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.control)),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (t.icon != null) ...[Icon(t.icon, size: 13, color: fg), const SizedBox(width: 5)],
-                  Text(
-                    t.label,
-                    style: uiText(TypeSize.small, color: fg, weight: selected ? FontWeight.w500 : null),
-                  ),
-                  if (t.count != null) ...[const SizedBox(width: 5), CountBadge(t.count!)],
-                  if (t.onClose != null) ...[
-                    const SizedBox(width: 2),
-                    SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: _hover
-                          ? Pressable(
-                              onPressed: t.onClose,
-                              focusable: false,
-                              tooltip: 'Chiudi',
-                              builder: (context, cs) => Container(
-                                decoration: BoxDecoration(
-                                  color: cs.contains(WidgetState.hovered) ? c.pressed : null,
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                                child: Icon(AppIcons.close, size: 9, color: c.textSecondary),
-                              ),
-                            )
-                          : null,
+      child: GestureDetector(
+        onTertiaryTapUp: close == null ? null : (_) => close(),
+        child: Pressable(
+          onPressed: widget.onTap,
+          toggled: selected,
+          tooltip: t.tooltip,
+          semanticLabel: t.label,
+          builder: (context, s) {
+            Color? bg;
+            if (selected || s.contains(WidgetState.pressed)) {
+              bg = c.pressed;
+            } else if (s.contains(WidgetState.hovered)) {
+              bg = c.hover;
+            }
+            final fg = selected ? c.text : c.textSecondary;
+            return FocusRing(
+              visible: s.contains(WidgetState.focused),
+              child: Container(
+                height: ControlSize.small,
+                padding: EdgeInsets.only(left: 8, right: t.onClose == null ? 8 : 4),
+                decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(Radii.control)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (t.icon != null) ...[Icon(t.icon, size: 13, color: t.iconColor ?? fg), const SizedBox(width: 5)],
+                    Text(
+                      t.label,
+                      style: uiText(TypeSize.small, color: fg, weight: selected ? FontWeight.w500 : null),
                     ),
+                    if (t.count != null) ...[const SizedBox(width: 5), CountBadge(t.count!)],
+                    if (t.onClose != null) ...[
+                      const SizedBox(width: 2),
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: _hover
+                            ? Pressable(
+                                onPressed: t.onClose,
+                                focusable: false,
+                                tooltip: 'Chiudi',
+                                builder: (context, cs) => Container(
+                                  decoration: BoxDecoration(
+                                    color: cs.contains(WidgetState.hovered) ? c.pressed : null,
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Icon(AppIcons.close, size: 9, color: c.textSecondary),
+                                ),
+                              )
+                            : null,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -463,6 +471,9 @@ class SidebarTabs<T> extends StatelessWidget {
 
 /// Pages of an editor (NSTabView, top tabs): a [Segmented] centered on the
 /// hairline that separates the header from the page below.
+///
+/// [trailing] sits right after the control, on the same backing (the
+/// "Dettagli" pull-down of the simple table editor).
 class PageSwitcher<T> extends StatelessWidget {
   const PageSwitcher({
     super.key,
@@ -471,6 +482,7 @@ class PageSwitcher<T> extends StatelessWidget {
     required this.onChanged,
     this.background,
     this.small = false,
+    this.trailing,
   });
 
   final T value;
@@ -482,10 +494,14 @@ class PageSwitcher<T> extends StatelessWidget {
   final Color? background;
   final bool small;
 
+  /// Accessory after the [Segmented] (a [PulldownButton]).
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final h = small ? ControlSize.small : ControlSize.regular;
+    final Widget control = Segmented<T>(value: value, items: items, onChanged: onChanged, small: small);
     return SizedBox(
       height: h,
       width: double.infinity,
@@ -498,7 +514,16 @@ class PageSwitcher<T> extends StatelessWidget {
               color: background ?? c.content,
               borderRadius: BorderRadius.circular(Radii.control),
             ),
-            child: Segmented<T>(value: value, items: items, onChanged: onChanged, small: small),
+            child: trailing == null
+                ? control
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      control,
+                      const SizedBox(width: Gap.sm),
+                      trailing!,
+                    ],
+                  ),
           ),
         ],
       ),

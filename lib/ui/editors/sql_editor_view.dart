@@ -152,7 +152,8 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       items: app.connections,
       label: (x) => x.config.name,
       detail: (x) => x.isConnected ? 'Connessa · ${x.config.subtitle}' : x.config.subtitle,
-      icon: (x) => x.isConnected ? AppIcons.connect : AppIcons.database,
+      icon: (x) => x.config.icon,
+      iconColor: (x) => x.config.color,
       choose: 'Esegui',
     );
   }
@@ -575,6 +576,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
                       : results[i].model != null
                           ? AppIcons.rows
                           : AppIcons.insights,
+                  iconColor: results[i].error != null ? c.danger : null,
                   onClose: () => tab.closeResult(i),
                 ),
               PaneTab(-1, 'Output', icon: AppIcons.terminal, count: tab.serverOutput.isEmpty ? null : tab.serverOutput.length),

@@ -912,37 +912,30 @@ class _ErDiagramViewState extends State<ErDiagramView> {
       ? EmptyState(icon: AppIcons.disconnect, title: _error!)
       : EmptyState.error(_error!, title: 'Impossibile leggere lo schema');
 
-  /// Pending-changes bar under the canvas: a [PaneBar] with the hairline on
-  /// top, since it closes the pane.
-  Widget _footer(DbColors c, int count) => Column(
-    mainAxisSize: MainAxisSize.min,
+  /// Pending-changes bar under the canvas.
+  Widget _footer(DbColors c, int count) => PaneBar.footer(
+    padding: const EdgeInsets.symmetric(horizontal: Gap.md),
     children: [
-      Container(height: 0.5, color: c.separator),
-      PaneBar(
-        padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-        children: [
-          Icon(AppIcons.script, size: 16, color: count > 0 ? c.warning : c.textTertiary),
-          const SizedBox(width: Gap.sm),
-          Text(
-            count == 0 ? 'Nessuna modifica' : (count == 1 ? '1 modifica' : '$count modifiche'),
-            style: uiText(TypeSize.body, color: count > 0 ? c.text : c.textSecondary, features: kTabular),
-          ),
-          if (widget.connection.config.readOnly) ...[const SizedBox(width: Gap.md), const Tag('sola lettura')],
-          const Spacer(),
-          ToolButton(
-            icon: AppIcons.undo,
-            label: 'Annulla modifiche',
-            tooltip: 'Scarta tutte le modifiche non applicate',
-            onPressed: count > 0 ? _discardAll : null,
-          ),
-          const SizedBox(width: Gap.sm),
-          PushButton.primary(
-            label: 'Rivedi script…',
-            icon: AppIcons.document,
-            size: ControlScale.small,
-            onPressed: count > 0 ? _review : null,
-          ),
-        ],
+      Icon(AppIcons.script, size: 16, color: count > 0 ? c.warning : c.textTertiary),
+      const SizedBox(width: Gap.sm),
+      Text(
+        count == 0 ? 'Nessuna modifica' : (count == 1 ? '1 modifica' : '$count modifiche'),
+        style: uiText(TypeSize.body, color: count > 0 ? c.text : c.textSecondary, features: kTabular),
+      ),
+      if (widget.connection.config.readOnly) ...[const SizedBox(width: Gap.md), const Tag('sola lettura')],
+      const Spacer(),
+      ToolButton(
+        icon: AppIcons.undo,
+        label: 'Annulla modifiche',
+        tooltip: 'Scarta tutte le modifiche non applicate',
+        onPressed: count > 0 ? _discardAll : null,
+      ),
+      const SizedBox(width: Gap.sm),
+      PushButton.primary(
+        label: 'Rivedi script…',
+        icon: AppIcons.document,
+        size: ControlScale.small,
+        onPressed: count > 0 ? _review : null,
       ),
     ],
   );
@@ -1099,7 +1092,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
               ),
             ),
             const SizedBox(width: Gap.xs),
-            TypeLabel(col.fullType.toLowerCase(), mono: true),
+            TypeLabel(col.fullType.toLowerCase(), mono: true, color: markColor),
           ],
         ),
       ),

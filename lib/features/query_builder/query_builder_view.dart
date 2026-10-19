@@ -496,7 +496,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
   Widget _tableItem(DbTable t) => Draggable<DbTable>(
     data: t,
     dragAnchorStrategy: pointerDragAnchorStrategy,
-    feedback: _DragChip(label: t.name, icon: t.isView ? AppIcons.erDiagram : AppIcons.table),
+    feedback: DragChip(label: t.name, icon: t.isView ? AppIcons.erDiagram : AppIcons.table),
     child: ListRow(
       title: t.name,
       icon: t.isView ? AppIcons.erDiagram : AppIcons.table,
@@ -727,7 +727,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
         child: Draggable<_ColumnRef>(
           data: ref,
           dragAnchorStrategy: pointerDragAnchorStrategy,
-          feedback: _DragChip(label: '${t.alias}.${col.name}', icon: AppIcons.link),
+          feedback: DragChip(label: '${t.alias}.${col.name}', icon: AppIcons.link),
           child: Tooltip(
             message: 'Trascina su una colonna di un\'altra tabella per creare un join',
             child: GestureDetector(
@@ -1035,39 +1035,6 @@ class _GridTextState extends State<_GridText> {
   @override
   Widget build(BuildContext context) =>
       MacTextField(controller: _ctrl, hint: widget.hint, small: true, mono: widget.mono, onChanged: widget.onChanged);
-}
-
-/// Drag feedback: a raised capsule with an icon and a label.
-class _DragChip extends StatelessWidget {
-  const _DragChip({required this.label, this.icon});
-
-  final String label;
-  final IconData? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Material(
-      type: MaterialType.transparency,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(ControlSize.regular / 2),
-          boxShadow: Elevation.menu(Theme.of(context).brightness),
-        ),
-        child: Capsule(
-          height: ControlSize.regular,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[Icon(icon, size: 14, color: c.accent), const SizedBox(width: 6)],
-              Text(label, style: uiText(TypeSize.small, color: c.text)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// Join lines between column rows.

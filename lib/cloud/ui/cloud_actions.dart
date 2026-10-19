@@ -337,27 +337,26 @@ Future<DbConnection?> _pickConnection(BuildContext context, AppState app) async 
     label: (dc) => dc.config.name,
     detail: (dc) => dc.config.subtitle,
     icon: (dc) => dc.config.icon,
+    iconColor: (dc) => dc.config.color,
   );
 }
 
-/// Lists the tables (not views) of the current catalog, then asks one.
-Future<DbTable?> _pickTable(BuildContext context, DbConnection dc) async {
-  List<DbTable>? tables;
-  final ok = await guarded(context, () async {
-    final m = dc.metadata!;
-    tables = (await m.tables(m.currentCatalog, null)).where((t) => !t.isView).toList();
-  }, title: 'Tabelle non disponibili');
-  if (!ok || !context.mounted) return null;
-  if (tables!.isEmpty) {
-    showToast(context, 'Nessuna tabella in ${dc.config.name}', error: true);
-    return null;
-  }
+/// Asks one of the tables (not views) of the current catalog, listed while
+/// the picker is open.
+Future<DbTable?> _pickTable(BuildContext context, DbConnection dc) {
+  final accent = DbColors.of(context).accent;
   return showListPicker<DbTable>(
     context,
     title: 'Importa in una tabella di ${dc.config.name}',
-    items: tables!,
+    load: () async {
+      final m = dc.metadata!;
+      return (await m.tables(m.currentCatalog, null)).where((t) => !t.isView).toList();
+    },
     label: (t) => t.displayPath,
     icon: (_) => AppIcons.table,
+    iconColor: (_) => accent,
     searchHint: 'Filtra tabelle',
+    empty: 'Nessuna tabella in ${dc.config.name}',
+    loadError: 'Tabelle non disponibili',
   );
 }

@@ -267,7 +267,6 @@ void main() {
       expect(prod.isConnected, isFalse);
       expect(find.widgetWithText(ActivityView, 'SQL Server Produzione'), findsOneWidget);
       expect(state.activeConnection, same(prod));
-      await tester.pump(const Duration(seconds: 1));
     }, variant: _mac);
   });
 }

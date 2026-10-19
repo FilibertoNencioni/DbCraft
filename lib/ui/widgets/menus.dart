@@ -59,9 +59,10 @@ enum _EntryKind { item, divider, header, submenu }
 /// One row of a [showMacMenu] menu.
 ///
 /// Items carry a [value] (returned by [showMacMenu]) and/or an [onSelected]
-/// callback (run after the menu closes). Sonoma menus show state, not icons:
-/// [checked] puts a ✓ in the left column; [leading] is reserved for small
-/// state marks such as a connection's status dot.
+/// callback (run after the menu closes). Sonoma menus show state, not action
+/// icons: [checked] puts a ✓ in the left column. [leading] has its own column
+/// after it, for small state marks (a connection's status dot) and for the
+/// images of value menus (driver icons in a pop-up), as NSPopUpButton does.
 class MenuEntry<T> {
   const MenuEntry(
     this.label, {
@@ -155,6 +156,9 @@ const double _kItemHeight = 22;
 const double _kDividerHeight = 11;
 const double _kMenuPadding = 5;
 const double _kCheckColumn = 18;
+
+/// Icon or status mark before the label (16pt glyph plus a gap).
+const double _kLeadingColumn = 22;
 const double _kScreenMargin = 6;
 
 /// Global rect of the widget that owns [context] (anchor for menus and
@@ -526,7 +530,8 @@ class _MenuPanel<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = level.entries;
-    final checkColumn = entries.any((e) => e.checked || e.leading != null);
+    final checkColumn = entries.any((e) => e.checked);
+    final leadingColumn = entries.any((e) => e.leading != null);
     return Container(
       decoration: menuDecoration(context),
       constraints: const BoxConstraints(minWidth: 120),
@@ -544,6 +549,7 @@ class _MenuPanel<T> extends StatelessWidget {
                     entry: entries[i],
                     highlighted: level.highlight == i,
                     checkColumn: checkColumn,
+                    leadingColumn: leadingColumn,
                     onHover: () => onHover(i),
                     onTap: () => entries[i]._kind == _EntryKind.submenu ? onOpenSubmenu(i) : onChoose(entries[i]),
                   ),
@@ -562,6 +568,7 @@ class _MenuRow<T> extends StatelessWidget {
     required this.entry,
     required this.highlighted,
     required this.checkColumn,
+    required this.leadingColumn,
     required this.onHover,
     required this.onTap,
   });
@@ -569,8 +576,12 @@ class _MenuRow<T> extends StatelessWidget {
   final MenuEntry<T> entry;
   final bool highlighted;
   final bool checkColumn;
+  final bool leadingColumn;
   final VoidCallback onHover;
   final VoidCallback onTap;
+
+  /// Where the label starts: after the check column and the leading column.
+  double get _labelInset => (checkColumn ? _kCheckColumn + 2 : 9) + (leadingColumn ? _kLeadingColumn : 0);
 
   @override
   Widget build(BuildContext context) {
@@ -585,7 +596,7 @@ class _MenuRow<T> extends StatelessWidget {
         return Container(
           height: _kItemHeight,
           alignment: Alignment.centerLeft,
-          padding: EdgeInsets.only(left: checkColumn ? _kCheckColumn + 2 : 9, right: 9),
+          padding: EdgeInsets.only(left: _labelInset, right: 9),
           child: Text(entry.label, style: uiText(TypeSize.caption, weight: FontWeight.w600, color: c.textSecondary)),
         );
       case _EntryKind.item:
@@ -621,14 +632,15 @@ class _MenuRow<T> extends StatelessWidget {
               children: [
                 SizedBox(
                   width: checkColumn ? _kCheckColumn + 2 : 9,
-                  child: !checkColumn
-                      ? null
-                      : Center(
-                          child: entry.checked
-                              ? Icon(AppIcons.check, size: 12, color: fg)
-                              : entry.leading,
-                        ),
+                  child: checkColumn && entry.checked ? Center(child: Icon(AppIcons.check, size: 12, color: fg)) : null,
                 ),
+                if (leadingColumn)
+                  SizedBox(
+                    width: _kLeadingColumn,
+                    child: entry.leading == null
+                        ? null
+                        : Align(alignment: Alignment.centerLeft, child: entry.leading),
+                  ),
                 Expanded(
                   child: Text(
                     entry.label,

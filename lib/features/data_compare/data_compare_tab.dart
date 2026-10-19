@@ -600,14 +600,9 @@ class _DataCompareViewState extends State<_DataCompareView> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Inspector-style configuration pane.
-              Container(
-                width: 320,
-                decoration: BoxDecoration(
-                  color: c.windowBackground,
-                  border: Border(right: BorderSide(color: c.separator, width: 0.5)),
-                ),
-                child: AbsorbPointer(absorbing: tab.running, child: _config(c)),
+              AbsorbPointer(
+                absorbing: tab.running,
+                child: Inspector(width: 320, side: InspectorSide.start, children: _config(c)),
               ),
               Expanded(child: _results(c)),
             ],
@@ -686,12 +681,11 @@ class _DataCompareViewState extends State<_DataCompareView> {
         onChanged: onChanged,
       );
 
-  Widget _side(DbColors c, String title, CompareSide side) {
+  Widget _side(DbColors c, CompareSide side) {
     final app = AppScope.of(context);
     final md = side.conn?.metadata;
     final enabled = !side.loading;
     return FormGroup(
-      title: title,
       footer: side.error,
       children: [
         FormRow(
@@ -754,7 +748,6 @@ class _DataCompareViewState extends State<_DataCompareView> {
     final common = tab.commonColumns;
     if (common.isEmpty) {
       return FormGroup(
-        title: 'Colonne',
         children: [
           Text(
             tab.src.table == null || tab.tgt.table == null
@@ -769,7 +762,6 @@ class _DataCompareViewState extends State<_DataCompareView> {
     final cmp = {for (final k in tab.compareColumns) k.toLowerCase()};
     final onlyS = tab.onlySourceColumns, onlyT = tab.onlyTargetColumns;
     return FormGroup(
-      title: 'Colonne',
       footer: [
         'Chiave: ${tab.keyColumns.isEmpty ? 'nessuna (scegline almeno una)' : tab.keyColumns.join(', ')}',
         if (onlyS.isNotEmpty) 'Solo in origine: ${onlyS.join(', ')}',
@@ -831,60 +823,61 @@ class _DataCompareViewState extends State<_DataCompareView> {
   Widget _checkRow(String label, bool value, ValueChanged<bool> onChanged, {String? help}) =>
       CheckboxRow(label: label, help: help, value: value, onChanged: (v) => tab.setOption(() => onChanged(v)));
 
-  Widget _config(DbColors c) {
+  List<Widget> _config(DbColors c) {
     final cap = tab.rowCapValue;
-    return ListView(
-      padding: const EdgeInsets.all(Gap.md),
-      children: [
-        _side(c, 'Origine', tab.src),
-        _side(c, 'Destinazione', tab.tgt),
-        _columnsGroup(c),
-        FormGroup(
-          title: 'Opzioni',
-          footer: cap <= 0 || cap > _defaultRowCap
-              ? 'Oltre ${_n(_defaultRowCap)} righe per lato il confronto può richiedere molta memoria e tempo.'
-              : null,
-          children: [
-            _checkRow('Ignora spazi iniziali e finali', tab.trimStrings, (v) => tab.trimStrings = v),
-            _checkRow('Ignora maiuscole/minuscole', tab.ignoreCase, (v) => tab.ignoreCase = v),
-            _checkRow('NULL uguale a stringa vuota', tab.nullEqualsEmpty, (v) => tab.nullEqualsEmpty = v),
-            _checkRow(
-              'Normalizza date e ore',
-              tab.normalizeDates,
-              (v) => tab.normalizeDates = v,
-              help: '2024-01-02 00:00:00 = 2024-01-02',
-            ),
-            CheckboxRow(
-              label: 'Ordinamento indipendente dal DB',
-              help: 'Confronto in memoria: necessario con collation diverse',
-              value: tab.orderIndependent,
-              onChanged: tab.setOrderIndependent,
-            ),
-            FormRow(
-              label: 'Tolleranza numerica',
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: NumberField(controller: tab.tolerance, min: 0, step: 0.01, decimals: 4),
+    return [
+      InspectorSection(title: 'Origine', children: [_side(c, tab.src)]),
+      InspectorSection(title: 'Destinazione', children: [_side(c, tab.tgt)]),
+      InspectorSection(title: 'Colonne', children: [_columnsGroup(c)]),
+      InspectorSection(
+        title: 'Opzioni',
+        children: [
+          FormGroup(
+            footer: cap <= 0 || cap > _defaultRowCap
+                ? 'Oltre ${_n(_defaultRowCap)} righe per lato il confronto può richiedere molta memoria e tempo.'
+                : null,
+            children: [
+              _checkRow('Ignora spazi iniziali e finali', tab.trimStrings, (v) => tab.trimStrings = v),
+              _checkRow('Ignora maiuscole/minuscole', tab.ignoreCase, (v) => tab.ignoreCase = v),
+              _checkRow('NULL uguale a stringa vuota', tab.nullEqualsEmpty, (v) => tab.nullEqualsEmpty = v),
+              _checkRow(
+                'Normalizza date e ore',
+                tab.normalizeDates,
+                (v) => tab.normalizeDates = v,
+                help: '2024-01-02 00:00:00 = 2024-01-02',
               ),
-            ),
-            FormRow(
-              label: 'Righe massime per lato',
-              help: '0 = nessun limite',
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: NumberField(
-                  controller: tab.rowCap,
-                  min: 0,
-                  step: 10000,
-                  width: 100,
-                  onChanged: (_) => setState(() {}),
+              CheckboxRow(
+                label: 'Ordinamento indipendente dal DB',
+                help: 'Confronto in memoria: necessario con collation diverse',
+                value: tab.orderIndependent,
+                onChanged: tab.setOrderIndependent,
+              ),
+              FormRow(
+                label: 'Tolleranza numerica',
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: NumberField(controller: tab.tolerance, min: 0, step: 0.01, decimals: 4),
                 ),
               ),
-            ),
-          ],
-        ),
-      ],
-    );
+              FormRow(
+                label: 'Righe massime per lato',
+                help: '0 = nessun limite',
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: NumberField(
+                    controller: tab.rowCap,
+                    min: 0,
+                    step: 10000,
+                    width: 100,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ];
   }
 
   // -------------------------------------------------------------------------
@@ -918,7 +911,8 @@ class _DataCompareViewState extends State<_DataCompareView> {
     // Column widths from the names and a sample of values.
     final widths = <double>[];
     for (var j = 0; j < r.columns.length; j++) {
-      var w = r.columns[j].length * 7.5 + 28;
+      // Key columns also have the key icon before the name.
+      var w = r.columns[j].length * 7.5 + 28 + (j < r.keyCount ? 15 : 0);
       for (var i = 0; i < min(200, r.rows.length); i++) {
         final v = formatValue(r.rows[i].values[j], nullText: 'NULL', maxLen: 40);
         w = max(w, v.length * 7.2 + 16);
@@ -971,7 +965,16 @@ class _DataCompareViewState extends State<_DataCompareView> {
         Padding(
           padding: const EdgeInsets.all(Gap.md),
           child: ScopeBar<RowDiff>(
-            items: [for (final k in RowDiff.values) ScopeItem(k, k.plural, dot: _kindColor(c, k), count: r.count(k))],
+            items: [
+              for (final k in RowDiff.values)
+                ScopeItem(
+                  k,
+                  k.plural,
+                  dot: _kindColor(c, k),
+                  count: r.count(k),
+                  tooltip: '${tab.filter.contains(k) ? 'Nascondi' : 'Mostra'}: ${k.plural.toLowerCase()}',
+                ),
+            ],
             selected: tab.filter,
             onChanged: (v) => tab.setOption(() => tab.filter = v),
           ),
@@ -1022,9 +1025,13 @@ class _DataCompareViewState extends State<_DataCompareView> {
       // Both lines of a differing row share the zebra stripe.
       rowTint: (i) => _lines[i].row.isOdd ? c.zebra : c.content,
       rowStatus: (i) => _lines[i].targetLine ? null : _kindColor(c, r.rows[_lines[i].row].kind),
-      types: (j) => j > 0 && j <= r.keyCount ? 'chiave' : null,
+      headerLeading: (j) => j > 0 && j <= r.keyCount ? Icon(AppIcons.key, size: 11, color: c.keyIcon) : null,
       width: (j) => j == 0 ? 150 : _widths[j - 1],
       numeric: (j) => j > 0 && _numeric[j - 1],
+      // A changed value: diffChanged behind the cell, as in the data grid.
+      cellTint: (i, j) => j > 0 && r.rows[_lines[i].row].diffColumns.contains(j - 1)
+          ? c.diffChanged.withValues(alpha: Tint.strong)
+          : null,
       cell: (i, j) => j == 0 ? _status(_lines[i], r) : _text(_values(_lines[i], r)[j - 1]),
       cellBuilder: (context, i, j) {
         final l = _lines[i];
@@ -1041,18 +1048,7 @@ class _DataCompareViewState extends State<_DataCompareView> {
             ),
           );
         }
-        final v = _values(l, r)[j - 1];
-        final cell = _cell(c, v, dim: l.targetLine && j - 1 < r.keyCount);
-        if (!row.diffColumns.contains(j - 1)) return cell;
-        // Changed value: a diffChanged tint behind the text.
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          decoration: BoxDecoration(
-            color: c.diffChanged.withValues(alpha: Tint.strong),
-            borderRadius: BorderRadius.circular(Radii.small),
-          ),
-          child: cell,
-        );
+        return _cell(c, _values(l, r)[j - 1], dim: l.targetLine && j - 1 < r.keyCount);
       },
     );
   }

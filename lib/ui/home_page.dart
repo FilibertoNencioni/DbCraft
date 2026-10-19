@@ -311,14 +311,19 @@ class _HomePageState extends State<HomePage> {
       ]);
     }
 
-    PlatformMenuItemGroup provided(List<PlatformProvidedMenuItemType> types) => PlatformMenuItemGroup(members: [
-          for (final t in types)
-            if (PlatformProvidedMenuItem.hasMenu(t)) PlatformProvidedMenuItem(type: t),
-        ]);
+    // Null when the platform provides none of [types] (e.g. a non-macOS target
+    // in tests on a Mac host): like toPlatform, never emit an empty group.
+    PlatformMenuItemGroup? provided(List<PlatformProvidedMenuItemType> types) {
+      final members = [
+        for (final t in types)
+          if (PlatformProvidedMenuItem.hasMenu(t)) PlatformProvidedMenuItem(type: t),
+      ];
+      return members.isEmpty ? null : PlatformMenuItemGroup(members: members);
+    }
 
     return [
       PlatformMenu(label: 'DbCraft', menus: [
-        provided([PlatformProvidedMenuItemType.about]),
+        ?provided([PlatformProvidedMenuItemType.about]),
         PlatformMenuItemGroup(members: [
           PlatformMenuItem(
             label: 'Impostazioni…',
@@ -326,13 +331,13 @@ class _HomePageState extends State<HomePage> {
             onSelected: () => showSettingsDialog(context),
           ),
         ]),
-        provided([PlatformProvidedMenuItemType.servicesSubmenu]),
-        provided([
+        ?provided([PlatformProvidedMenuItemType.servicesSubmenu]),
+        ?provided([
           PlatformProvidedMenuItemType.hide,
           PlatformProvidedMenuItemType.hideOtherApplications,
           PlatformProvidedMenuItemType.showAllApplications,
         ]),
-        provided([PlatformProvidedMenuItemType.quit]),
+        ?provided([PlatformProvidedMenuItemType.quit]),
       ]),
       ..._menuSpecs(app).map(toPlatform),
     ];
@@ -972,48 +977,28 @@ class _WelcomeAction extends StatelessWidget {
       );
 }
 
-class _RecentConnection extends StatefulWidget {
+class _RecentConnection extends StatelessWidget {
   const _RecentConnection({required this.dc});
   final DbConnection dc;
 
-  @override
-  State<_RecentConnection> createState() => _RecentConnectionState();
-}
-
-class _RecentConnectionState extends State<_RecentConnection> {
-  bool _hover = false;
-
-  Future<void> _open() async {
+  Future<void> _open(BuildContext context) async {
     final app = AppScope.read(context);
-    app.select(widget.dc);
-    if (await ensureConnected(context, widget.dc)) {
-      await app.openSqlEditor(widget.dc);
+    app.select(dc);
+    if (await ensureConnected(context, dc)) {
+      await app.openSqlEditor(dc);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cfg = widget.dc.config;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: ListRow(
-        icon: cfg.template.icon,
-        title: cfg.name,
-        subtitle: cfg.subtitle,
-        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-          EnvDot(cfg.type.colorOf(DbColors.of(context)), show: cfg.type != ConnectionType.development, tooltip: cfg.type.label),
-          // Keeps the row height steady while the link comes and goes.
-          Visibility.maintain(
-            visible: _hover,
-            child: Padding(
-              padding: const EdgeInsets.only(left: Gap.sm),
-              child: LinkButton(label: 'Apri', small: true, onPressed: _open),
-            ),
-          ),
-        ]),
-        onTap: _open,
-      ),
+    final cfg = dc.config;
+    return ListRow(
+      icon: cfg.template.icon,
+      title: cfg.name,
+      subtitle: cfg.subtitle,
+      trailing: EnvDot(cfg.type.colorOf(DbColors.of(context)), show: cfg.type != ConnectionType.development, tooltip: cfg.type.label),
+      trailingOnHover: LinkButton(label: 'Apri', small: true, onPressed: () => _open(context)),
+      onTap: () => _open(context),
     );
   }
 }

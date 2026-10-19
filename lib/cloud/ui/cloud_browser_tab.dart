@@ -1,7 +1,6 @@
 // Full-size browser of one bucket / container (editor tab): breadcrumbs,
 // table with name / size / modified / class, multi-selection and the same
 // actions as the Cloud Explorer.
-import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -61,11 +60,8 @@ class _CloudBrowserView extends StatefulWidget {
 class _CloudBrowserViewState extends State<_CloudBrowserView> {
   CloudBrowserTab get t => widget.tab;
   final _filter = TextEditingController();
-  final _focus = FocusNode();
   bool _loading = false;
   String? _error;
-  int? _anchor;
-  (int, DateTime)? _lastClick;
   String _sort = 'name';
   bool _asc = true;
 
@@ -78,7 +74,6 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
   @override
   void dispose() {
     _filter.dispose();
-    _focus.dispose();
     super.dispose();
   }
 
@@ -108,7 +103,6 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     t.items = [];
     t.continuation = null;
     t.selection.clear();
-    _anchor = null;
     _reload();
   }
 
@@ -149,44 +143,6 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     });
   }
 
-  void _tap(int index, List<CloudObject> visible) {
-    _focus.requestFocus();
-    final keys = HardwareKeyboard.instance;
-    final o = visible[index];
-    setState(() {
-      if (keys.isShiftPressed && _anchor != null) {
-        final a = _anchor!.clamp(0, visible.length - 1);
-        final lo = a < index ? a : index;
-        final hi = a < index ? index : a;
-        t.selection
-          ..clear()
-          ..addAll(visible.sublist(lo, hi + 1).map((e) => e.key));
-      } else if (keys.isMetaPressed || keys.isControlPressed) {
-        if (!t.selection.remove(o.key)) t.selection.add(o.key);
-        _anchor = index;
-      } else {
-        t.selection
-          ..clear()
-          ..add(o.key);
-        _anchor = index;
-      }
-    });
-  }
-
-  /// Selects on the first click and opens on a second one within the
-  /// double-tap timeout (onDoubleTap would delay every single click).
-  void _click(int index, List<CloudObject> visible) {
-    final now = DateTime.now();
-    final last = _lastClick;
-    final isDouble = last != null && last.$1 == index && now.difference(last.$2) <= kDoubleTapTimeout;
-    _lastClick = isDouble ? null : (index, now);
-    if (isDouble) {
-      _openItem(visible[index]);
-    } else {
-      _tap(index, visible);
-    }
-  }
-
   // -------------------------------------------------------------------------
 
   @override
@@ -199,7 +155,6 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
       child: Column(
         children: [
           _toolbar(sel),
-          _header(),
           Expanded(child: _body(visible)),
           _statusBar(visible, sel),
         ],
@@ -291,51 +246,8 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     return false;
   });
 
-  static const _wIcon = 30.0;
-  static const _wSize = 110.0;
-  static const _wDate = 150.0;
-  static const _wClass = 120.0;
+  static const _columns = ['name', 'size', 'modified', 'class'];
 
-  Widget _header() {
-    final c = DbColors.of(context);
-    Widget h(String label, String key, {double? width, bool right = false, bool last = false}) {
-      final child = TableHeaderCell(
-        label: label,
-        alignEnd: right,
-        sorted: _sort == key ? _asc : null,
-        separator: !last,
-        onTap: () => setState(() {
-          if (_sort == key) {
-            _asc = !_asc;
-          } else {
-            _sort = key;
-            _asc = true;
-          }
-        }),
-      );
-      return width == null ? Expanded(child: child) : SizedBox(width: width, child: child);
-    }
-
-    return Container(
-      height: GridMetrics.header,
-      padding: const EdgeInsets.only(left: _wIcon, right: Gap.sm),
-      decoration: BoxDecoration(
-        color: c.chrome,
-        border: Border(bottom: BorderSide(color: c.separator, width: 0.5)),
-      ),
-      child: Row(
-        children: [
-          h('Nome', 'name'),
-          h('Dimensione', 'size', width: _wSize, right: true),
-          h('Ultima modifica', 'modified', width: _wDate),
-          h('Classe', 'class', width: _wClass, last: true),
-        ],
-      ),
-    );
-  }
-
-  // Rows are drawn here rather than with MacTable, which selects one row
-  // only: the browser needs ⇧/⌘ multi-selection and ⌘A.
   Widget _body(List<CloudObject> visible) {
     final c = DbColors.of(context);
     if (_error != null) {
@@ -353,92 +265,88 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
         message: _filter.text.isEmpty ? 'Usa "Carica file…" per aggiungere file qui.' : 'Modifica il filtro.',
       );
     }
-    final more = t.continuation != null;
-    final focused = _focus.hasFocus;
+    String text(CloudObject o, int col) => switch (col) {
+      0 => o.name,
+      1 => o.isFolder || o.size < 0 ? '' : formatBytes(o.size),
+      2 => _date(o.modified),
+      _ => o.storageClass ?? '',
+    };
+    // Del, ⌘⌫ and F5 reach this Focus when the table leaves them.
     return Focus(
-      focusNode: _focus,
-      onFocusChange: (_) => setState(() {}),
-      onKeyEvent: (_, e) => _onKey(e, visible),
-      child: ListView.builder(
-        itemCount: visible.length + (more ? 1 : 0),
-        itemExtent: GridMetrics.row,
-        itemBuilder: (context, i) {
-          if (i == visible.length) {
-            return Center(
-              child: _loading
-                  ? const Spinner(size: Spinner.small)
-                  : LinkButton(label: 'Carica altri elementi', small: true, onPressed: () => _reload(more: true)),
-            );
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (_, e) => _onKey(e),
+      child: MacTable(
+        headers: const ['Nome', 'Dimensione', 'Ultima modifica', 'Classe'],
+        rowCount: visible.length,
+        cell: (r, col) => text(visible[r], col),
+        flex: (col) => col == 0 ? 1 : null,
+        width: (col) => const [200.0, 110.0, 150.0, 120.0][col],
+        numeric: (col) => col == 1,
+        resizable: false,
+        emphasizeSelection: true,
+        selection: {
+          for (var i = 0; i < visible.length; i++)
+            if (t.selection.contains(visible[i].key)) i,
+        },
+        onSelectionChanged: (rows) => setState(
+          () => t.selection
+            ..clear()
+            ..addAll(rows.map((i) => visible[i].key)),
+        ),
+        onDoubleTap: (r) => _openItem(visible[r]),
+        onContextMenu: (_, _, pos) => _menu(pos),
+        sortColumn: _columns.indexOf(_sort),
+        sortAscending: _asc,
+        onSort: (col) => setState(() {
+          if (_sort == _columns[col]) {
+            _asc = !_asc;
+          } else {
+            _sort = _columns[col];
+            _asc = true;
           }
-          final o = visible[i];
-          final selected = t.selection.contains(o.key);
-          final emphasized = selected && focused && c.windowActive;
-          final Color bg = selected
-              ? (focused ? c.selectionEmphasized : c.selectionMuted)
-              : (i.isOdd ? c.zebra : c.content);
-          final fg = emphasized ? c.onSelectionEmphasized : c.text;
-          final fg2 = emphasized ? c.onSelectionEmphasized.withValues(alpha: 0.8) : c.textSecondary;
-          final cellStyle = uiText(TypeSize.body, color: fg2, features: kTabular);
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _click(i, visible),
-            onSecondaryTapDown: (d) {
-              if (!selected) _tap(i, visible);
-              _menu(d.globalPosition);
-            },
-            child: Container(
-              color: bg,
+        }),
+        leading: (r) {
+          final o = visible[r];
+          return Builder(
+            builder: (context) => Padding(
               padding: const EdgeInsets.only(right: Gap.sm),
-              child: RowTint(
-                background: bg,
-                emphasized: emphasized,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: _wIcon,
-                      child: Icon(
-                        o.isFolder ? AppIcons.folder : cloudFileIcon(o.extension),
-                        size: 16,
-                        color: emphasized ? fg : (o.isFolder ? c.accent : c.textSecondary),
-                      ),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: Gap.sm),
-                        child: Text(
-                          o.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: uiText(TypeSize.body, color: fg),
-                        ),
-                      ),
-                    ),
-                    _cell(_wSize, o.isFolder || o.size < 0 ? '' : formatBytes(o.size), cellStyle, right: true),
-                    _cell(_wDate, _date(o.modified), cellStyle),
-                    _cell(_wClass, o.storageClass ?? '', cellStyle.copyWith(fontSize: TypeSize.small)),
-                  ],
-                ),
+              child: Icon(
+                o.isFolder ? AppIcons.folder : cloudFileIcon(o.extension),
+                size: 16,
+                color: RowTint.emphasizedOf(context)
+                    ? c.onSelectionEmphasized
+                    : (o.isFolder ? c.accent : c.textSecondary),
               ),
             ),
           );
         },
+        // Size, date and class in secondary, as in Finder.
+        cellBuilder: (context, r, col) {
+          if (col == 0) return null;
+          final on = RowTint.emphasizedOf(context);
+          return Text(
+            text(visible[r], col),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: col == 1 ? TextAlign.right : null,
+            style: uiText(
+              col == 3 ? TypeSize.small : TypeSize.body,
+              color: on ? c.onSelectionEmphasized.withValues(alpha: 0.8) : c.textSecondary,
+              features: kTabular,
+            ),
+          );
+        },
+        footer: t.continuation == null
+            ? null
+            : Center(
+                child: _loading
+                    ? const Spinner(size: Spinner.small)
+                    : LinkButton(label: 'Carica altri elementi', small: true, onPressed: () => _reload(more: true)),
+              ),
       ),
     );
   }
-
-  static Widget _cell(double width, String text, TextStyle style, {bool right = false}) => SizedBox(
-    width: width,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: right ? TextAlign.right : null,
-        style: style,
-      ),
-    ),
-  );
 
   static String _date(DateTime? d) {
     if (d == null) return '';
@@ -447,25 +355,15 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     return '${two(l.day)}/${two(l.month)}/${l.year} ${two(l.hour)}:${two(l.minute)}';
   }
 
-  KeyEventResult _onKey(KeyEvent e, List<CloudObject> visible) {
+  KeyEventResult _onKey(KeyEvent e) {
     if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
-    final idx = visible.indexWhere((o) => t.selection.contains(o.key));
     switch (e.logicalKey) {
-      case LogicalKeyboardKey.arrowDown:
-        if (idx + 1 < visible.length) _tap(idx + 1, visible);
-      case LogicalKeyboardKey.arrowUp:
-        if (idx > 0) _tap(idx - 1, visible);
-      case LogicalKeyboardKey.enter:
-        if (idx >= 0) _openItem(visible[idx]);
       case LogicalKeyboardKey.backspace when HardwareKeyboard.instance.isMetaPressed:
       case LogicalKeyboardKey.delete:
         final sel = _selected;
         if (sel.isNotEmpty) _act((s) => cloudDelete(context, s, sel));
       case LogicalKeyboardKey.f5:
         _reload();
-      case LogicalKeyboardKey.keyA
-          when HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed:
-        setState(() => t.selection.addAll(visible.map((o) => o.key)));
       default:
         return KeyEventResult.ignored;
     }

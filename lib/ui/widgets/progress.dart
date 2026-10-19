@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'badges.dart';
 import 'buttons.dart';
 
 // ---------------------------------------------------------------------------
@@ -218,6 +219,9 @@ class LoadingLine extends StatelessWidget {
 
 /// NSLevelIndicator (continuous): 4pt track, radius 2, accent fill that
 /// turns `warning` past [warningAt] and `danger` past [dangerAt].
+///
+/// A null [value] is indeterminate (a transfer of unknown size): a segment
+/// sweeps across the track, still with Reduce Motion.
 class LevelIndicator extends StatelessWidget {
   const LevelIndicator({
     super.key,
@@ -227,10 +231,11 @@ class LevelIndicator extends StatelessWidget {
     this.width,
     this.color,
     this.tooltip,
+    this.semanticLabel,
   });
 
-  /// Fraction in 0..1.
-  final double value;
+  /// Fraction in 0..1, or null when unknown.
+  final double? value;
   final double? warningAt;
   final double? dangerAt;
   final double? width;
@@ -238,26 +243,36 @@ class LevelIndicator extends StatelessWidget {
   /// Fixed fill color (series colors in transfer bars), ignoring thresholds.
   final Color? color;
   final String? tooltip;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
+    final v = value;
     var fill = color ?? c.accent;
-    if (color == null) {
-      if (dangerAt != null && value >= dangerAt!) {
+    if (color == null && v != null) {
+      if (dangerAt != null && v >= dangerAt!) {
         fill = c.danger;
-      } else if (warningAt != null && value >= warningAt!) {
+      } else if (warningAt != null && v >= warningAt!) {
         fill = c.warning;
       }
     }
-    final bar = SizedBox(
+    Widget paint(double? phase) => CustomPaint(
+      painter: _BarPainter(track: c.pressed, fill: fill, value: v, phase: phase, radius: 2),
+      size: Size(width ?? double.infinity, 4),
+    );
+    Widget bar = SizedBox(
       width: width,
       height: 4,
-      child: CustomPaint(
-        painter: _BarPainter(track: c.pressed, fill: fill, value: value, radius: 2),
-        size: Size(width ?? double.infinity, 4),
-      ),
+      child: v == null ? _Sweep(builder: (_, t) => paint(t)) : paint(null),
     );
+    if (semanticLabel != null || v != null) {
+      bar = Semantics(
+        label: semanticLabel,
+        value: v == null ? null : '${(v.clamp(0.0, 1.0) * 100).round()}%',
+        child: bar,
+      );
+    }
     return tooltip == null ? bar : Tooltip(message: tooltip!, child: bar);
   }
 }
@@ -271,6 +286,10 @@ enum StatusKind { busy, info, success, warning, danger }
 /// One line of outcome next to the control that produced it ("Prova
 /// connessione", AI check, installed driver, debugger state): a 14pt icon
 /// (✓, ⚠, ⓧ) or a small [Spinner], 12pt text, optional "Dettagli…" link.
+///
+/// A [dot] replaces the icon with a 7pt [StatusDot] for neutral states that
+/// are neither outcomes nor problems (debugger paused, dashboard live or
+/// suspended); the text stays secondary.
 class StatusLine extends StatelessWidget {
   const StatusLine(
     this.text, {
@@ -280,15 +299,20 @@ class StatusLine extends StatelessWidget {
     this.detailsLabel = 'Dettagli…',
     this.selectable = false,
     this.maxLines = 2,
+    this.dot,
   });
 
   const StatusLine.busy(this.text, {super.key, this.onDetails, this.detailsLabel = 'Dettagli…'})
     : kind = StatusKind.busy,
       selectable = false,
-      maxLines = 1;
+      maxLines = 1,
+      dot = null;
 
   final String text;
   final StatusKind kind;
+
+  /// Color of the leading dot; when set it wins over the [kind] icon.
+  final Color? dot;
   final VoidCallback? onDetails;
   final String detailsLabel;
 
@@ -299,23 +323,29 @@ class StatusLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final Widget? lead = switch (kind) {
-      StatusKind.busy => const Spinner(size: Spinner.small),
-      StatusKind.info => null,
-      StatusKind.success => Icon(AppIcons.checkCircleFill, size: 14, color: c.success),
-      StatusKind.warning => Icon(AppIcons.warningFill, size: 14, color: c.warning),
-      StatusKind.danger => Icon(AppIcons.clearFill, size: 14, color: c.danger),
-    };
-    final style = uiText(
-      TypeSize.small,
-      color: kind == StatusKind.busy || kind == StatusKind.info ? c.textSecondary : c.text,
-      height: 1.3,
-    );
+    final Widget? lead = dot != null
+        ? StatusDot(dot!, size: 7)
+        : switch (kind) {
+            StatusKind.busy => const Spinner(size: Spinner.small),
+            StatusKind.info => null,
+            StatusKind.success => Icon(AppIcons.checkCircleFill, size: 14, color: c.success),
+            StatusKind.warning => Icon(AppIcons.warningFill, size: 14, color: c.warning),
+            StatusKind.danger => Icon(AppIcons.clearFill, size: 14, color: c.danger),
+          };
+    final neutral = dot != null || kind == StatusKind.busy || kind == StatusKind.info;
+    final style = uiText(TypeSize.small, color: neutral ? c.textSecondary : c.text, height: 1.3);
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (lead != null) ...[Padding(padding: const EdgeInsets.only(top: 1), child: lead), const SizedBox(width: 6)],
+        if (lead != null) ...[
+          // The dot sits on the middle of the first line, icons on its cap height.
+          Padding(
+            padding: EdgeInsets.only(top: dot != null ? 4 : 1),
+            child: lead,
+          ),
+          const SizedBox(width: 6),
+        ],
         Flexible(
           child: selectable
               ? SelectableText(text, maxLines: maxLines, style: style)

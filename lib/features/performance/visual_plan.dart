@@ -218,8 +218,7 @@ class _VisualPlanViewState extends State<VisualPlanView> {
                   PlanViewMode.source => _textView(context, _prettySource(p)),
                 },
               ),
-              Container(width: 0.5, color: c.separator),
-              SizedBox(width: 320, child: _details(context, p)),
+              Inspector(width: 320, children: _details(context, p)),
             ],
           );
         }
@@ -529,67 +528,98 @@ class _VisualPlanViewState extends State<VisualPlanView> {
     ),
   );
 
-  Widget _details(BuildContext context, PlanTree p) {
+  List<Widget> _details(BuildContext context, PlanTree p) {
     final c = DbColors.of(context);
     final n = tab.selected;
-    final children = <Widget>[];
+    const headerPadding = EdgeInsets.only(top: Gap.sm, bottom: Gap.md);
     if (n == null) {
-      children.addAll([
-        Text('Piano', style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text)),
-        const SizedBox(height: Gap.xs),
-        Text(
-          'Seleziona un operatore per vederne le proprietà.',
-          style: uiText(TypeSize.small, color: c.textSecondary),
+      return [
+        Padding(
+          padding: headerPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Piano', style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text)),
+              const SizedBox(height: Gap.xs),
+              Text(
+                'Seleziona un operatore per vederne le proprietà.',
+                style: uiText(TypeSize.small, color: c.textSecondary),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: Gap.md),
-        if (p.summary.isNotEmpty) PropertyTable(entries: [for (final e in p.summary.entries) (e.key, e.value)]),
-        ..._warningList(
-          context,
-          p.allWarnings.map((e) => e.$2).toList(),
-          nodes: p.allWarnings.map((e) => e.$1).toList(),
-        ),
-        if (p.allWarnings.isEmpty) const StatusLine('Nessun avviso', kind: StatusKind.success),
-      ]);
-    } else {
-      final pct = n.share * 100;
-      children.addAll([
-        Text(n.operation, style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text)),
-        if (n.object != null) Text(n.object!, style: uiText(TypeSize.small, color: c.textSecondary)),
-        const SizedBox(height: Gap.sm),
-        Wrap(
-          spacing: 6,
-          runSpacing: 4,
+        if (p.summary.isNotEmpty)
+          InspectorSection(
+            title: 'Riepilogo',
+            children: [
+              PropertyTable(entries: [for (final e in p.summary.entries) (e.key, e.value)]),
+            ],
+          ),
+        InspectorSection(
+          title: 'Avvisi',
+          spacing: 0,
           children: [
-            Tag(
-              '${pct.toStringAsFixed(1)}% del ${p.analyzed && n.selfTimeMs != null ? 'tempo' : 'costo'}',
-              color: _heat(context, n) ?? c.accent,
+            ..._warningList(
+              context,
+              p.allWarnings.map((e) => e.$2).toList(),
+              nodes: p.allWarnings.map((e) => e.$1).toList(),
             ),
-            if (n.loops != null) Tag('${n.loops} loop'),
+            if (p.allWarnings.isEmpty) const StatusLine('Nessun avviso', kind: StatusKind.success),
           ],
         ),
-        const SizedBox(height: Gap.md),
-        ..._warningList(context, n.warnings),
-        if (n.detail != null) ...[CodeBox(n.detail!, wrap: true), const SizedBox(height: Gap.md)],
-        PropertyTable(
-          entries: [
-            if (n.cost != null) ('Costo totale', n.cost!.toStringAsFixed(2)),
-            ('Costo proprio', n.selfCost.toStringAsFixed(2)),
-            if (n.startupCost != null) ('Costo iniziale', n.startupCost!.toStringAsFixed(2)),
-            if (n.rowsEstimated != null) ('Righe stimate', formatCount(n.rowsEstimated!)),
-            if (n.rowsActual != null) ('Righe effettive', formatCount(n.rowsActual!)),
-            if (n.timeMs != null) ('Tempo totale', '${n.timeMs!.toStringAsFixed(3)} ms'),
-            if (n.selfTimeMs != null) ('Tempo proprio', '${n.selfTimeMs!.toStringAsFixed(3)} ms'),
-            if (n.buffers != null) ('Buffer / letture', formatCount(n.buffers!)),
-          ],
-        ),
-        PropertyTable(title: 'Tutte le proprietà', entries: [for (final e in n.props.entries) (e.key, e.value)]),
-      ]);
+      ];
     }
-    // Inspector: window background, like Xcode's.
-    return Container(
-      color: c.windowBackground,
-      child: ListView(padding: const EdgeInsets.all(Gap.md), children: children),
-    );
+    final pct = n.share * 100;
+    return [
+      Padding(
+        padding: headerPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(n.operation, style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text)),
+            if (n.object != null) Text(n.object!, style: uiText(TypeSize.small, color: c.textSecondary)),
+            const SizedBox(height: Gap.sm),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                Tag(
+                  '${pct.toStringAsFixed(1)}% del ${p.analyzed && n.selfTimeMs != null ? 'tempo' : 'costo'}',
+                  color: _heat(context, n) ?? c.accent,
+                ),
+                if (n.loops != null) Tag('${n.loops} loop'),
+              ],
+            ),
+          ],
+        ),
+      ),
+      if (n.warnings.isNotEmpty)
+        InspectorSection(title: 'Avvisi', spacing: 0, children: _warningList(context, n.warnings)),
+      if (n.detail != null) InspectorSection(title: 'Dettaglio', children: [CodeBox(n.detail!, wrap: true)]),
+      InspectorSection(
+        title: 'Costi e righe',
+        children: [
+          PropertyTable(
+            entries: [
+              if (n.cost != null) ('Costo totale', n.cost!.toStringAsFixed(2)),
+              ('Costo proprio', n.selfCost.toStringAsFixed(2)),
+              if (n.startupCost != null) ('Costo iniziale', n.startupCost!.toStringAsFixed(2)),
+              if (n.rowsEstimated != null) ('Righe stimate', formatCount(n.rowsEstimated!)),
+              if (n.rowsActual != null) ('Righe effettive', formatCount(n.rowsActual!)),
+              if (n.timeMs != null) ('Tempo totale', '${n.timeMs!.toStringAsFixed(3)} ms'),
+              if (n.selfTimeMs != null) ('Tempo proprio', '${n.selfTimeMs!.toStringAsFixed(3)} ms'),
+              if (n.buffers != null) ('Buffer / letture', formatCount(n.buffers!)),
+            ],
+          ),
+        ],
+      ),
+      InspectorSection(
+        title: 'Tutte le proprietà',
+        children: [
+          PropertyTable(entries: [for (final e in n.props.entries) (e.key, e.value)]),
+        ],
+      ),
+    ];
   }
 
   List<Widget> _warningList(BuildContext context, List<PlanWarning> warnings, {List<PlanNode?>? nodes}) {

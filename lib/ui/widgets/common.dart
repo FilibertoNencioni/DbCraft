@@ -12,6 +12,7 @@ export 'fields.dart';
 export 'lists.dart';
 export 'menus.dart';
 export 'navigation.dart';
+export 'panels.dart';
 export 'progress.dart';
 export 'selection.dart';
 export 'sheets.dart';

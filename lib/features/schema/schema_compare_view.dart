@@ -472,10 +472,14 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
   }
 
   Widget _optionsBar(DbColors c) {
-    Widget opt(String label, bool value, ValueChanged<bool> on, {String? tooltip}) {
-      final w = CheckboxRow(label: label, small: true, value: value, onChanged: _running ? null : on);
-      return tooltip == null ? w : Tooltip(message: tooltip, child: w);
-    }
+    Widget opt(String label, bool value, ValueChanged<bool> on, {String? tooltip, Color? color}) => CheckboxRow(
+      label: label,
+      small: true,
+      value: value,
+      onChanged: _running ? null : on,
+      tooltip: tooltip,
+      labelColor: color,
+    );
 
     void setOptions(CompareOptions o) => setState(() {
       tab.options = o;
@@ -501,6 +505,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                 'Elimina oggetti in più',
                 tab.dropExtra,
                 (v) => setState(() => tab.dropExtra = v),
+                color: tab.dropExtra ? c.danger : null,
                 tooltip: 'Pericoloso: elimina tabelle, colonne, chiavi e indici presenti solo nella destinazione',
               ),
             ],
@@ -616,8 +621,10 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                   title: td.name,
                   icon: AppIcons.table,
                   iconColor: statusColor(c, td.status),
+                  // The checkbox sits before the table icon; identical tables
+                  // keep its space, so the names stay aligned.
                   leading: td.status == DiffStatus.identical
-                      ? null
+                      ? const SizedBox(width: 14)
                       : MacCheckbox(
                           value: _tableCheck(td),
                           semanticLabel: 'Includi ${td.name}',
@@ -732,63 +739,55 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
       DiffStatus.different => c.diffChanged,
       DiffStatus.identical => null,
     };
-    return LayoutBuilder(
-      builder: (context, box) {
-        final def = ((box.maxWidth - 1 - 2 * 200) / 2).clamp(120.0, 1000.0);
-        return MacTable(
-          headers: [
-            'Origine · ${tab.source.label}',
-            'Definizione',
-            'Destinazione · ${tab.target.label}',
-            'Definizione',
-          ],
-          rowCount: rows.length,
-          shrinkWrap: true,
-          bordered: true,
-          resizable: false,
-          width: (col) => col.isEven ? 200 : def,
-          rowStatus: (r) => switch (rows[r].status) {
-            DiffStatus.onlyInSource => c.diffAdded,
-            DiffStatus.onlyInTarget => c.diffRemoved,
-            DiffStatus.different => c.diffChanged,
-            DiffStatus.identical => null,
-          },
-          cell: (r, col) {
-            final x = colOf(rows[r], col);
-            if (x == null) return '';
-            return col.isEven ? x.name : _colText(x);
-          },
-          cellBuilder: (context, r, col) {
-            final d = rows[r];
-            final x = colOf(d, col);
-            if (x == null) return const SizedBox.shrink();
-            if (col.isEven) {
-              return Text(
-                x.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: uiText(
-                  TypeSize.body,
-                  weight: FontWeight.w500,
-                  color: d.aspects.contains(ColumnAspect.name) ? c.diffChanged : c.text,
-                ),
-              );
-            }
-            final h = highlight(d, col < 2);
-            if (h == null) return TypeLabel(_colText(x), mono: true, size: TypeSize.small);
-            return Text(
-              _colText(x),
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.fade,
-              style: monoStyle(context, size: TypeSize.monoSmall, color: h),
-            );
-          },
-          tooltip: (r, _) {
-            final a = rows[r].aspects;
-            return a.isEmpty ? null : 'Differenze: ${a.map((x) => x.label).join(', ')}';
-          },
+    return MacTable(
+      headers: ['Origine · ${tab.source.label}', 'Definizione', 'Destinazione · ${tab.target.label}', 'Definizione'],
+      rowCount: rows.length,
+      shrinkWrap: true,
+      bordered: true,
+      resizable: false,
+      // Names 200, definitions share the rest (at least 120 each).
+      width: (col) => col.isEven ? 200 : 120,
+      flex: (col) => col.isOdd ? 1 : null,
+      rowStatus: (r) => switch (rows[r].status) {
+        DiffStatus.onlyInSource => c.diffAdded,
+        DiffStatus.onlyInTarget => c.diffRemoved,
+        DiffStatus.different => c.diffChanged,
+        DiffStatus.identical => null,
+      },
+      cell: (r, col) {
+        final x = colOf(rows[r], col);
+        if (x == null) return '';
+        return col.isEven ? x.name : _colText(x);
+      },
+      cellBuilder: (context, r, col) {
+        final d = rows[r];
+        final x = colOf(d, col);
+        if (x == null) return const SizedBox.shrink();
+        if (col.isEven) {
+          return Text(
+            x.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: uiText(
+              TypeSize.body,
+              weight: FontWeight.w500,
+              color: d.aspects.contains(ColumnAspect.name) ? c.diffChanged : c.text,
+            ),
+          );
+        }
+        final h = highlight(d, col < 2);
+        if (h == null) return TypeLabel(_colText(x), mono: true, size: TypeSize.small);
+        return Text(
+          _colText(x),
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.fade,
+          style: monoStyle(context, size: TypeSize.monoSmall, color: h),
         );
+      },
+      tooltip: (r, _) {
+        final a = rows[r].aspects;
+        return a.isEmpty ? null : 'Differenze: ${a.map((x) => x.label).join(', ')}';
       },
     );
   }

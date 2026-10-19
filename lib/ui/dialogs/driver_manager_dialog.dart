@@ -236,45 +236,21 @@ class _DriverRowState extends State<_DriverRow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Pressable(
-          onPressed: attrs.isEmpty ? null : () => setState(() => _open = !_open),
-          toggled: _open,
-          semanticLabel: d.name,
-          builder: (context, s) => Row(
-            children: [
-              SizedBox(
-                width: 16,
-                child: attrs.isEmpty
-                    ? null
-                    : DisclosureChevron(
-                        expanded: _open,
-                        color: s.contains(WidgetState.hovered) ? c.textSecondary : null,
-                      ),
-              ),
-              const SizedBox(width: 2),
-              Icon(t.icon, size: 16, color: generic ? c.textTertiary : t.color),
-              const SizedBox(width: Gap.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(d.name, style: uiText(TypeSize.body, color: c.text)),
-                    if (library.isNotEmpty)
-                      Text(
-                        library,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: monoStyle(context, size: TypeSize.monoSmall, color: c.textSecondary),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: DisclosureButton(
+            label: d.name,
+            icon: t.icon,
+            iconColor: generic ? c.textTertiary : t.color,
+            subtitle: library.isEmpty ? null : library,
+            monoSubtitle: true,
+            expanded: _open,
+            onChanged: attrs.isEmpty ? null : (v) => setState(() => _open = v),
           ),
         ),
         if (_open && attrs.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(left: 42, top: Gap.sm),
+            padding: EdgeInsets.only(left: DisclosureButton.contentIndent(icon: true), top: Gap.sm),
             child: Column(
               children: [
                 for (final e in attrs)

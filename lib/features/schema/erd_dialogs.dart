@@ -249,7 +249,7 @@ class _TableDefDialogState extends State<_TableDefDialog> {
           ),
           const SizedBox(height: Gap.lg),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Row(
               children: [
                 Expanded(flex: 3, child: Text('Nome', style: head)),
@@ -277,13 +277,7 @@ class _TableDefDialogState extends State<_TableDefDialog> {
           ),
           const SizedBox(height: Gap.xs),
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: c.content,
-                border: Border.all(color: c.separator, width: 0.5),
-                borderRadius: BorderRadius.circular(Radii.panel),
-              ),
-              clipBehavior: Clip.antiAlias,
+            child: InsetBox(
               child: ListView.builder(
                 itemCount: _rows.length,
                 itemBuilder: (context, i) {
@@ -295,16 +289,15 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                     padding: const EdgeInsets.fromLTRB(4, 3, 4, 3),
                     child: Row(
                       children: [
-                        // New column of an existing table: the added-row marker.
-                        Container(
-                          width: GridMetrics.marker,
-                          height: ControlSize.small,
-                          color: isNew ? c.diffAdded : null,
-                        ),
-                        const SizedBox(width: 3),
                         Expanded(
                           flex: 3,
-                          child: MacTextField(controller: r.name, small: true, hint: 'nome'),
+                          // New column of an existing table: its name in the "added" color.
+                          child: MacTextField(
+                            controller: r.name,
+                            small: true,
+                            hint: 'nome',
+                            color: isNew ? c.diffAdded : null,
+                          ),
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -314,11 +307,10 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                             small: true,
                             hint: 'tipo',
                             options: () => types,
-                            onChanged: (t) {
-                              // A common type without size picked (or typed): drop the size.
-                              if (types.contains(t) && !isSizedType(t) && !isScaledType(t)) {
-                                setState(r.size.clear);
-                              }
+                            // A type without size picked from the menu drops the size; typing
+                            // (and its inline completion) leaves it alone.
+                            onSelected: (t) {
+                              if (!isSizedType(t) && !isScaledType(t)) setState(r.size.clear);
                             },
                           ),
                         ),
