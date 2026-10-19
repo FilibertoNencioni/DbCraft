@@ -145,7 +145,7 @@ class _ConnectionInfoViewState extends State<ConnectionInfoView> {
             const SizedBox(width: 10),
             Text(c.config.name, style: uiText(TypeSize.sheetTitle, weight: FontWeight.w700, color: colors.text)),
             const SizedBox(width: 12),
-            Tag(c.config.type.label, color: c.config.type.color),
+            Tag(c.config.type.label, color: c.config.type.colorOf(colors)),
           ],
         ),
         const SizedBox(height: 16),

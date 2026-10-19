@@ -509,7 +509,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
               name: x.config.name,
               status: x.isConnected ? c.success : c.textTertiary,
               environment: x.config.type == ConnectionType.development ? null : x.config.type.label,
-              environmentColor: x.config.type.color,
+              environmentColor: x.config.type.colorOf(c),
               value: x,
               checked: x == conn,
             ),

@@ -1,3 +1,9 @@
+import 'package:dbcraft/model/connection_config.dart';
+import 'package:dbcraft/model/db_objects.dart';
+import 'package:dbcraft/odbc/odbc_types.dart';
+import 'package:dbcraft/state/db_connection.dart';
+import 'package:dbcraft/state/result_set_model.dart';
+import 'package:dbcraft/ui/results/result_grid.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +22,43 @@ Widget _app(Widget child, {bool reduceMotion = false}) => MaterialApp(
 Color? _rowFill(WidgetTester tester, String title) {
   final box = tester.widget<Container>(find.ancestor(of: find.text(title), matching: find.byType(Container)).first);
   return (box.decoration as BoxDecoration?)?.color;
+}
+
+/// Three rows of `dipendenti`, no database behind them. With [editable] the
+/// model has a source table and a key, as the table data editor sets.
+ResultSetModel _model({bool editable = false}) {
+  final m = ResultSetModel(
+    connection: DbConnection(ConnectionConfig(id: 'demo', name: 'demo')),
+    first: ResultPage(
+      columns: const [
+        ColumnInfo(index: 1, name: 'id', sqlType: 4, typeName: 'INTEGER'),
+        ColumnInfo(index: 2, name: 'nome', sqlType: 12, typeName: 'VARCHAR'),
+      ],
+      rows: [
+        [10, 'Carla'],
+        [20, 'Anna'],
+        [30, 'Bruno'],
+      ],
+    ),
+    sql: 'select * from dipendenti',
+  );
+  if (editable) {
+    m.table = DbTable(catalog: null, schema: 'public', name: 'dipendenti', type: 'TABLE');
+    m.keyColumns = ['id'];
+  }
+  return m;
+}
+
+Widget _grid(ResultSetModel m) => SizedBox(width: 600, height: 200, child: ResultGrid(model: m));
+
+/// Color of the 3pt edit-state stripe in the row header labelled [label].
+Color? _marker(WidgetTester tester, String label) {
+  final header = find.ancestor(of: find.text(label), matching: find.byType(Row)).first;
+  final stripe = find.descendant(
+    of: header,
+    matching: find.byWidgetPredicate((w) => w is Container && w.constraints?.maxWidth == GridMetrics.marker),
+  );
+  return tester.widget<Container>(stripe).color;
 }
 
 void main() {
@@ -493,5 +536,221 @@ void main() {
       await tester.pumpWidget(_app(const StatusLine.busy('Prova in corso…')));
       expect(find.byType(Spinner), findsOneWidget);
     });
+  });
+
+  group('result grid', () {
+    testWidgets('rows carry a 3pt stripe for inserted, deleted and changed', (tester) async {
+      final m = _model(editable: true)
+        ..setValue(0, 1, 'Carlo')
+        ..toggleDelete([1])
+        ..addRow();
+      await tester.pumpWidget(_app(_grid(m)));
+      final c = DbColors.light;
+      expect(_marker(tester, '1'), c.diffChanged);
+      expect(_marker(tester, '2'), c.diffRemoved);
+      expect(_marker(tester, '3'), Colors.transparent);
+      expect(_marker(tester, 'nuova'), c.diffAdded);
+      expect(tester.widget<Text>(find.text('Anna')).style?.decoration, TextDecoration.lineThrough);
+    });
+
+    testWidgets('the cursor cell has a focus ring only while the grid has focus', (tester) async {
+      final other = FocusNode();
+      addTearDown(other.dispose);
+      await tester.pumpWidget(
+        _app(
+          Column(
+            children: [
+              _grid(_model()),
+              Focus(focusNode: other, child: const SizedBox(width: 10, height: 10)),
+            ],
+          ),
+        ),
+      );
+      Finder ringOn(String text) =>
+          find.ancestor(of: find.text(text), matching: find.byWidgetPredicate((w) => w is FocusRing && w.visible));
+      Iterable<FocusRing> visible() => tester.widgetList<FocusRing>(find.byType(FocusRing)).where((r) => r.visible);
+      expect(visible(), isEmpty);
+
+      await tester.tap(find.text('Anna'));
+      await tester.pump();
+      expect(visible(), hasLength(1));
+      expect(ringOn('Anna'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(ringOn('Bruno'), findsOneWidget);
+      expect(ringOn('Anna'), findsNothing);
+
+      other.requestFocus();
+      await tester.pump();
+      await tester.pump();
+      expect(visible(), isEmpty, reason: 'the cursor stays but the ring goes with the focus');
+    });
+
+    testWidgets('a double click edits the cell with the cell editor decoration', (tester) async {
+      final m = _model(editable: true);
+      await tester.pumpWidget(_app(_grid(m)));
+      await tester.tap(find.text('Anna'));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.text('Anna'));
+      await tester.pump();
+      await tester.pump();
+
+      final c = DbColors.of(tester.element(find.byType(TextField)));
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller?.text, 'Anna');
+      final d = field.decoration!;
+      expect(d.filled, isTrue);
+      expect(d.fillColor, c.content);
+      expect(d.border, const CellFieldBorder());
+      expect(d.focusedBorder, CellFieldBorder(ring: c.focusRing));
+
+      await tester.enterText(find.byType(TextField), 'Annalisa');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.byType(TextField), findsNothing);
+      expect(m.rowAt(1).values[1], 'Annalisa');
+      expect(_marker(tester, '2'), c.diffChanged);
+    });
+
+    testWidgets('dragging the header handle resizes, a header click sorts', (tester) async {
+      final m = _model();
+      await tester.pumpWidget(_app(_grid(m)));
+      Finder header(String name) => find.ancestor(of: find.text(name), matching: find.byType(TableHeaderCell));
+      final before = tester.getSize(header('id')).width;
+      await tester.drag(
+        find.descendant(of: header('id'), matching: find.byType(ColumnResizeHandle)),
+        const Offset(40, 0),
+      );
+      await tester.pump();
+      expect(tester.getSize(header('id')).width, greaterThan(before + 10));
+      await tester.pump(kDoubleTapTimeout);
+
+      expect(find.byIcon(AppIcons.chevronUp), findsNothing);
+      await tester.tap(find.text('nome'));
+      await tester.pump();
+      expect(m.sortColumn, 1);
+      expect(m.view, [1, 2, 0]);
+      expect(find.byIcon(AppIcons.chevronUp), findsOneWidget);
+      expect(tester.getTopLeft(find.text('Anna')).dy, lessThan(tester.getTopLeft(find.text('Carla')).dy));
+
+      await tester.tap(find.text('nome'));
+      await tester.pump();
+      expect(m.view, [0, 2, 1]);
+      expect(find.byIcon(AppIcons.chevronDown), findsOneWidget);
+    });
+  });
+
+  testWidgets('record view: name and type, NULL in italics, changed values tinted', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        const SingleChildScrollView(
+          child: RecordView(
+            title: 'Riga 2',
+            fields: [
+              RecordField('id', '20', type: 'INTEGER'),
+              RecordField('nome', 'Annalisa', type: 'VARCHAR', changed: true),
+              RecordField('note', null),
+            ],
+          ),
+        ),
+      ),
+    );
+    final c = DbColors.of(tester.element(find.byType(RecordView)));
+    expect(find.text('Riga 2'), findsOneWidget);
+    expect(find.widgetWithText(TypeLabel, 'integer'), findsOneWidget);
+    Finder value(String text) => find.byWidgetPredicate((w) => w is SelectableText && w.data == text);
+    expect(tester.widget<SelectableText>(value('NULL')).style?.fontStyle, FontStyle.italic);
+    Decoration? box(String text) =>
+        tester.widget<Container>(find.ancestor(of: value(text), matching: find.byType(Container)).first).decoration;
+    expect((box('Annalisa') as BoxDecoration?)?.color, c.diffChanged.withValues(alpha: Tint.regular));
+    expect(box('20'), isNull);
+  });
+
+  testWidgets('level indicator turns warning and danger at its thresholds', (tester) async {
+    final c = DbColors.light;
+    Future<void> level(double v, {Color? color}) => tester.pumpWidget(
+      _app(
+        Center(
+          child: LevelIndicator(value: v, warningAt: 0.8, dangerAt: 0.95, width: 100, color: color),
+        ),
+      ),
+    );
+    final bar = find.byType(LevelIndicator);
+    await level(0.5);
+    expect(bar, paints..rrect(color: c.accent));
+    await level(0.8);
+    expect(bar, paints..rrect(color: c.warning));
+    await level(0.94);
+    expect(bar, paints..rrect(color: c.warning));
+    await level(0.95);
+    expect(bar, paints..rrect(color: c.danger));
+    const series = Color(0xFFAF52DE);
+    await level(0.99, color: series);
+    expect(bar, paints..rrect(color: series), reason: 'a fixed color ignores the thresholds');
+  });
+
+  testWidgets('activity view: name, environment, spinner while busy, opens the menu', (tester) async {
+    final c = DbColors.light;
+    var opened = 0;
+    Widget view({required bool busy}) => _app(
+      Center(
+        child: ActivityView(
+          title: 'erp_prod',
+          status: busy ? 'Connessione…' : 'Errore',
+          statusColor: busy ? null : c.danger,
+          busy: busy,
+          dot: c.success,
+          environment: 'Produzione',
+          environmentColor: c.danger,
+          onPressed: () => opened++,
+        ),
+      ),
+    );
+    await tester.pumpWidget(view(busy: true));
+    expect(tester.getSize(find.byType(ActivityView)).height, ControlSize.toolbar);
+    expect(tester.widget<Text>(find.text('erp_prod')).style?.fontWeight, FontWeight.w600);
+    expect(find.widgetWithText(Tag, 'Produzione'), findsOneWidget);
+    expect(find.byType(StatusDot), findsOneWidget);
+    expect(find.byType(Spinner), findsOneWidget);
+    expect(find.byIcon(AppIcons.upDown), findsOneWidget);
+    await tester.tap(find.text('erp_prod'));
+    await tester.pump();
+    expect(opened, 1);
+
+    await tester.pumpWidget(view(busy: false));
+    expect(find.byType(Spinner), findsNothing);
+    expect(tester.widget<Text>(find.text('Errore')).style?.color, c.danger);
+  });
+
+  testWidgets('window tabs reorder by dragging', (tester) async {
+    final order = ['a.sql', 'b.sql', 'c.sql'];
+    final moves = <(int, int)>[];
+    await tester.pumpWidget(
+      _app(
+        StatefulBuilder(
+          builder: (context, setState) => WindowTabBar(
+            itemCount: order.length,
+            itemKey: (i) => ValueKey(order[i]),
+            onReorder: (from, to) {
+              moves.add((from, to));
+              setState(() => order.insert(to, order.removeAt(from)));
+            },
+            itemBuilder: (_, i) => WindowTab(title: order[i], active: i == 0),
+          ),
+        ),
+      ),
+    );
+    final drag = await tester.startGesture(tester.getCenter(find.text('a.sql')));
+    await tester.pump();
+    for (var i = 0; i < 6; i++) {
+      await drag.moveBy(const Offset(100, 0));
+      await tester.pump();
+    }
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(moves, [(0, 2)]);
+    expect(order, ['b.sql', 'c.sql', 'a.sql']);
+    expect(tester.getCenter(find.text('a.sql')).dx, greaterThan(tester.getCenter(find.text('c.sql')).dx));
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -337,5 +339,275 @@ void main() {
     await tester.tap(find.text('Nuove'));
     await tester.pump();
     expect(sel, {'removed'});
+  });
+
+  testWidgets('DbSwitch toggles on click and on Space, ignores taps when disabled', (tester) async {
+    var value = false;
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => DbSwitch(value: value, focusNode: focus, onChanged: (v) => set(() => value = v)),
+    )));
+    expect(tester.getSize(find.byType(DbSwitch)), const Size(38, 22));
+    await tester.tap(find.byType(DbSwitch));
+    await tester.pumpAndSettle();
+    expect(value, isTrue);
+    focus.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(value, isFalse);
+
+    await tester.pumpWidget(_app(const DbSwitch(value: true, onChanged: null)));
+    await tester.tap(find.byType(DbSwitch));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(tester.widget<Opacity>(find.descendant(of: find.byType(DbSwitch), matching: find.byType(Opacity))).opacity, 0.5);
+  });
+
+  testWidgets('MacRadioGroup selects by click and by Tab + Space', (tester) async {
+    var value = 'b';
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => MacRadioGroup<String>(
+        value: value,
+        items: const [('a', 'TCP/IP', null), ('b', 'Socket', 'Solo locale'), ('c', 'SSH', null)],
+        onChanged: (v) => set(() => value = v),
+      ),
+    )));
+    expect(find.text('Solo locale'), findsOneWidget);
+    MacRadio<String> radio(int i) => tester.widget<MacRadio<String>>(find.byType(MacRadio<String>).at(i));
+    expect(radio(1).groupValue, 'b');
+    await tester.tap(find.text('SSH'));
+    await tester.pump();
+    expect(value, 'c');
+    expect(radio(2).value == radio(2).groupValue, isTrue);
+    // Each radio is a tab stop; Space picks the focused one.
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(value, 'a');
+  });
+
+  testWidgets('disabled MacRadioGroup ignores taps', (tester) async {
+    await tester.pumpWidget(_app(const MacRadioGroup<int>(value: 0, items: [(0, 'Uno', null), (1, 'Due', null)], onChanged: null)));
+    await tester.tap(find.text('Due'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(tester.widget<MacRadio<int>>(find.byType(MacRadio<int>).at(1)).onChanged, isNull);
+  });
+
+  testWidgets('PulldownButton opens its menu and runs the chosen command', (tester) async {
+    String? ran;
+    await tester.pumpWidget(_app(PulldownButton(
+      label: 'Azioni',
+      entries: () => [
+        MenuEntry<Object?>('Duplica', onSelected: () => ran = 'dup'),
+        MenuEntry<Object?>('Rinomina', onSelected: () => ran = 'ren'),
+      ],
+    )));
+    await tester.tap(find.text('Azioni'));
+    await tester.pumpAndSettle();
+    expect(find.text('Duplica'), findsOneWidget);
+    await tester.tap(find.text('Rinomina'));
+    await tester.pumpAndSettle();
+    expect(ran, 'ren');
+    expect(find.text('Duplica'), findsNothing);
+    expect(find.text('Azioni'), findsOneWidget, reason: 'the title does not follow the choice');
+  });
+
+  testWidgets('disabled PulldownButton does not open', (tester) async {
+    await tester.pumpWidget(_app(PulldownButton(
+      label: 'Azioni',
+      enabled: false,
+      entries: () => const [MenuEntry<Object?>('Duplica')],
+    )));
+    await tester.tap(find.text('Azioni'));
+    await tester.pumpAndSettle();
+    expect(find.text('Duplica'), findsNothing);
+  });
+
+  testWidgets('LinkButton fires on tap and is inert when disabled', (tester) async {
+    var n = 0;
+    await tester.pumpWidget(_app(LinkButton(label: 'Dettagli…', onPressed: () => n++)));
+    await tester.tap(find.text('Dettagli…'));
+    expect(n, 1);
+    final c = DbColors.of(tester.element(find.byType(LinkButton)));
+    expect(tester.widget<Text>(find.text('Dettagli…')).style?.color, c.accent);
+
+    await tester.pumpWidget(_app(const LinkButton(label: 'Dettagli…', onPressed: null)));
+    await tester.tap(find.text('Dettagli…'));
+    expect(tester.takeException(), isNull);
+    expect(tester.widget<Text>(find.text('Dettagli…')).style?.color, c.textTertiary);
+  });
+
+  testWidgets('DisclosureButton toggles its expanded state', (tester) async {
+    var expanded = false;
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DisclosureButton(label: 'Avanzate', expanded: expanded, onChanged: (v) => set(() => expanded = v)),
+          if (expanded) const Text('Timeout'),
+        ],
+      ),
+    )));
+    expect(find.text('Timeout'), findsNothing);
+    await tester.tap(find.text('Avanzate'));
+    await tester.pumpAndSettle();
+    expect(expanded, isTrue);
+    expect(find.text('Timeout'), findsOneWidget);
+    expect(tester.widget<DisclosureChevron>(find.byType(DisclosureChevron)).expanded, isTrue);
+    expect(tester.widget<AnimatedRotation>(find.byType(AnimatedRotation)).turns, 0.25);
+    await tester.tap(find.text('Avanzate'));
+    await tester.pumpAndSettle();
+    expect(expanded, isFalse);
+    expect(find.text('Timeout'), findsNothing);
+  });
+
+  testWidgets('SecureField eye button reveals and hides the text', (tester) async {
+    await tester.pumpWidget(_app(const SizedBox(width: 220, child: SecureField(hint: 'Password'))));
+    bool obscured() => tester.widget<TextField>(find.byType(TextField)).obscureText;
+    expect(obscured(), isTrue);
+    await tester.tap(find.byTooltip('Mostra password'));
+    await tester.pump();
+    expect(obscured(), isFalse);
+    expect(find.byIcon(AppIcons.eyeOff), findsOneWidget);
+    await tester.tap(find.byTooltip('Nascondi password'));
+    await tester.pump();
+    expect(obscured(), isTrue);
+
+    await tester.pumpWidget(_app(const SizedBox(width: 220, child: SecureField(revealable: false))));
+    expect(find.byIcon(AppIcons.eye), findsNothing);
+  });
+
+  testWidgets('PathField shows the path and Scegli… calls the picker', (tester) async {
+    var n = 0;
+    await tester.pumpWidget(_app(SizedBox(width: 320, child: PathField(path: '/tmp/chinook.db', onChoose: () => n++))));
+    expect(find.text('/tmp/chinook.db'), findsOneWidget);
+    await tester.tap(find.text('Scegli…'));
+    expect(n, 1);
+
+    await tester.pumpWidget(_app(SizedBox(width: 320, child: PathField(onChoose: () => n++))));
+    expect(find.text('Nessun file'), findsOneWidget);
+
+    await tester.pumpWidget(_app(SizedBox(width: 320, child: PathField(enabled: false, onChoose: () => n++))));
+    await tester.tap(find.text('Scegli…'));
+    expect(n, 1);
+  });
+
+  testWidgets('TokenField joins FilterTokens and ⓧ removes one', (tester) async {
+    final removed = <String>[];
+    var tapped = 0;
+    await tester.pumpWidget(_app(TokenField(
+      joiner: 'e',
+      tokens: [
+        FilterToken(label: 'id > 3', onRemove: () => removed.add('id'), onTap: () => tapped++),
+        FilterToken(label: 'nome = x', onRemove: () => removed.add('nome')),
+        const FilterToken(label: 'fisso'),
+      ],
+    )));
+    expect(find.text('e'), findsNWidgets(2));
+    expect(find.byIcon(AppIcons.clearFill), findsNWidgets(2), reason: 'no ⓧ without onRemove');
+    await tester.tap(find.byIcon(AppIcons.clearFill).at(1));
+    expect(removed, ['nome']);
+    await tester.tap(find.byIcon(AppIcons.clearFill).first);
+    expect(removed, ['nome', 'id']);
+    expect(tapped, 0, reason: 'ⓧ does not also tap the token');
+    await tester.tap(find.text('id > 3'));
+    expect(tapped, 1);
+  });
+
+  testWidgets('CompletionList renders kinds, highlights the selection and picks on tap', (tester) async {
+    var selected = 0;
+    int? chosen;
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, set) => CompletionList(
+        items: const [
+          CompletionItem('SELECT', CompletionKind.keyword),
+          CompletionItem('customers', CompletionKind.table),
+          CompletionItem('email', CompletionKind.column, detail: 'varchar(255)'),
+        ],
+        selected: selected,
+        onSelect: (i) => set(() {
+          chosen = i;
+          selected = i;
+        }),
+      ),
+    )));
+    final c = DbColors.of(tester.element(find.byType(CompletionList)));
+    for (final letter in ['K', 'T', 'C']) {
+      expect(find.text(letter), findsOneWidget);
+    }
+    expect(find.text('varchar(255)'), findsOneWidget);
+    expect(tester.getSize(find.byType(CompletionList)).height, CompletionList.heightFor(3));
+    Color? rowFill(String label) => (tester
+            .widget<Container>(find.ancestor(of: find.text(label), matching: find.byType(Container)).first)
+            .decoration as BoxDecoration?)
+        ?.color;
+    List<bool> onAccent() => tester.widgetList<CompletionBadge>(find.byType(CompletionBadge)).map((b) => b.onAccent).toList();
+    expect(rowFill('SELECT'), c.accent);
+    expect(rowFill('email'), isNull);
+    expect(onAccent(), [true, false, false]);
+    expect(tester.widget<Text>(find.text('SELECT')).style?.color, c.onAccent);
+
+    await tester.tap(find.text('email'));
+    await tester.pump();
+    expect(chosen, 2);
+    expect(rowFill('email'), c.accent);
+    expect(rowFill('SELECT'), isNull);
+    expect(onAccent(), [false, false, true]);
+  });
+
+  // On macOS the highlight mode starts traditional (keyboard). Elsewhere the
+  // test binding starts in touch mode and a mouse connected later flips the
+  // default silently, so FocusableActionDetector never hears about it.
+  testWidgets('FocusRing shows for keyboard focus only, not after a click', (tester) async {
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(_app(PushButton(label: 'Salva', focusNode: focus, onPressed: () {})));
+    bool ring() =>
+        tester.widget<FocusRing>(find.descendant(of: find.byType(PushButton), matching: find.byType(FocusRing))).visible;
+
+    // A mouse click activates the button without taking focus.
+    await tester.tap(find.text('Salva'), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(focus.hasFocus, isFalse);
+    expect(ring(), isFalse);
+
+    // Tab moves focus with the keyboard: traditional highlight, ring on.
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(focus.hasFocus, isTrue);
+    expect(FocusManager.instance.highlightMode, FocusHighlightMode.traditional);
+    expect(ring(), isTrue);
+
+    // A touch switches to touch highlight: the ring goes away, focus stays.
+    await tester.tap(find.text('Salva'));
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.highlightMode, FocusHighlightMode.touch);
+    expect(focus.hasFocus, isTrue);
+    expect(ring(), isFalse);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+  testWidgets('default PushButton is accent in the key window, gray in the background', (tester) async {
+    for (final active in [true, false]) {
+      await tester.pumpWidget(MaterialApp(
+        theme: buildTheme(Brightness.light, active: active),
+        home: Scaffold(body: Center(child: PushButton.primary(label: 'Connetti', onPressed: () {}))),
+      ));
+      await tester.pumpAndSettle();
+      final c = DbColors.of(tester.element(find.byType(PushButton)));
+      final box = tester
+          .widgetList<Container>(find.descendant(of: find.byType(PushButton), matching: find.byType(Container)))
+          .map((w) => w.decoration)
+          .whereType<BoxDecoration>()
+          .first;
+      expect(c.windowActive, active);
+      expect(box.color, c.defaultButton);
+      expect(c.defaultButton, active ? c.accent : c.controlBackground);
+      expect(box.gradient != null, active, reason: 'the accent gradient only in the key window');
+      expect(tester.widget<Text>(find.text('Connetti')).style?.color, active ? c.onAccent : c.text);
+    }
   });
 }

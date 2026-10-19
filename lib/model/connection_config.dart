@@ -9,15 +9,15 @@ import '../ui/theme/app_icons.dart';
 /// BigQuery…).
 enum ConnectionMode { dsn, driver, connectionString, native }
 
-/// Connection "type" like in DBeaver: drives colors and safety checks.
+/// Connection "type" like in DBeaver: drives colors and safety checks. The
+/// UI color comes from the theme (`ConnectionTypeColor.colorOf`).
 enum ConnectionType {
-  development('Sviluppo', Color(0xFF34C759), false),
-  test('Test', Color(0xFFFF9500), false),
-  production('Produzione', Color(0xFFFF3B30), true);
+  development('Sviluppo', false),
+  test('Test', false),
+  production('Produzione', true);
 
-  const ConnectionType(this.label, this.color, this.confirmExecute);
+  const ConnectionType(this.label, this.confirmExecute);
   final String label;
-  final Color color;
 
   /// Ask for confirmation before running data modifying statements.
   final bool confirmExecute;

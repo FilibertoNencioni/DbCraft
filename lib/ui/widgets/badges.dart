@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../model/connection_config.dart';
 import '../theme/app_theme.dart';
 import 'control_base.dart';
 import 'menus.dart';
@@ -184,6 +185,16 @@ class StatusDot extends StatelessWidget {
       border: ring ? Border.all(color: color, width: 1.5) : null,
     ),
   );
+}
+
+/// Environment colors: green for development, orange for test, red for
+/// production, from the semantic palette so they follow light and dark.
+extension ConnectionTypeColor on ConnectionType {
+  Color colorOf(DbColors c) => switch (this) {
+    ConnectionType.development => c.success,
+    ConnectionType.test => c.warning,
+    ConnectionType.production => c.danger,
+  };
 }
 
 /// Environment marker: shown only for test / production connections, where

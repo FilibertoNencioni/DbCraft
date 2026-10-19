@@ -481,7 +481,7 @@ class _HomePageState extends State<HomePage> {
             busy: t is SqlEditorTab && t.running,
             accessory: cfg == null || cfg.type == ConnectionType.development
                 ? null
-                : EnvDot(cfg.type.color, show: true, size: 6, tooltip: '${cfg.name} · ${cfg.type.label}'),
+                : EnvDot(cfg.type.colorOf(DbColors.of(context)), show: true, size: 6, tooltip: '${cfg.name} · ${cfg.type.label}'),
             tooltip: t.tooltip,
             onSelect: () => app.activate(t),
             onClose: () => _closeTab(t),
@@ -779,7 +779,7 @@ class _ActiveConnection extends StatelessWidget {
             name: x.config.name,
             status: x.isConnected ? c.success : c.textTertiary,
             environment: x.config.type == ConnectionType.development ? null : x.config.type.label,
-            environmentColor: x.config.type.color,
+            environmentColor: x.config.type.colorOf(c),
             value: x,
             checked: x == dc,
           ),
@@ -820,7 +820,7 @@ class _ActiveConnection extends StatelessWidget {
       dot: d.isConnected ? c.success : c.textTertiary,
       busy: d.status == ConnectionStatus.connecting,
       environment: env == ConnectionType.development ? null : env.label,
-      environmentColor: env.color,
+      environmentColor: env.colorOf(c),
       tooltip: d.config.subtitle,
       minWidth: 200,
       onPressed: () => _menu(context),
@@ -1002,7 +1002,7 @@ class _RecentConnectionState extends State<_RecentConnection> {
         title: cfg.name,
         subtitle: cfg.subtitle,
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-          EnvDot(cfg.type.color, show: cfg.type != ConnectionType.development, tooltip: cfg.type.label),
+          EnvDot(cfg.type.colorOf(DbColors.of(context)), show: cfg.type != ConnectionType.development, tooltip: cfg.type.label),
           // Keeps the row height steady while the link comes and goes.
           Visibility.maintain(
             visible: _hover,

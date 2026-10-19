@@ -289,7 +289,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       titleColor: n.error != null ? c.danger : null,
       accessories: [
         if (dc != null && dc.config.type != ConnectionType.development)
-          EnvDot(dc.config.type.color, show: true, tooltip: dc.config.type.label),
+          EnvDot(dc.config.type.colorOf(c), show: true, tooltip: dc.config.type.label),
         if (n.error != null)
           Builder(
             builder: (context) => Icon(

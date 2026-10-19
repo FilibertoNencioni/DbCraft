@@ -372,7 +372,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                 value: cfg.type,
                 items: [for (final t in ConnectionType.values) (t, t.label, null)],
                 // Development is the default and stays silent, as everywhere else.
-                dot: (t) => t == ConnectionType.development ? null : t.color,
+                dot: (t) => t == ConnectionType.development ? null : t.colorOf(DbColors.of(context)),
                 onChanged: (t) => setState(() => cfg.type = t),
               ),
             ),
