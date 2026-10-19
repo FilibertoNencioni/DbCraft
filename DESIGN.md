@@ -64,7 +64,7 @@ Elevation is either a hairline or a shadow, never both, except on sheets and men
 
 ## Shell
 
-- **macOS**: the title bar is transparent with a full-size content view (`MainFlutterWindow.swift`). The Flutter toolbar sits next to the traffic lights and can be dragged and double-clicked through the `dbcraft/window` channel. Menus are native (`PlatformMenuBar`) and include the app, File, Database, SQL, Vista, Finestra and Aiuto menus.
+- **macOS**: the title bar is transparent with a full-size content view (`MainFlutterWindow.swift`). An empty unified `NSToolbar` makes AppKit center the traffic lights on the 52pt Flutter toolbar. In full screen the toolbar auto-hides with the menu bar (`.autoHideToolbar`); pinned, it would cover the top of the content. The Flutter toolbar sits next to them and can be dragged and double-clicked through the `dbcraft/window` channel. AppKit's own title-bar double click is switched off, because it also fired over Flutter buttons, so only empty parts of the bar zoom the window. Menus are native (`PlatformMenuBar`) and include the app, File, Database, SQL, Vista, Finestra and Aiuto menus.
 - **Windows/Linux**: the same menu model is rendered as an in-window `MenuBar`.
 - **Toolbar**: sidebar toggle and the create actions on the left; in the center, the connection pill (Xcode activity view) with a connect/disconnect toggle; on the right, transaction mode and history.
 - **Editor tabs**: the active tab shares the content color. The close button appears on hover or when the tab is active, and a dirty dot replaces it otherwise. The environment dot appears only for test and production.

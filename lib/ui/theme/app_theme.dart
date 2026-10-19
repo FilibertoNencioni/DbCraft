@@ -481,8 +481,9 @@ const kMonoFamily = 'SF Mono';
 const kMonoFallback = ['Menlo', 'Consolas', 'Cascadia Mono', 'DejaVu Sans Mono', 'monospace'];
 const kTabular = [FontFeature.tabularFigures()];
 
-/// Space reserved for the macOS traffic lights.
-double trafficLightInset(bool fullScreen) => Platform.isMacOS && !fullScreen ? 78 : 0;
+/// Space reserved for the macOS traffic lights. The empty unified NSToolbar in
+/// `MainFlutterWindow` centers them on the toolbar, at x 19–79.
+double trafficLightInset(bool fullScreen) => Platform.isMacOS && !fullScreen ? 88 : 0;
 
 /// Field outline with the AppKit focus ring: a 0.5px border, plus a soft
 /// accent halo drawn outside the field while it has focus.
