@@ -1019,7 +1019,7 @@ class _ScriptsPanel extends StatefulWidget {
 }
 
 class _ScriptsPanelState extends State<_ScriptsPanel> {
-  late Future<List<File>> _files = AppScope.read(context).workspace.listScripts();
+  late Future<List<({File file, DateTime modified})>> _files = AppScope.read(context).workspace.listScripts();
   final _filter = TextEditingController();
   bool _collapsed = false;
 
@@ -1122,10 +1122,10 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
           child: SearchField(controller: _filter, hint: 'Filtra script', onChanged: (_) => setState(() {})),
         ),
         Expanded(
-          child: FutureBuilder<List<File>>(
+          child: FutureBuilder<List<({File file, DateTime modified})>>(
             future: _files,
             builder: (context, snap) {
-              final all = snap.data ?? const <File>[];
+              final all = snap.data ?? const <({File file, DateTime modified})>[];
               if (all.isEmpty) {
                 return snap.connectionState == ConnectionState.done
                     ? EmptyState(
@@ -1139,7 +1139,7 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
               final q = _filter.text.trim().toLowerCase();
               final files = q.isEmpty
                   ? all
-                  : all.where((f) => p.basenameWithoutExtension(f.path).toLowerCase().contains(q)).toList();
+                  : all.where((s) => p.basenameWithoutExtension(s.file.path).toLowerCase().contains(q)).toList();
               if (files.isEmpty) {
                 return EmptyState(
                   icon: AppIcons.search,
@@ -1147,21 +1147,21 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
                   message: 'Nessuno script contiene "${_filter.text.trim()}".',
                 );
               }
-              final sel = files.indexWhere((f) => f.path == (_picked ?? current));
+              final sel = files.indexWhere((s) => s.file.path == (_picked ?? current));
               return SourceList(
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, Gap.md),
                 itemCount: files.length,
                 selectedIndex: sel < 0 ? null : sel,
-                onSelect: (i) => setState(() => _picked = files[i].path),
-                onActivate: (i) => _open(files[i]),
+                onSelect: (i) => setState(() => _picked = files[i].file.path),
+                onActivate: (i) => _open(files[i].file),
                 itemBuilder: (context, i) {
-                  final f = files[i];
+                  final f = files[i].file;
                   final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
                   return OutlineRow(
                     icon: AppIcons.document,
                     strong: open,
                     title: p.basenameWithoutExtension(f.path),
-                    detail: _ago(f.lastModifiedSync()),
+                    detail: _ago(files[i].modified),
                     selected: i == sel,
                     tooltip: open ? '${f.path} · aperto' : f.path,
                     onTap: () => _open(f),

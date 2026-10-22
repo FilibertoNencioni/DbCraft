@@ -72,15 +72,19 @@ class Workspace {
 
   Future<void> saveHistory(List<HistoryEntry> h) => _write(_historyFile, h.map((e) => e.toJson()).toList());
 
-  Future<List<File>> listScripts() async {
+  /// The .sql files of the workspace with their modification time, newest
+  /// first. Files removed while listing are skipped.
+  Future<List<({File file, DateTime modified})>> listScripts() async {
     if (!await scriptsDir.exists()) return [];
-    final files = await scriptsDir
-        .list()
-        .where((e) => e is File && e.path.toLowerCase().endsWith('.sql'))
-        .cast<File>()
-        .toList();
-    files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
-    return files;
+    final out = <({File file, DateTime modified})>[];
+    await for (final e in scriptsDir.list()) {
+      if (e is! File || !e.path.toLowerCase().endsWith('.sql')) continue;
+      final st = await e.stat();
+      if (st.type == FileSystemEntityType.notFound) continue;
+      out.add((file: e, modified: st.modified));
+    }
+    out.sort((a, b) => b.modified.compareTo(a.modified));
+    return out;
   }
 
   Future<File> newScriptFile() async {

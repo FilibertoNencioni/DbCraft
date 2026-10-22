@@ -12,6 +12,7 @@ import 'package:dbcraft/features/git/git_service.dart';
 import 'package:dbcraft/main.dart';
 import 'package:dbcraft/state/app_state.dart';
 import 'package:dbcraft/ui/widgets/navigation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -122,11 +123,11 @@ void main() {
     await git(ws, ['remote', 'set-url', 'origin', 'git@github.com:acme/dbcraft-workspace.git']);
     File('${scripts.path}/clienti_attivi.sql').writeAsStringSync('SELECT * FROM clienti WHERE attivo = 1;\n');
     await git(ws, ['add', '-A']);
-    await git(
-      ws,
-      ['commit', '-m', 'Filtra i clienti disattivati dal report mensile e aggiorna le note'],
-      date: now.subtract(const Duration(hours: 5)),
-    );
+    await git(ws, [
+      'commit',
+      '-m',
+      'Filtra i clienti disattivati dal report mensile e aggiorna le note',
+    ], date: now.subtract(const Duration(hours: 5)));
     File('${scripts.path}/clienti_attivi.sql').writeAsStringSync('SELECT id, nome FROM clienti WHERE attivo = 1;\n');
     File('${scripts.path}/nuovo_report.sql').writeAsStringSync('SELECT 2;\n');
     File('${scripts.path}/pulizia_log.sql').deleteSync();
@@ -142,7 +143,12 @@ void main() {
     for (final mode in [ThemeMode.light, ThemeMode.dark]) {
       state.settings.themeMode = mode;
       final suffix = mode == ThemeMode.light ? 'light' : 'dark';
-      await tester.pumpWidget(RepaintBoundary(key: _shotKey, child: DbCraftApp(state: state)));
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: _shotKey,
+          child: DbCraftApp(state: state),
+        ),
+      );
       await settle(tester);
       await shot(tester, 's0_database_$suffix');
       await tester.tap(find.byTooltip('Script'));
@@ -166,5 +172,22 @@ void main() {
       await tester.tap(find.byTooltip('Database'));
       await settle(tester);
     }
+
+    // Deleting a script that is open in an editor: the tab closes and the
+    // list reloads without touching the removed file.
+    await tester.tap(find.byTooltip('Script'));
+    await settle(tester);
+    await tester.tap(find.text('ordini_per_mese'));
+    await settle(tester);
+    await tester.tap(find.text('ordini_per_mese').first, buttons: kSecondaryButton);
+    await settle(tester, 400);
+    await tester.tap(find.text('Elimina').last);
+    await settle(tester, 400);
+    await tester.tap(find.text('Elimina').last);
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(File('${scripts.path}/ordini_per_mese.sql').existsSync(), isFalse);
+    expect(find.text('ordini_per_mese'), findsNothing);
+    await shot(tester, 's4_scripts_after_delete');
   });
 }
