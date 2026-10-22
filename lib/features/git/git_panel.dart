@@ -3,6 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../../state/app_state.dart';
@@ -37,6 +38,8 @@ class _GitPanelState extends State<GitPanel> {
   String? _remote;
   String? _busy;
   String? _error;
+  _Page _page = _Page.changes;
+  String? _selectedFile;
 
   @override
   void initState() {
@@ -266,91 +269,46 @@ class _GitPanelState extends State<GitPanel> {
   }
 
   Widget _repoView() {
-    final c = DbColors.of(context);
     final st = _status ?? GitStatus();
     final idle = _busy == null;
     final hasRemote = _remote != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Branch and actions
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 0),
-          child: Row(
+        SectionLabel(
+          hasRemote ? _repoName(_remote!) : 'Repository locale',
+          padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(AppIcons.split, size: 14, color: c.textSecondary),
-              const SizedBox(width: Gap.xs),
-              Flexible(
-                child: Text(
-                  st.branch ?? 'HEAD scollegato',
-                  overflow: TextOverflow.ellipsis,
-                  style: uiText(TypeSize.body, weight: FontWeight.w600, color: c.text),
+              if (hasRemote)
+                ToolButton(icon: AppIcons.sync, tooltip: 'Sincronizza (pull e push)', onPressed: idle ? _sync : null)
+              else
+                ToolButton(
+                  icon: AppIcons.link,
+                  tooltip: 'Collega repository remoto…',
+                  onPressed: idle ? _connect : null,
                 ),
-              ),
-              if (st.ahead > 0) ...[
-                const SizedBox(width: Gap.xs),
-                CountBadge('↑${st.ahead}', tooltip: '${st.ahead} commit da pubblicare'),
-              ],
-              if (st.behind > 0) ...[
-                const SizedBox(width: Gap.xs),
-                CountBadge('↓${st.behind}', tooltip: '${st.behind} commit da scaricare'),
-              ],
-              const Spacer(),
-              ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', onPressed: idle ? _refresh : null),
-              ToolButton(
-                icon: AppIcons.settings,
-                tooltip: 'Impostazioni di sincronizzazione',
-                onPressed: () async {
-                  await showGitSettingsDialog(context);
-                  await _refresh(quiet: true);
-                },
-              ),
+              PulldownButton(icon: AppIcons.more, tooltip: 'Altre azioni', entries: () => _actions(st)),
             ],
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.md, 2, Gap.md, Gap.xs),
-          child: Text(
-            hasRemote ? _remote! : 'Nessun repository remoto',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: uiText(TypeSize.caption, color: c.textTertiary),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-          child: Row(
-            children: [
-              if (hasRemote) ...[
-                ToolButton(
-                  icon: AppIcons.download,
-                  label: 'Pull',
-                  tooltip: 'Scarica le modifiche remote',
-                  onPressed: idle ? _pull : null,
-                ),
-                ToolButton(
-                  icon: AppIcons.upload,
-                  label: 'Push',
-                  tooltip: 'Pubblica i commit',
-                  onPressed: idle ? _push : null,
-                ),
-                ToolButton(
-                  icon: AppIcons.sync,
-                  label: 'Sincronizza',
-                  tooltip: 'Pull e poi Push',
-                  onPressed: idle ? _sync : null,
-                ),
-              ] else
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
-                  child: LinkButton(label: 'Collega repository remoto…', onPressed: idle ? _connect : null),
-                ),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: OutlineRow(
+            icon: AppIcons.split,
+            title: st.branch ?? 'HEAD scollegato',
+            accessories: [
+              if (st.behind > 0) _Drift(AppIcons.arrowDown, st.behind, '${st.behind} commit da scaricare'),
+              if (st.ahead > 0) _Drift(AppIcons.arrowUp, st.ahead, '${st.ahead} commit da pubblicare'),
             ],
+            tooltip: hasRemote ? 'Remoto: $_remote' : 'Nessun repository remoto collegato',
+            onMenu: (pos) => showMacMenu<Object?>(context, position: pos, entries: _actions(st)),
           ),
         ),
         if (st.hasConflicts)
           Padding(
-            padding: const EdgeInsets.fromLTRB(Gap.sm, Gap.sm, Gap.sm, 0),
+            padding: const EdgeInsets.fromLTRB(Gap.sm, Gap.xs, Gap.sm, 0),
             child: Notice.card(
               kind: NoticeKind.danger,
               title: 'Pull interrotto da conflitti',
@@ -360,73 +318,205 @@ class _GitPanelState extends State<GitPanel> {
               actions: [LinkButton(label: 'Annulla pull', small: true, onPressed: idle ? _abort : null)],
             ),
           ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(Gap.sm, Gap.sm, Gap.sm, Gap.xs),
+          child: Segmented<_Page>(
+            value: _page,
+            expand: true,
+            items: [
+              (_Page.changes, st.files.isEmpty ? 'Modifiche' : 'Modifiche (${st.files.length})', null),
+              (_Page.history, 'Cronologia', null),
+            ],
+            onChanged: (v) => setState(() => _page = v),
+          ),
+        ),
+        Expanded(child: _page == _Page.changes ? _changesPage(st) : _historyPage(st)),
+      ],
+    );
+  }
+
+  /// The "…" menu of the repository header and the branch row.
+  List<MenuEntry<Object?>> _actions(GitStatus st) {
+    final idle = _busy == null;
+    final hasRemote = _remote != null;
+    return [
+      MenuEntry('Sincronizza', onSelected: _sync, enabled: idle && hasRemote),
+      MenuEntry('Pull', onSelected: _pull, enabled: idle && hasRemote),
+      MenuEntry('Push', onSelected: _push, enabled: idle && hasRemote),
+      const MenuEntry.divider(),
+      MenuEntry('Aggiorna', onSelected: _refresh, enabled: idle),
+      if (!hasRemote) MenuEntry('Collega repository remoto…', onSelected: _connect, enabled: idle),
+      const MenuEntry.divider(),
+      MenuEntry(
+        'Impostazioni di sincronizzazione…',
+        onSelected: () async {
+          await showGitSettingsDialog(context);
+          await _refresh(quiet: true);
+        },
+      ),
+    ];
+  }
+
+  Widget _changesPage(GitStatus st) {
+    if (st.files.isEmpty) {
+      return const EmptyState(
+        icon: AppIcons.checkCircle,
+        title: 'Nessuna modifica',
+        message: 'Script, connessioni e impostazioni corrispondono all\'ultimo commit.',
+      );
+    }
+    final idle = _busy == null;
+    final sel = st.files.indexWhere((f) => f.path == _selectedFile);
+    final canCommit = idle && !st.hasConflicts && _message.text.trim().isNotEmpty;
+    final n = st.files.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: Gap.md),
-            children: [
-              SectionLabel('Modifiche', trailing: st.files.isEmpty ? null : CountBadge(st.files.length)),
-              if (st.files.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.xs),
-                  child: Text(
-                    'Nessuna modifica dall\'ultimo commit',
-                    style: uiText(TypeSize.small, color: c.textTertiary),
-                  ),
-                )
-              else
-                for (final f in st.files)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-                    child: _FileRow(
-                      file: f,
-                      onTap: () => _showDiff(f.path, () => git.diffFile(f)),
-                      onDiscard: idle && !f.conflicted ? () => _discard(f) : null,
-                    ),
-                  ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Gap.sm, Gap.sm, Gap.sm, 0),
-                child: MacTextField(
+          child: SourceList(
+            dense: true,
+            padding: const EdgeInsets.fromLTRB(10, Gap.xs, 10, Gap.sm),
+            itemCount: n,
+            selectedIndex: sel < 0 ? null : sel,
+            onSelect: (i) => setState(() => _selectedFile = st.files[i].path),
+            onActivate: (i) => _fileDiff(st.files[i]),
+            itemBuilder: (context, i) {
+              final f = st.files[i];
+              return _FileRow(
+                file: f,
+                selected: i == sel,
+                onTap: () => setState(() => _selectedFile = f.path),
+                onOpen: () => _fileDiff(f),
+                onDiscard: idle && !f.conflicted ? () => _discard(f) : null,
+              );
+            },
+          ),
+        ),
+        // Commit composer, pinned under the files it commits.
+        Container(
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: DbColors.of(context).separator, width: 0.5)),
+          ),
+          padding: const EdgeInsets.all(Gap.sm),
+          child: CallbackShortcuts(
+            bindings: {_commitKey: () => canCommit ? _commit() : null},
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MacTextField(
                   controller: _message,
                   minLines: 2,
                   maxLines: 5,
                   hint: 'Messaggio di commit',
                   onChanged: (_) => setState(() {}),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Gap.sm, Gap.sm, Gap.sm, 0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: PushButton.primary(
-                    label: 'Commit',
-                    tooltip: 'Salva tutte le modifiche in un commit',
-                    onPressed: idle && st.files.isNotEmpty && !st.hasConflicts && _message.text.trim().isNotEmpty
-                        ? _commit
-                        : null,
-                  ),
-                ),
-              ),
-              const SectionLabel('Cronologia'),
-              if (_log.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.xs),
-                  child: Text('Nessun commit', style: uiText(TypeSize.small, color: c.textTertiary)),
-                )
-              else
-                for (final cm in _log)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-                    child: ListRow(
-                      title: cm.subject,
-                      subtitle: '${cm.shortHash} · ${cm.author} · ${_relative(cm.date)}',
-                      tooltip: cm.hash,
-                      onTap: () => _showDiff(cm.subject, () => git.showCommit(cm.hash)),
+                const SizedBox(height: Gap.sm),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        n == 1 ? '1 file' : '$n file',
+                        style: uiText(TypeSize.small, color: DbColors.of(context).textSecondary, features: kTabular),
+                      ),
                     ),
-                  ),
-            ],
+                    PushButton.primary(
+                      label: 'Commit',
+                      tooltip:
+                          'Salva tutte le modifiche in un commit su ${st.branch ?? 'HEAD'} '
+                          '(${shortcutLabel(_commitKey)})',
+                      onPressed: canCommit ? _commit : null,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _historyPage(GitStatus st) {
+    if (_log.isEmpty) {
+      return const EmptyState(
+        icon: AppIcons.history,
+        title: 'Nessun commit',
+        message: 'Scrivi un messaggio in Modifiche e premi Commit per salvare il primo.',
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(10, Gap.xs, 10, Gap.md),
+      itemCount: _log.length,
+      itemBuilder: (context, i) {
+        final cm = _log[i];
+        // `git log` lists the newest first: the first `ahead` are local only
+        // (all of them before the first push).
+        final local = _remote != null && (st.upstream == null || i < st.ahead);
+        return ListRow(
+          title: cm.subject,
+          subtitle: '${cm.author} · ${_relative(cm.date)}',
+          trailing: local
+              ? Tooltip(
+                  message: 'Da pubblicare',
+                  child: Icon(AppIcons.upload, size: 14, color: DbColors.of(context).textTertiary),
+                )
+              : null,
+          tooltip: '${cm.shortHash} · ${cm.subject}',
+          onTap: () => _commitDiff(cm),
+          onMenu: (pos) => showMacMenu<void>(
+            context,
+            position: pos,
+            entries: [
+              MenuEntry('Mostra le modifiche', onSelected: () => _commitDiff(cm)),
+              MenuEntry('Copia hash', onSelected: () => Clipboard.setData(ClipboardData(text: cm.hash))),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _fileDiff(GitFileChange f) => _showDiff(f.path, () => git.diffFile(f));
+
+  void _commitDiff(GitCommit cm) => _showDiff(cm.subject, () => git.showCommit(cm.hash));
+}
+
+enum _Page { changes, history }
+
+const _commitKey = SingleActivator(LogicalKeyboardKey.enter, meta: true);
+
+/// "owner/repo" from an https or scp-style remote URL.
+String _repoName(String url) {
+  var s = url.trim();
+  if (s.endsWith('.git')) s = s.substring(0, s.length - 4);
+  if (s.endsWith('/')) s = s.substring(0, s.length - 1);
+  final parts = s.split(RegExp(r'[/:]')).where((e) => e.isNotEmpty).toList();
+  return parts.length >= 2 ? '${parts[parts.length - 2]}/${parts.last}' : s;
+}
+
+/// Commits ahead or behind the upstream: arrow and count.
+class _Drift extends StatelessWidget {
+  const _Drift(this.icon, this.count, this.tooltip);
+  final IconData icon;
+  final int count;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    final fg = RowTint.emphasizedOf(context) ? c.onSelectionEmphasized : c.textSecondary;
+    return Tooltip(
+      message: tooltip,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: fg),
+          Text(
+            '$count',
+            style: uiText(TypeSize.small, color: fg, features: kTabular),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -442,12 +532,20 @@ String _relative(DateTime d) {
   return '${two(d.day)}/${two(d.month)}/${d.year}';
 }
 
-/// A changed file: status letter, name, folder on the right; click shows
-/// the diff, the "…" menu discards the change.
+/// A changed file: status letter, name, folder on the right; a double
+/// click (or Invio) shows the diff, the "…" menu also discards the change.
 class _FileRow extends StatelessWidget {
-  const _FileRow({required this.file, required this.onTap, this.onDiscard});
+  const _FileRow({
+    required this.file,
+    required this.selected,
+    required this.onTap,
+    required this.onOpen,
+    this.onDiscard,
+  });
   final GitFileChange file;
+  final bool selected;
   final VoidCallback onTap;
+  final VoidCallback onOpen;
   final VoidCallback? onDiscard;
 
   @override
@@ -465,14 +563,16 @@ class _FileRow extends StatelessWidget {
       title: p.posix.basename(f.path),
       leading: StatusLetter(f.letter, color: color),
       muted: f.kind == GitChangeKind.deleted,
-      detail: dir == '.' ? null : (dir.length > 24 ? '…${dir.substring(dir.length - 23)}' : dir),
-      tooltip: '${f.label} — clic per vedere le differenze',
+      detail: dir == '.' ? null : dir,
+      selected: selected,
+      tooltip: '${f.path} · ${f.label}',
       onTap: onTap,
+      onDoubleTap: onOpen,
       onMenu: (pos) => showMacMenu<void>(
         context,
         position: pos,
         entries: [
-          MenuEntry('Mostra le differenze', onSelected: onTap),
+          MenuEntry('Mostra le differenze', onSelected: onOpen),
           const MenuEntry.divider(),
           MenuEntry(
             f.untracked ? 'Elimina il file…' : 'Annulla le modifiche…',

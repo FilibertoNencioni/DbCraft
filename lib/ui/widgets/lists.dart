@@ -17,6 +17,9 @@ const double kSidebarRowHeight = 28;
 /// Height of a dense outline row (diff trees, file lists, inspectors).
 const double kDenseRowHeight = 24;
 
+/// Widest share of an [OutlineRow] its detail may take.
+const double _kDetailShare = 0.4;
+
 // ---------------------------------------------------------------------------
 // Section label
 // ---------------------------------------------------------------------------
@@ -424,80 +427,7 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
       child: RowTint(
         background: look.fill == null ? listBg : Color.alphaBlend(look.fill!, listBg),
         emphasized: look.emphasized,
-        child: Row(
-          children: [
-            if (slot)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _toggle,
-                child: SizedBox(
-                  width: 16,
-                  height: double.infinity,
-                  child: widget.busy
-                      ? Center(
-                          child: Spinner(size: Spinner.small, color: look.emphasized ? look.secondary : null),
-                        )
-                      : widget.expanded == null
-                      ? null
-                      : Center(
-                          child: DisclosureChevron(
-                            expanded: widget.expanded!,
-                            color: look.emphasized ? look.secondary : null,
-                          ),
-                        ),
-                ),
-              )
-            else
-              const SizedBox(width: 2),
-            if (control != null) ...[control, const SizedBox(width: 4)],
-            if (icon != null) ...[SizedBox(width: 18, child: Center(child: icon)), const SizedBox(width: 6)],
-            Expanded(
-              child: Text(
-                widget.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: uiText(
-                  TypeSize.body,
-                  weight: widget.strong ? FontWeight.w600 : null,
-                  color: look.emphasized ? look.fg : (widget.titleColor ?? (widget.muted ? c.textSecondary : c.text)),
-                ),
-              ),
-            ),
-            if (showMenu)
-              SizedBox(
-                key: _menuKey,
-                child: ToolButton(
-                  icon: AppIcons.more,
-                  tooltip: 'Azioni',
-                  extent: 20,
-                  color: look.emphasized ? look.fg : null,
-                  onPressed: _openMenuFromButton,
-                ),
-              )
-            else ...[
-              for (final a in widget.accessories) Padding(padding: const EdgeInsets.only(left: 6), child: a),
-              // Shares the free space with the title, so a long detail ends
-              // in an ellipsis instead of overflowing the row.
-              if (widget.detail != null)
-                Flexible(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: Gap.sm, right: 2),
-                    child: Text(
-                      widget.detail!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: uiText(
-                        TypeSize.small,
-                        color: look.emphasized ? look.secondary : c.textTertiary,
-                        features: kTabular,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-            const SizedBox(width: 2),
-          ],
-        ),
+        child: _content(c, look, slot, control, icon, showMenu),
       ),
     );
 
@@ -514,6 +444,112 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
     );
     if (widget.tooltip != null) child = Tooltip(message: widget.tooltip!, child: child);
     return Semantics(selected: widget.selected, expanded: widget.expanded, label: widget.title, child: child);
+  }
+
+  Widget _content(
+    DbColors c,
+    ({Color? fill, Color fg, Color secondary, bool emphasized}) look,
+    bool slot,
+    Widget? control,
+    Widget? icon,
+    bool showMenu,
+  ) {
+    final titleStyle = uiText(
+      TypeSize.body,
+      weight: widget.strong ? FontWeight.w600 : null,
+      color: look.emphasized ? look.fg : (widget.titleColor ?? (widget.muted ? c.textSecondary : c.text)),
+    );
+    return Row(
+      children: [
+        if (slot)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggle,
+            child: SizedBox(
+              width: 16,
+              height: double.infinity,
+              child: widget.busy
+                  ? Center(
+                      child: Spinner(size: Spinner.small, color: look.emphasized ? look.secondary : null),
+                    )
+                  : widget.expanded == null
+                  ? null
+                  : Center(
+                      child: DisclosureChevron(
+                        expanded: widget.expanded!,
+                        color: look.emphasized ? look.secondary : null,
+                      ),
+                    ),
+            ),
+          )
+        else
+          const SizedBox(width: 2),
+        if (control != null) ...[control, const SizedBox(width: 4)],
+        if (icon != null) ...[SizedBox(width: 18, child: Center(child: icon)), const SizedBox(width: 6)],
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, box) => Row(
+              children: [
+                Expanded(
+                  child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle),
+                ),
+                if (showMenu)
+                  SizedBox(
+                    key: _menuKey,
+                    child: ToolButton(
+                      icon: AppIcons.more,
+                      tooltip: 'Azioni',
+                      extent: 20,
+                      color: look.emphasized ? look.fg : null,
+                      onPressed: _openMenuFromButton,
+                    ),
+                  )
+                else ...[
+                  for (final a in widget.accessories) Padding(padding: const EdgeInsets.only(left: 6), child: a),
+                  // Sized to its text: it takes what the title leaves free,
+                  // at least [_kDetailShare] of the row, so the title keeps
+                  // priority and only a long detail ends in an ellipsis.
+                  if (widget.detail != null)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: _detailMax(context, box.maxWidth, titleStyle)),
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: Gap.sm, right: 2),
+                        child: Text(
+                          widget.detail!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: uiText(
+                            TypeSize.small,
+                            color: look.emphasized ? look.secondary : c.textTertiary,
+                            features: kTabular,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 2),
+      ],
+    );
+  }
+
+  /// Widest the detail may be in [width] (the title, accessories and detail).
+  double _detailMax(BuildContext context, double width, TextStyle titleStyle) {
+    final share = width * _kDetailShare;
+    // Accessories have no known width: keep the fixed share.
+    if (widget.accessories.isNotEmpty) return share;
+    final title = TextPainter(
+      text: TextSpan(text: widget.title, style: titleStyle),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final free = width - title.width;
+    title.dispose();
+    return math.max(share, free);
   }
 }
 

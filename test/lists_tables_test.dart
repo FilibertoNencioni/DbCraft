@@ -7,6 +7,7 @@ import 'package:dbcraft/ui/results/result_grid.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -178,6 +179,42 @@ void main() {
       expect(find.text('200'), findsNothing);
       await tester.tap(find.byIcon(AppIcons.more));
       expect(menuAt, isNotNull);
+    });
+
+    testWidgets('the detail sits on the right edge and only the title it crowds out truncates', (tester) async {
+      bool clipped(String text) {
+        final p = tester.renderObject<RenderParagraph>(find.text(text));
+        return p.didExceedMaxLines;
+      }
+
+      Future<void> row(String title, String detail) => tester.pumpWidget(
+        _app(
+          Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 260,
+              child: OutlineRow(title: title, detail: detail),
+            ),
+          ),
+        ),
+      );
+
+      // Short title: a detail wider than 40% takes the free space instead of
+      // half the row (the test font is square: 12px per character).
+      await row('main', 'acme/reports');
+      expect(clipped('main'), isFalse);
+      expect(clipped('acme/reports'), isFalse);
+      expect(tester.getTopRight(find.text('acme/reports')).dx, closeTo(260 - 4 - 2 - 2, 1));
+
+      // Long title: the title keeps priority; the detail stays whole.
+      await row('fix_indirizzi_fatturazione_duplicati_clienti', '1 h fa');
+      expect(clipped('1 h fa'), isFalse);
+      expect(clipped('fix_indirizzi_fatturazione_duplicati_clienti'), isTrue);
+
+      // Both long: the detail gives up to 40% of the row.
+      await row('fix_indirizzi_fatturazione_duplicati_clienti', 'eu-south-1 · profilo produzione-lettura');
+      expect(tester.getSize(find.text('eu-south-1 · profilo produzione-lettura')).width, lessThan(260 * 0.4));
+      expect(tester.getSize(find.text('fix_indirizzi_fatturazione_duplicati_clienti')).width, greaterThan(260 * 0.5));
     });
   });
 

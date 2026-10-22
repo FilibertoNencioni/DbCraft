@@ -423,7 +423,7 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: IndexedStack(index: _leftTab, children: [
             const NavigatorPanel(),
-            _ScriptsPanel(key: ValueKey('${app.tabs.length}:${app.scriptsRevision}')),
+            _ScriptsPanel(revision: '${app.tabs.length}:${app.scriptsRevision}'),
             const CloudExplorerPanel(),
             GitPanel(onWorkspaceChanged: app.reloadWorkspace),
           ]),
@@ -1008,22 +1008,45 @@ class _RecentConnection extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ScriptsPanel extends StatefulWidget {
-  const _ScriptsPanel({super.key});
+  const _ScriptsPanel({required this.revision});
+
+  /// Changes when scripts may have been saved, renamed or pulled: the list
+  /// reloads, keeping the filter.
+  final String revision;
+
   @override
   State<_ScriptsPanel> createState() => _ScriptsPanelState();
 }
 
 class _ScriptsPanelState extends State<_ScriptsPanel> {
   late Future<List<File>> _files = AppScope.read(context).workspace.listScripts();
+  final _filter = TextEditingController();
   bool _collapsed = false;
 
   /// Row picked with the arrows; follows the active editor's file otherwise.
   String? _picked;
   String? _lastCurrent;
 
+  @override
+  void didUpdateWidget(_ScriptsPanel old) {
+    super.didUpdateWidget(old);
+    if (old.revision != widget.revision) _files = AppScope.read(context).workspace.listScripts();
+  }
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    super.dispose();
+  }
+
   void _reload() => setState(() {
         _files = AppScope.read(context).workspace.listScripts();
       });
+
+  Future<void> _newScript() async {
+    await openSqlEditor(context);
+    _reload();
+  }
 
   String _ago(DateTime t) {
     final d = DateTime.now().difference(t);
@@ -1079,7 +1102,6 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.read(context);
-    final c = DbColors.of(context);
     final current = app.currentTab is SqlEditorTab ? (app.currentTab as SqlEditorTab).file?.path : null;
     if (current != _lastCurrent) {
       _lastCurrent = current;
@@ -1091,54 +1113,67 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
           expanded: !_collapsed,
           onToggle: (v) => setState(() => _collapsed = !v),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            ToolButton(
-              icon: AppIcons.add,
-              tooltip: 'Nuovo script',
-              onPressed: () async {
-                await openSqlEditor(context);
-                _reload();
-              },
-            ),
+            ToolButton(icon: AppIcons.add, tooltip: 'Nuovo script', onPressed: _newScript),
             ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', onPressed: _reload),
           ])),
-      Expanded(
-        child: _collapsed
-            ? const SizedBox.shrink()
-            : FutureBuilder<List<File>>(
-                future: _files,
-                builder: (context, snap) {
-                  final files = snap.data ?? const <File>[];
-                  if (files.isEmpty) {
-                    return const EmptyState(
-                      icon: AppIcons.document,
-                      title: 'Nessuno script',
-                      message: 'Gli editor SQL vengono salvati qui automaticamente.',
-                    );
-                  }
-                  final sel = files.indexWhere((f) => f.path == (_picked ?? current));
-                  return SourceList(
-                    itemCount: files.length,
-                    selectedIndex: sel < 0 ? null : sel,
-                    onSelect: (i) => setState(() => _picked = files[i].path),
-                    onActivate: (i) => _open(files[i]),
-                    itemBuilder: (context, i) {
-                      final f = files[i];
-                      final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
-                      return OutlineRow(
+      if (!_collapsed) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(Gap.sm, 2, Gap.sm, Gap.sm),
+          child: SearchField(controller: _filter, hint: 'Filtra script', onChanged: (_) => setState(() {})),
+        ),
+        Expanded(
+          child: FutureBuilder<List<File>>(
+            future: _files,
+            builder: (context, snap) {
+              final all = snap.data ?? const <File>[];
+              if (all.isEmpty) {
+                return snap.connectionState == ConnectionState.done
+                    ? EmptyState(
                         icon: AppIcons.document,
-                        iconColor: open ? c.accent : null,
-                        title: p.basenameWithoutExtension(f.path),
-                        detail: _ago(f.lastModifiedSync()),
-                        selected: i == sel,
-                        tooltip: f.path,
-                        onTap: () => _open(f),
-                        onMenu: (pos) => _menu(f, pos),
-                      );
-                    },
+                        title: 'Nessuno script',
+                        message: 'Gli editor SQL vengono salvati qui automaticamente.',
+                        action: PushButton(label: 'Nuovo script', onPressed: _newScript),
+                      )
+                    : const SizedBox.shrink();
+              }
+              final q = _filter.text.trim().toLowerCase();
+              final files = q.isEmpty
+                  ? all
+                  : all.where((f) => p.basenameWithoutExtension(f.path).toLowerCase().contains(q)).toList();
+              if (files.isEmpty) {
+                return EmptyState(
+                  icon: AppIcons.search,
+                  title: 'Nessun risultato',
+                  message: 'Nessuno script contiene "${_filter.text.trim()}".',
+                );
+              }
+              final sel = files.indexWhere((f) => f.path == (_picked ?? current));
+              return SourceList(
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, Gap.md),
+                itemCount: files.length,
+                selectedIndex: sel < 0 ? null : sel,
+                onSelect: (i) => setState(() => _picked = files[i].path),
+                onActivate: (i) => _open(files[i]),
+                itemBuilder: (context, i) {
+                  final f = files[i];
+                  final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
+                  return OutlineRow(
+                    icon: AppIcons.document,
+                    strong: open,
+                    title: p.basenameWithoutExtension(f.path),
+                    detail: _ago(f.lastModifiedSync()),
+                    selected: i == sel,
+                    tooltip: open ? '${f.path} · aperto' : f.path,
+                    onTap: () => _open(f),
+                    onMenu: (pos) => _menu(f, pos),
                   );
                 },
-              ),
-      ),
+              );
+            },
+          ),
+        ),
+      ] else
+        const Spacer(),
     ]);
   }
 }

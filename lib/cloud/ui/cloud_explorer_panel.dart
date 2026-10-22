@@ -380,8 +380,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
       icon: _icon(n),
       iconColor: switch (n.kind) {
         _Kind.account => cloudProviderColor(n.account.provider),
-        _Kind.bucket => c.accent,
-        _Kind.folder => c.textSecondary,
+        _Kind.bucket || _Kind.folder => c.textSecondary,
         _ => c.textTertiary,
       },
       depth: v.depth,
@@ -390,7 +389,6 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
       busy: n.loading,
       reserveDisclosure: true,
       detail: detail.isEmpty ? null : detail,
-      strong: n.kind == _Kind.account,
       titleColor: n.error != null ? c.danger : (n.kind == _Kind.more ? c.accent : null),
       accessories: [
         if (n.error != null)
