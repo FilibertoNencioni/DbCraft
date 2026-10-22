@@ -13,6 +13,7 @@ import 'package:dbcraft/odbc/odbc_types.dart';
 import 'package:dbcraft/services/metadata_service.dart';
 import 'package:dbcraft/state/db_connection.dart';
 import 'package:dbcraft/ui/editors/er_diagram_view.dart';
+import 'package:dbcraft/ui/editors/sql_code_editor.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
 import 'package:flutter/material.dart';
@@ -906,13 +907,13 @@ void main() {
     expect(tab.diff, isNotNull);
     expect(find.text('Solo in origine'), findsOneWidget);
     expect(find.text('Differenti'), findsOneWidget);
-    var script = tester.widget<SelectableText>(find.byType(SelectableText).last).data!;
+    var script = tester.widget<SqlCodeView>(find.byType(SqlCodeView)).text;
     expect(script, contains('CREATE TABLE app.orders'));
     expect(script, isNot(contains('DROP COLUMN legacy')));
     // Dangerous drops only on request.
     await tester.tap(find.text('Elimina oggetti in più'));
     await tester.pumpAndSettle();
-    script = tester.widget<SelectableText>(find.byType(SelectableText).last).data!;
+    script = tester.widget<SqlCodeView>(find.byType(SqlCodeView)).text;
     expect(script, contains('ALTER TABLE app.customers DROP COLUMN legacy;'));
     // Excluding the new table removes it from the script.
     await tester.tap(find.text('orders'));
@@ -920,7 +921,7 @@ void main() {
     // The checkbox label in the detail pane toggles the change.
     await tester.tap(find.text('Crea la tabella orders'));
     await tester.pumpAndSettle();
-    script = tester.widget<SelectableText>(find.byType(SelectableText).last).data!;
+    script = tester.widget<SqlCodeView>(find.byType(SqlCodeView)).text;
     expect(script, isNot(contains('CREATE TABLE app.orders')));
     // Swap clears the results.
     await tester.tap(find.byTooltip('Scambia origine e destinazione'));

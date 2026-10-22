@@ -620,7 +620,7 @@ class _TableEditorViewState extends State<TableEditorView> {
           ],
         ),
         Expanded(
-          child: SqlCodeView(text: ddl, fontSize: AppScope.of(context).settings.editorFontSize),
+          child: SqlCodeView(text: ddl),
         ),
       ],
     );

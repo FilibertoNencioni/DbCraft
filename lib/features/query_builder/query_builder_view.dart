@@ -10,6 +10,7 @@ import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
 import '../../state/result_set_model.dart';
 import '../../ui/actions.dart';
+import '../../ui/editors/sql_code_editor.dart';
 import '../../ui/results/results_viewer.dart';
 import '../../ui/widgets/common.dart';
 import '../../ui/widgets/split_view.dart';
@@ -869,10 +870,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
                       style: uiText(TypeSize.small, color: c.textTertiary),
                     ),
                   )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(Gap.md),
-                    child: SelectableText(sql, style: monoStyle(context, size: TypeSize.mono)),
-                  ),
+                : SqlCodeView(text: sql),
           ),
         ],
       ),

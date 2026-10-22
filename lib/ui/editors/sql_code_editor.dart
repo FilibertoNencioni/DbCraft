@@ -8,6 +8,7 @@ import 'package:re_highlight/styles/xcode.dart';
 
 import '../../model/db_objects.dart';
 import '../../services/sql_keywords.dart';
+import '../../state/app_state.dart';
 import '../../state/db_connection.dart';
 import '../widgets/common.dart';
 
@@ -490,11 +491,12 @@ class SqlCodeEditor extends StatelessWidget {
 
 /// Read-only SQL viewer (DDL, generated scripts): same highlighting and
 /// gutter as [SqlCodeEditor], with selection and find but no editing.
+/// Uses the editor font size from the settings unless [fontSize] is given.
 class SqlCodeView extends StatefulWidget {
-  const SqlCodeView({super.key, required this.text, required this.fontSize});
+  const SqlCodeView({super.key, required this.text, this.fontSize});
 
   final String text;
-  final double fontSize;
+  final double? fontSize;
 
   @override
   State<SqlCodeView> createState() => _SqlCodeViewState();
@@ -518,14 +520,15 @@ class _SqlCodeViewState extends State<SqlCodeView> {
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
+    final fontSize = widget.fontSize ?? AppScope.maybeOf(context)?.settings.editorFontSize ?? TypeSize.mono;
     return CodeEditor(
       controller: _controller,
       readOnly: true,
       showCursorWhenReadOnly: false,
       wordWrap: false,
       findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
-      style: sqlCodeEditorStyle(context, widget.fontSize),
-      indicatorBuilder: sqlLineNumbers(widget.fontSize),
+      style: sqlCodeEditorStyle(context, fontSize),
+      indicatorBuilder: sqlLineNumbers(fontSize),
       leadingDivider: Container(width: 0.5, color: c.separator),
     );
   }

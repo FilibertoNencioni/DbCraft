@@ -9,6 +9,7 @@ import '../../state/app_state.dart';
 import '../../state/db_connection.dart';
 import '../../state/editor_tabs.dart';
 import '../../ui/actions.dart';
+import '../../ui/editors/sql_code_editor.dart';
 import '../../ui/widgets/common.dart';
 import '../../ui/widgets/split_view.dart';
 import 'ddl_builder.dart';
@@ -903,13 +904,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                         ? 'Gli schemi sono allineati con le opzioni scelte.'
                         : 'Tutte le modifiche sono escluse: selezionale a sinistra.',
                   )
-                : ColoredBox(
-                    color: c.codeBackground,
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(Gap.md),
-                      child: SelectableText(script, style: monoStyle(context, size: TypeSize.mono)),
-                    ),
-                  ),
+                : SqlCodeView(text: script),
           ),
         ],
       ),
