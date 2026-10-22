@@ -1027,6 +1027,9 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
   String? _picked;
   String? _lastCurrent;
 
+  /// Script being renamed in place.
+  String? _renaming;
+
   @override
   void didUpdateWidget(_ScriptsPanel old) {
     super.didUpdateWidget(old);
@@ -1074,19 +1077,12 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
     final v = await showMacMenu<int>(
       context,
       position: pos,
-      entries: const [MenuEntry('Rinomina…', value: 0), MenuEntry('Elimina', value: 1)],
+      entries: const [MenuEntry('Rinomina', value: 0), MenuEntry('Elimina', value: 1)],
     );
     if (v == null || !mounted) return;
     if (v == 0) {
-      final name = await promptText(context, 'Rinomina script', initial: p.basenameWithoutExtension(f.path));
-      if (name == null || name.trim().isEmpty) return;
-      final renamed = await f.rename(p.join(f.parent.path, '${name.trim()}.sql'));
-      for (final t in app.tabs) {
-        if (t is SqlEditorTab && t.file?.path == f.path) {
-          t.file = renamed;
-          t.refresh();
-        }
-      }
+      setState(() => _renaming = f.path);
+      return;
     } else {
       final ok = await confirmDialog(context, 'Elimina script', 'Eliminare ${p.basename(f.path)}?',
           ok: 'Elimina', destructive: true);
@@ -1095,6 +1091,34 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
         if (t is SqlEditorTab && t.file?.path == f.path) app.closeTab(t);
       }
       if (await f.exists()) await f.delete();
+    }
+    _reload();
+  }
+
+  Future<void> _rename(File f, String input) async {
+    final app = AppScope.read(context);
+    final name = input.trim();
+    setState(() => _renaming = null);
+    if (name.isEmpty || name == p.basenameWithoutExtension(f.path)) return;
+    final target = p.join(f.parent.path, '$name.sql');
+    try {
+      if (name.contains(RegExp(r'[/\\:]'))) {
+        throw Exception('Il nome non può contenere / \\ o :');
+      }
+      // Case-only renames point at the same file on macOS and Windows.
+      if (target.toLowerCase() != f.path.toLowerCase() && await File(target).exists()) {
+        throw Exception('Esiste già uno script "$name"');
+      }
+      final renamed = await f.rename(target);
+      for (final t in app.tabs) {
+        if (t is SqlEditorTab && t.file?.path == f.path) {
+          t.file = renamed;
+          t.refresh();
+        }
+      }
+      if (_picked == f.path) _picked = renamed.path;
+    } catch (e) {
+      if (mounted) showErrorDialog(context, e, title: 'Impossibile rinominare lo script');
     }
     _reload();
   }
@@ -1157,13 +1181,21 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
                 itemBuilder: (context, i) {
                   final f = files[i].file;
                   final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
+                  final name = p.basename(f.path);
                   return OutlineRow(
                     icon: AppIcons.document,
                     strong: open,
                     title: p.basenameWithoutExtension(f.path),
+                    titleEditor: _renaming == f.path
+                        ? InlineRenameField(
+                            initial: p.basenameWithoutExtension(f.path),
+                            onSubmit: (v) => _rename(f, v),
+                            onCancel: () => setState(() => _renaming = null),
+                          )
+                        : null,
                     detail: _ago(files[i].modified),
                     selected: i == sel,
-                    tooltip: open ? '${f.path} · aperto' : f.path,
+                    tooltip: open ? '$name · aperto' : name,
                     onTap: () => _open(f),
                     onMenu: (pos) => _menu(f, pos),
                   );

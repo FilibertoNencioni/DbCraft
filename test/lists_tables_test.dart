@@ -181,6 +181,67 @@ void main() {
       expect(menuAt, isNotNull);
     });
 
+    testWidgets('renames in place: Return confirms without opening, Escape cancels', (tester) async {
+      String? submitted;
+      var cancelled = 0;
+      var activated = 0;
+      var editing = true;
+      await tester.pumpWidget(
+        _app(
+          StatefulBuilder(
+            builder: (context, setState) => SourceList(
+              itemCount: 1,
+              selectedIndex: 0,
+              onSelect: (_) {},
+              onActivate: (_) => activated++,
+              itemBuilder: (_, _) => OutlineRow(
+                title: 'report',
+                detail: 'adesso',
+                onTap: () {},
+                titleEditor: editing
+                    ? InlineRenameField(
+                        initial: 'report',
+                        onSubmit: (v) => setState(() {
+                          submitted = v;
+                          editing = false;
+                        }),
+                        onCancel: () => setState(() {
+                          cancelled++;
+                          editing = false;
+                        }),
+                      )
+                    : null,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('adesso'), findsNothing, reason: 'the field takes the whole row');
+      final field = tester.widget<EditableText>(find.byType(EditableText));
+      expect(field.focusNode.hasFocus, isTrue);
+      expect(field.controller.selection, const TextSelection(baseOffset: 0, extentOffset: 6));
+      await tester.enterText(find.byType(EditableText), 'report mensile');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(submitted, 'report mensile');
+      expect(activated, 0, reason: 'Return must not open the row');
+      expect(find.byType(InlineRenameField), findsNothing);
+
+      editing = true;
+      submitted = null;
+      await tester.pumpWidget(_app(const SizedBox()));
+      await tester.pumpWidget(
+        _app(
+          InlineRenameField(initial: 'x', onSubmit: (v) => submitted = v, onCancel: () => cancelled++),
+        ),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      expect(cancelled, 1);
+      expect(submitted, isNull);
+    });
+
     testWidgets('the detail sits on the right edge and only the title it crowds out truncates', (tester) async {
       bool clipped(String text) {
         final p = tester.renderObject<RenderParagraph>(find.text(text));

@@ -334,9 +334,14 @@ class OutlineRow extends StatefulWidget {
     this.onDoubleTap,
     this.onMenu,
     this.tooltip,
+    this.titleEditor,
   });
 
   final String title;
+
+  /// Takes the title's place while renaming in place ([InlineRenameField]):
+  /// the row ignores taps and menus and hides its detail meanwhile.
+  final Widget? titleEditor;
   final IconData? icon;
   final Color? iconColor;
 
@@ -388,6 +393,14 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
   bool _hover = false;
   final _menuKey = GlobalKey();
 
+  @override
+  void didUpdateWidget(OutlineRow old) {
+    super.didUpdateWidget(old);
+    // The hover region is rebuilt after an in-place rename: the pointer may
+    // have left meanwhile.
+    if (old.titleEditor == null && widget.titleEditor != null) _hover = false;
+  }
+
   void _openMenuFromButton() {
     final box = _menuKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
@@ -406,7 +419,8 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
     final scope = SourceListScope.maybeOf(context);
     final look = _rowColors(context, selected: widget.selected, hover: _hover);
     final listBg = scope?.background ?? c.sidebar;
-    final showMenu = widget.onMenu != null && _hover;
+    final editing = widget.titleEditor != null;
+    final showMenu = widget.onMenu != null && _hover && !editing;
     final slot = widget.expanded != null || widget.busy || widget.reserveDisclosure || widget.depth > 0;
 
     Widget? icon = widget.icon == null ? widget.leading : null;
@@ -431,6 +445,7 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
       ),
     );
 
+    if (editing) return row;
     Widget child = MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -491,9 +506,13 @@ class _OutlineRowState extends State<OutlineRow> with _DoubleClick {
             builder: (context, box) => Row(
               children: [
                 Expanded(
-                  child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle),
+                  child:
+                      widget.titleEditor ??
+                      Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle),
                 ),
-                if (showMenu)
+                if (widget.titleEditor != null)
+                  const SizedBox.shrink()
+                else if (showMenu)
                   SizedBox(
                     key: _menuKey,
                     child: ToolButton(

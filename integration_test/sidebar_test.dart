@@ -11,10 +11,12 @@ import 'dart:ui' as ui;
 import 'package:dbcraft/features/git/git_service.dart';
 import 'package:dbcraft/main.dart';
 import 'package:dbcraft/state/app_state.dart';
+import 'package:dbcraft/ui/widgets/fields.dart';
 import 'package:dbcraft/ui/widgets/navigation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -189,5 +191,24 @@ void main() {
     expect(File('${scripts.path}/ordini_per_mese.sql').existsSync(), isFalse);
     expect(find.text('ordini_per_mese'), findsNothing);
     await shot(tester, 's4_scripts_after_delete');
+
+    // Rename in place from the context menu: the field keeps the focus once
+    // the menu closes and Return renames the file.
+    await tester.tap(find.text('nuovo_report').first, buttons: kSecondaryButton);
+    await settle(tester, 400);
+    await tester.tap(find.text('Rinomina').last);
+    await settle(tester, 400);
+    final field = find.descendant(of: find.byType(InlineRenameField), matching: find.byType(EditableText));
+    expect(field, findsOneWidget);
+    expect(tester.widget<EditableText>(field).focusNode.hasFocus, isTrue);
+    await shot(tester, 's5_scripts_rename');
+    await tester.enterText(field, 'report_nuovo');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(File('${scripts.path}/nuovo_report.sql').existsSync(), isFalse);
+    expect(File('${scripts.path}/report_nuovo.sql').existsSync(), isTrue);
+    expect(find.text('report_nuovo'), findsOneWidget);
+    expect(find.byType(InlineRenameField), findsNothing);
   });
 }

@@ -212,6 +212,77 @@ class FieldMessage extends StatelessWidget {
   }
 }
 
+/// In-place rename of a list row (Finder): takes focus with the text
+/// selected; Return or a click elsewhere confirms, Escape cancels. Return and
+/// Escape do not reach the list around it.
+class InlineRenameField extends StatefulWidget {
+  const InlineRenameField({super.key, required this.initial, required this.onSubmit, required this.onCancel});
+
+  final String initial;
+  final ValueChanged<String> onSubmit;
+  final VoidCallback onCancel;
+
+  @override
+  State<InlineRenameField> createState() => _InlineRenameFieldState();
+}
+
+class _InlineRenameFieldState extends State<InlineRenameField> {
+  late final _controller = TextEditingController(text: widget.initial)
+    ..selection = TextSelection(baseOffset: 0, extentOffset: widget.initial.length);
+  final _focus = FocusNode();
+  bool _done = false;
+  bool _hadFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (_focus.hasFocus) {
+        _hadFocus = true;
+      } else if (_hadFocus) {
+        _finish(submit: true);
+      }
+    });
+    // Autofocus gives way to the list that already holds the focus (and to
+    // the menu that opened the rename, which hands it back on close).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _finish({required bool submit}) {
+    if (_done) return;
+    _done = true;
+    submit ? widget.onSubmit(_controller.text) : widget.onCancel();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent) return KeyEventResult.ignored;
+    switch (e.logicalKey) {
+      case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
+        _finish(submit: true);
+      case LogicalKeyboardKey.escape:
+        _finish(submit: false);
+      default:
+        return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) => Focus(
+    onKeyEvent: _onKey,
+    child: MacTextField(controller: _controller, focusNode: _focus),
+  );
+}
+
 /// Password field with an inline eye button that reveals the text.
 ///
 /// Multi-line secrets (a connection string, a JSON key) set [maxLines]: the
