@@ -48,7 +48,7 @@ class GitSettings {
 
 /// Remote URL, pull strategy, history, auto-push and author.
 Future<void> showGitSettingsDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _GitSettingsDialog());
+    showSheet<void>(context, builder: (_) => const _GitSettingsDialog());
 
 class _GitSettingsDialog extends StatefulWidget {
   const _GitSettingsDialog();
@@ -124,125 +124,83 @@ class _GitSettingsDialogState extends State<_GitSettingsDialog> {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final s = _settings;
-    return Dialog(
-      insetPadding: const EdgeInsets.all(Gap.xl),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 600,
-        height: 600,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.md, Gap.sm),
-              child: Row(
-                children: [
-                  Expanded(child: Text('Sincronizzazione con Git', style: Theme.of(context).textTheme.titleLarge)),
-                  ToolButton(icon: Icons.close_rounded, tooltip: 'Chiudi', onPressed: () => Navigator.pop(context)),
-                ],
-              ),
-            ),
-            Expanded(
-              child: s == null
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.sm, Gap.xl, Gap.xl),
-                      children: [
-                        FormGroup(
-                          title: 'Repository remoto',
-                          footer: _isRepo
-                              ? 'Le credenziali sono gestite da Git (credential helper o chiave SSH), non da DbCraft.'
-                              : 'Inizializza prima il repository dal pannello Progetto.',
-                          children: [
-                            FormRow(
-                              label: 'URL (origin)',
-                              child: TextField(
-                                controller: _url,
-                                enabled: _isRepo,
-                                style: monoStyle(context, size: 12.5),
-                                decoration: const InputDecoration(hintText: 'git@github.com:team/progetto-db.git'),
-                              ),
-                            ),
-                          ],
-                        ),
-                        FormGroup(
-                          title: 'Sincronizzazione',
-                          children: [
-                            FormRow(
-                              label: 'Pull',
-                              help: 'Strategia condivisa con il team',
-                              child: Align(
-                                alignment: Alignment.centerRight,
-                                child: Segmented<bool>(
-                                  value: s.rebase,
-                                  items: const [(true, 'Rebase', null), (false, 'Merge', null)],
-                                  onChanged: (v) => setState(() => s.rebase = v),
-                                ),
-                              ),
-                            ),
-                            FormRow(
-                              label: 'Push automatico dopo il commit',
-                              help: 'Solo su questo computer',
-                              labelWidth: 320,
-                              child: Align(
-                                alignment: Alignment.centerRight,
-                                child: DbSwitch(value: s.autoPush, onChanged: (v) => setState(() => s.autoPush = v)),
-                              ),
-                            ),
-                            FormRow(
-                              label: 'Includi la cronologia delle query',
-                              help: 'history.json contiene le query eseguite: di solito resta personale',
-                              labelWidth: 320,
-                              child: Align(
-                                alignment: Alignment.centerRight,
-                                child: DbSwitch(
-                                  value: _history,
-                                  onChanged: _isRepo ? (v) => setState(() => _history = v) : null,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        FormGroup(
-                          title: 'Autore dei commit',
-                          footer: 'Salvati nella configurazione di questo repository.',
-                          children: [
-                            FormRow(
-                              label: 'Nome',
-                              child: TextField(controller: _name, enabled: _isRepo),
-                            ),
-                            FormRow(
-                              label: 'Email',
-                              child: TextField(controller: _email, enabled: _isRepo),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          'Il vault (vault.json, vault.key) e i file temporanei sono sempre esclusi tramite .gitignore; '
-                          'prima di ogni commit DbCraft verifica che nessun file contenga password in chiaro.',
-                          style: TextStyle(fontSize: TypeSize.caption + 0.5, color: c.textSecondary),
-                        ),
-                      ],
+    return SheetScaffold(
+      title: 'Sincronizzazione con Git',
+      onSubmit: s == null || _saving ? null : _save,
+      body: s == null
+          ? const SizedBox(
+              height: 240,
+              child: Center(child: Spinner(size: Spinner.large)),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FormGroup(
+                  title: 'Repository remoto',
+                  footer: _isRepo
+                      ? 'Le credenziali sono gestite da Git (credential helper o chiave SSH), non da DbCraft.'
+                      : 'Inizializza prima il repository dal pannello Progetto.',
+                  children: [
+                    FormRow(
+                      label: 'URL (origin)',
+                      child: MacTextField(
+                        controller: _url,
+                        enabled: _isRepo,
+                        mono: true,
+                        hint: 'git@github.com:team/progetto-db.git',
+                      ),
                     ),
+                  ],
+                ),
+                FormGroup(
+                  title: 'Sincronizzazione',
+                  children: [
+                    FormRow(
+                      label: 'Pull',
+                      help: 'Strategia condivisa con il team',
+                      child: Segmented<bool>(
+                        value: s.rebase,
+                        items: const [(true, 'Rebase', null), (false, 'Merge', null)],
+                        onChanged: (v) => setState(() => s.rebase = v),
+                      ),
+                    ),
+                    FormRow(
+                      label: 'Push automatico dopo il commit',
+                      help: 'Solo su questo computer',
+                      child: DbSwitch(value: s.autoPush, onChanged: (v) => setState(() => s.autoPush = v)),
+                    ),
+                    FormRow(
+                      label: 'Includi la cronologia delle query',
+                      help: 'history.json contiene le query eseguite: di solito resta personale',
+                      child: DbSwitch(value: _history, onChanged: _isRepo ? (v) => setState(() => _history = v) : null),
+                    ),
+                  ],
+                ),
+                FormGroup(
+                  title: 'Autore dei commit',
+                  footer: 'Salvati nella configurazione di questo repository.',
+                  children: [
+                    FormRow(
+                      label: 'Nome',
+                      child: MacTextField(controller: _name, enabled: _isRepo),
+                    ),
+                    FormRow(
+                      label: 'Email',
+                      child: MacTextField(controller: _email, enabled: _isRepo),
+                    ),
+                  ],
+                ),
+                Text(
+                  'Il vault (vault.json, vault.key) e i file temporanei sono sempre esclusi tramite .gitignore; '
+                  'prima di ogni commit DbCraft verifica che nessun file contenga password in chiaro.',
+                  style: uiText(TypeSize.caption, color: c.textSecondary, height: 1.3),
+                ),
+              ],
             ),
-            Container(
-              padding: const EdgeInsets.all(Gap.md),
-              decoration: BoxDecoration(
-                color: c.chrome,
-                border: Border(top: BorderSide(color: c.separator)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-                  const SizedBox(width: Gap.sm),
-                  PrimaryButton(label: 'Salva', onPressed: s == null || _saving ? null : _save),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      actions: [
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(label: 'Salva', onPressed: s == null || _saving ? null : _save),
+      ],
     );
   }
 }

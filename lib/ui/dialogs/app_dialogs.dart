@@ -15,16 +15,19 @@ export 'driver_manager_dialog.dart' show DriverManagerPage, canInstallDrivers, s
 // Preferences
 // ---------------------------------------------------------------------------
 
+/// Preferences window (System Settings layout): a source list of pages on
+/// the left, the page title over the content, grouped forms on
+/// `windowBackground`. Settings apply at once; "Fine" (or Esc) closes.
 Future<void> showSettingsDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _SettingsDialog());
+    showSheet<void>(context, size: SheetSize.large, builder: (_) => const SettingsWindow());
 
-class _SettingsDialog extends StatefulWidget {
-  const _SettingsDialog();
+class SettingsWindow extends StatefulWidget {
+  const SettingsWindow({super.key});
   @override
-  State<_SettingsDialog> createState() => _SettingsDialogState();
+  State<SettingsWindow> createState() => _SettingsWindowState();
 }
 
-class _SettingsDialogState extends State<_SettingsDialog> {
+class _SettingsWindowState extends State<SettingsWindow> {
   late final AppState app = AppScope.read(context);
   late final AppSettings s = app.settings;
   late final _lib = TextEditingController(text: s.odbcLibPath);
@@ -32,6 +35,24 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   late final _null = TextEditingController(text: s.nullText);
   late final _history = TextEditingController(text: '${s.maxHistory}');
   int _page = 0;
+
+  static const _pages = [
+    (AppIcons.palette, 'Aspetto'),
+    (AppIcons.script, 'Editor SQL'),
+    (AppIcons.rows, 'Risultati'),
+    (AppIcons.insights, 'Analisi'),
+    (AppIcons.lock, 'Sicurezza'),
+    (AppIcons.ai, 'Assistente AI'),
+    (AppIcons.plug, 'ODBC'),
+  ];
+
+  @override
+  void dispose() {
+    for (final c in [_lib, _fetch, _null, _history]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
 
   /// macOS settings apply immediately.
   void _apply(VoidCallback change) {
@@ -51,46 +72,23 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Widget _switch(String label, String? help, bool value, ValueChanged<bool> onChanged) => FormRow(
     label: label,
     help: help,
-    labelWidth: 320,
-    child: Align(
-      alignment: Alignment.centerRight,
-      child: DbSwitch(value: value, onChanged: (v) => _apply(() => onChanged(v))),
-    ),
+    child: DbSwitch(value: value, onChanged: (v) => _apply(() => onChanged(v))),
   );
 
   Widget _slider(String label, double value, double min, double max, ValueChanged<double> onChanged) => FormRow(
     label: label,
-    child: Row(
-      children: [
-        Expanded(
-          child: Slider(
-            value: value,
-            min: min,
-            max: max,
-            divisions: (max - min).round(),
-            onChanged: (v) => _apply(() => onChanged(v)),
-          ),
-        ),
-        SizedBox(
-          width: 28,
-          child: Text(
-            '${value.round()}',
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontFeatures: kTabular),
-          ),
-        ),
-      ],
+    child: MacSlider(
+      value: value,
+      min: min,
+      max: max,
+      divisions: (max - min).round(),
+      valueLabel: '${value.round()}',
+      onChanged: (v) => _apply(() => onChanged(v)),
     ),
   );
 
-  Widget _text(TextEditingController c, String hint, {double? width}) => SizedBox(
-    width: width,
-    child: TextField(
-      controller: c,
-      decoration: InputDecoration(hintText: hint),
-      onChanged: (_) => _applyTexts(),
-    ),
-  );
+  Widget _number(TextEditingController c, String hint) =>
+      NumberField(controller: c, hint: hint, min: 10, max: 100000, step: 10, onChanged: (_) => _applyTexts());
 
   List<Widget> _content() {
     switch (_page) {
@@ -101,17 +99,14 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             children: [
               FormRow(
                 label: 'Aspetto',
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Segmented<ThemeMode>(
-                    value: s.themeMode,
-                    items: const [
-                      (ThemeMode.system, 'Automatico', null),
-                      (ThemeMode.light, 'Chiaro', null),
-                      (ThemeMode.dark, 'Scuro', null),
-                    ],
-                    onChanged: (v) => _apply(() => s.themeMode = v),
-                  ),
+                child: Segmented<ThemeMode>(
+                  value: s.themeMode,
+                  items: const [
+                    (ThemeMode.system, 'Automatico', null),
+                    (ThemeMode.light, 'Chiaro', null),
+                    (ThemeMode.dark, 'Scuro', null),
+                  ],
+                  onChanged: (v) => _apply(() => s.themeMode = v),
                 ),
               ),
             ],
@@ -164,9 +159,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         return [
           FormGroup(
             children: [
-              FormRow(label: 'Righe per pagina', help: 'Fetch size', child: _text(_fetch, '200')),
-              FormRow(label: 'Testo per NULL', child: _text(_null, '[NULL]')),
-              FormRow(label: 'Voci di cronologia', help: 'Massimo conservato', child: _text(_history, '1000')),
+              FormRow(label: 'Righe per pagina', help: 'Fetch size', child: _number(_fetch, '200')),
+              FormRow(
+                label: 'Testo per NULL',
+                child: MacTextField(controller: _null, hint: '[NULL]', width: 160, onChanged: (_) => _applyTexts()),
+              ),
+              FormRow(label: 'Voci di cronologia', help: 'Massimo conservato', child: _number(_history, '1000')),
             ],
           ),
         ];
@@ -184,18 +182,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             children: [
               FormRow(
                 label: 'Aggiornamento dashboard',
-                help: 'secondi',
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: DropdownButton<int>(
-                    value: const [2, 5, 10, 30, 60].contains(s.perfRefreshSec) ? s.perfRefreshSec : 5,
-                    isDense: true,
-                    underline: const SizedBox(),
-                    items: [
-                      for (final v in const [2, 5, 10, 30, 60]) DropdownMenuItem(value: v, child: Text('$v s')),
-                    ],
-                    onChanged: (v) => _apply(() => s.perfRefreshSec = v ?? 5),
-                  ),
+                child: PopUpButton<int>(
+                  value: const [2, 5, 10, 30, 60].contains(s.perfRefreshSec) ? s.perfRefreshSec : 5,
+                  items: [for (final v in const [2, 5, 10, 30, 60]) (v, '$v secondi', null)],
+                  onChanged: (v) => _apply(() => s.perfRefreshSec = v),
                 ),
               ),
             ],
@@ -213,28 +203,24 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             children: [
               FormRow(
                 label: 'Libreria',
-                child: Row(
-                  children: [
-                    Expanded(child: _text(_lib, '/opt/homebrew/lib/libodbc.2.dylib')),
-                    ToolButton(
-                      icon: Icons.folder_open_outlined,
-                      tooltip: 'Scegli la libreria',
-                      onPressed: () async {
-                        final f = await openFile();
-                        if (f != null) {
-                          _lib.text = f.path;
-                          _applyTexts();
-                        }
-                      },
-                    ),
-                  ],
+                child: PathField(
+                  controller: _lib,
+                  hint: '/opt/homebrew/lib/libodbc.2.dylib',
+                  onChanged: (_) => _applyTexts(),
+                  onChoose: () async {
+                    final f = await openFile();
+                    if (f != null) {
+                      _lib.text = f.path;
+                      _applyTexts();
+                    }
+                  },
                 ),
               ),
             ],
           ),
           FormGroup(
             title: 'Workspace',
-            children: [SelectableText(app.workspace.root.path, style: monoStyle(context, size: 12))],
+            children: [SelectableText(app.workspace.root.path, style: monoStyle(context, size: TypeSize.mono))],
           ),
         ];
     }
@@ -243,91 +229,58 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    const pages = [
-      (Icons.palette_outlined, 'Aspetto'),
-      (Icons.edit_note_rounded, 'Editor SQL'),
-      (Icons.table_rows_outlined, 'Risultati'),
-      (Icons.insights_outlined, 'Analisi'),
-      (Icons.lock_outline_rounded, 'Sicurezza'),
-      (Icons.auto_awesome_outlined, 'Assistente AI'),
-      (Icons.cable_rounded, 'ODBC'),
-    ];
-    return Dialog(
-      insetPadding: const EdgeInsets.all(Gap.xl),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 780,
-        height: 560,
-        child: Row(
-          children: [
-            Container(
-              width: 190,
-              color: c.sidebar,
-              padding: const EdgeInsets.all(Gap.sm),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: Gap.sm),
-                  for (final (i, (icon, label)) in pages.indexed)
-                    GestureDetector(
-                      onTap: () => setState(() => _page = i),
-                      child: Container(
-                        height: 30,
-                        margin: const EdgeInsets.only(bottom: 2),
-                        padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-                        decoration: BoxDecoration(
-                          color: _page == i ? c.accent : Colors.transparent,
-                          borderRadius: BorderRadius.circular(Radii.control),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(icon, size: 16, color: _page == i ? Colors.white : c.textSecondary),
-                            const SizedBox(width: Gap.sm),
-                            Text(
-                              label,
-                              style: TextStyle(
-                                fontSize: TypeSize.body,
-                                color: _page == i ? Colors.white : c.text,
-                                fontWeight: _page == i ? FontWeight.w500 : null,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 200,
+          child: SourceList(
+            autofocus: true,
+            padding: const EdgeInsets.fromLTRB(10, Gap.lg, 10, Gap.sm),
+            itemCount: _pages.length,
+            selectedIndex: _page,
+            onSelect: (i) => setState(() => _page = i),
+            itemBuilder: (_, i) => OutlineRow(
+              icon: _pages[i].$1,
+              title: _pages[i].$2,
+              selected: _page == i,
+              onTap: () => setState(() => _page = i),
             ),
-            VerticalDivider(width: 1, color: c.separator),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.md, Gap.sm),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(pages[_page].$2, style: Theme.of(context).textTheme.titleLarge)),
-                        ToolButton(
-                          icon: Icons.close_rounded,
-                          tooltip: 'Chiudi',
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.sm, Gap.xl, Gap.xl),
-                      children: _content(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+        Container(width: 0.5, color: c.separator),
+        Expanded(
+          child: ColoredBox(
+            color: c.windowBackground,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  height: BarHeight.bar,
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.xl),
+                  alignment: Alignment.bottomLeft,
+                  child: Text(_pages[_page].$2, style: uiText(TypeSize.title, weight: FontWeight.w700, color: c.text)),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.md, Gap.xl, Gap.sm),
+                    children: _content(),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.sm, Gap.xl, Gap.lg),
+                  child: Row(
+                    children: [
+                      const Spacer(),
+                      PushButton.primary(label: 'Fine', onPressed: () => Navigator.pop(context)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -337,7 +290,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 // ---------------------------------------------------------------------------
 
 Future<void> showHistoryDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _HistoryDialog());
+    showSheet<void>(context, size: SheetSize.xlarge, builder: (_) => const _HistoryDialog());
 
 class _HistoryDialog extends StatefulWidget {
   const _HistoryDialog();
@@ -346,121 +299,134 @@ class _HistoryDialog extends StatefulWidget {
 }
 
 class _HistoryDialogState extends State<_HistoryDialog> {
+  final _search = TextEditingController();
   String _filter = '';
   bool _errorsOnly = false;
 
   @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
-    final theme = Theme.of(context);
-    final items = app.history
+    final c = DbColors.of(context);
+    final matching = app.history
         .where(
           (h) =>
-              (!_errorsOnly || !h.success) &&
-              (_filter.isEmpty ||
-                  h.sql.toLowerCase().contains(_filter) ||
-                  h.connectionName.toLowerCase().contains(_filter)),
+              _filter.isEmpty ||
+              h.sql.toLowerCase().contains(_filter) ||
+              h.connectionName.toLowerCase().contains(_filter),
         )
         .toList();
-    return Dialog(
-      insetPadding: const EdgeInsets.all(32),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1000, maxHeight: 700),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Text('Query Manager', style: theme.textTheme.titleLarge),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Cerca nelle query…',
-                      ),
-                      onChanged: (v) => setState(() => _filter = v.toLowerCase()),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  FilterChip(
-                    label: const Text('Solo errori'),
-                    selected: _errorsOnly,
-                    onSelected: (v) => setState(() => _errorsOnly = v),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () async {
-                      if (await confirmDialog(context, 'Svuota cronologia', 'Eliminare tutta la cronologia?')) {
-                        await app.clearHistory();
-                      }
-                    },
-                    icon: const Icon(Icons.delete_sweep_outlined),
-                    label: const Text('Svuota'),
-                  ),
-                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+    final items = _errorsOnly ? matching.where((h) => !h.success).toList() : matching;
+    return SheetScaffold(
+      title: 'Query Manager',
+      leading: [
+        PushButton(
+          label: 'Svuota cronologia…',
+          onPressed: app.history.isEmpty
+              ? null
+              : () async {
+                  if (await confirmDialog(
+                    context,
+                    'Svuota cronologia',
+                    'Eliminare tutta la cronologia?',
+                    ok: 'Svuota',
+                    destructive: true,
+                  )) {
+                    await app.clearHistory();
+                  }
+                },
+        ),
+      ],
+      actions: [PushButton.primary(label: 'Fine', onPressed: () => Navigator.pop(context))],
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              ScopeBar<bool>(
+                multi: false,
+                items: [
+                  ScopeItem(false, 'Tutte', count: matching.length),
+                  ScopeItem(true, 'Solo errori', count: matching.where((h) => !h.success).length),
                 ],
+                selected: {_errorsOnly},
+                onChanged: (v) => setState(() => _errorsOnly = v.first),
               ),
-            ),
-            const Divider(height: 1),
-            Expanded(
+              const Spacer(),
+              SearchField(
+                controller: _search,
+                hint: 'Cerca nelle query…',
+                width: 280,
+                autofocus: true,
+                onChanged: (v) => setState(() => _filter = v.toLowerCase()),
+              ),
+            ],
+          ),
+          const SizedBox(height: Gap.sm),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: c.content,
+                borderRadius: BorderRadius.circular(Radii.panel),
+                border: Border.all(color: c.separator, width: 0.5),
+              ),
+              clipBehavior: Clip.antiAlias,
               child: items.isEmpty
-                  ? const Center(child: Text('Nessuna query'))
-                  : ListView.separated(
+                  ? EmptyState(
+                      icon: AppIcons.history,
+                      title: _filter.isEmpty && !_errorsOnly ? 'Nessuna query' : 'Nessuna query corrispondente',
+                    )
+                  : ListView.builder(
                       itemCount: items.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (context, i) {
                         final h = items[i];
-                        return ListTile(
-                          dense: true,
+                        void open() {
+                          final conn = app.byId(h.connectionId);
+                          Navigator.pop(context);
+                          if (conn != null) {
+                            app.sqlEditorWith(conn, h.sql, reuse: true);
+                          } else {
+                            app.openSqlEditor(null, initialSql: h.sql);
+                          }
+                        }
+
+                        return ListRow(
+                          zebra: true,
+                          index: i,
+                          mono: true,
                           leading: Icon(
-                            h.success ? Icons.check_circle_outline : Icons.error_outline,
-                            color: h.success ? Colors.green : theme.colorScheme.error,
-                            size: 18,
+                            h.success ? AppIcons.checkCircle : AppIcons.error,
+                            color: h.success ? c.success : c.danger,
+                            size: 16,
                           ),
-                          title: Text(
-                            h.sql.replaceAll(RegExp(r'\s+'), ' '),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: monoStyle(context, size: 12.5),
-                          ),
-                          subtitle: Text(
-                            '${h.connectionName} · ${h.time.toString().substring(0, 19)} · ${h.durationMs} ms'
-                            '${h.rows >= 0 ? ' · ${h.rows} righe' : ''}${h.error != null ? ' · ${h.error!.split('\n').first}' : ''}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          title: h.sql.replaceAll(RegExp(r'\s+'), ' '),
+                          subtitle:
+                              '${h.connectionName} · ${h.time.toString().substring(0, 19)} · ${h.durationMs} ms'
+                              '${h.rows >= 0 ? ' · ${h.rows} righe' : ''}${h.error != null ? ' · ${h.error!.split('\n').first}' : ''}',
+                          tooltip: h.sql,
+                          onDoubleTap: open,
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
+                              ToolButton(
+                                icon: AppIcons.copy,
                                 tooltip: 'Copia',
-                                icon: const Icon(Icons.copy, size: 16),
                                 onPressed: () => Clipboard.setData(ClipboardData(text: h.sql)),
                               ),
-                              IconButton(
-                                tooltip: 'Apri in editor SQL',
-                                icon: const Icon(Icons.open_in_new, size: 16),
-                                onPressed: () {
-                                  final c = app.byId(h.connectionId);
-                                  Navigator.pop(context);
-                                  if (c != null) {
-                                    app.sqlEditorWith(c, h.sql, reuse: true);
-                                  } else {
-                                    app.openSqlEditor(null, initialSql: h.sql);
-                                  }
-                                },
-                              ),
+                              ToolButton(icon: AppIcons.openExternal, tooltip: 'Apri in editor SQL', onPressed: open),
                             ],
                           ),
                         );
                       },
                     ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

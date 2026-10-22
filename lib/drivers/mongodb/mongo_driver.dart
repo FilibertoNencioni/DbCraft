@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../db_session.dart';
 import '../native_driver.dart';
 import 'mongo_session.dart';
+import '../../ui/theme/app_icons.dart';
 
 const _yesNo = ['no', 'sì'];
 
@@ -19,7 +20,7 @@ class MongoDriver extends NativeDriver {
       'Database documentale MongoDB (3.6 o successivo), anche Atlas e replica set. Comandi in sintassi shell '
       '(db.collezione.find(…)) e SELECT semplici sulle collezioni.';
   @override
-  IconData get icon => Icons.eco_outlined;
+  IconData get icon => AppIcons.leaf;
   @override
   Color get color => const Color(0xFF47A248);
   @override

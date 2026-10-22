@@ -17,9 +17,10 @@ class _SecuritySettingsState extends State<SecuritySettings> {
 
   Future<void> _changePassword({required bool remove}) async {
     final vault = app.vault;
-    final result = await showDialog<(String?, String?)>(
-      context: context,
-      builder: (_) => _MasterPasswordDialog(hasCurrent: vault.usesMasterPassword, remove: remove),
+    final result = await showSheet<(String?, String?)>(
+      context,
+      size: SheetSize.small,
+      builder: (_) => _MasterPasswordSheet(hasCurrent: vault.usesMasterPassword, remove: remove),
     );
     if (result == null || !mounted) return;
     final (current, next) = result;
@@ -58,10 +59,10 @@ class _SecuritySettingsState extends State<SecuritySettings> {
           FormRow(
             label: 'Stato',
             child: Row(children: [
-              Icon(master ? Icons.lock_rounded : Icons.lock_open_rounded, size: 15, color: master ? c.success : c.textSecondary),
+              Icon(master ? AppIcons.lock : AppIcons.lockOpen, size: 16, color: master ? c.success : c.textSecondary),
               const SizedBox(width: Gap.sm),
               Expanded(child: Text(master ? 'Attiva' : 'Non impostata')),
-              if (_busy) const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5)),
+              if (_busy) const Spinner(size: Spinner.small),
             ]),
           ),
           FormRow(
@@ -72,13 +73,13 @@ class _SecuritySettingsState extends State<SecuritySettings> {
             padding: const EdgeInsets.symmetric(vertical: Gap.sm),
             child: Wrap(spacing: Gap.sm, alignment: WrapAlignment.end, children: [
               if (master)
-                OutlinedButton(
+                PushButton(
+                  label: 'Rimuovi',
                   onPressed: _busy ? null : () => _changePassword(remove: true),
-                  child: const Text('Rimuovi'),
                 ),
-              FilledButton(
+              PushButton(
+                label: master ? 'Cambia master password…' : 'Imposta master password…',
                 onPressed: _busy ? null : () => _changePassword(remove: false),
-                child: Text(master ? 'Cambia master password…' : 'Imposta master password…'),
               ),
             ]),
           ),
@@ -92,19 +93,17 @@ class _SecuritySettingsState extends State<SecuritySettings> {
               label: 'Blocca dopo inattività',
               child: Align(
                 alignment: Alignment.centerRight,
-                child: DropdownButton<int>(
+                child: PopUpButton<int>(
                   value: const [0, 5, 15, 30, 60].contains(s.autoLockMinutes) ? s.autoLockMinutes : 0,
-                  isDense: true,
-                  underline: const SizedBox(),
                   items: const [
-                    DropdownMenuItem(value: 0, child: Text('Mai')),
-                    DropdownMenuItem(value: 5, child: Text('5 minuti')),
-                    DropdownMenuItem(value: 15, child: Text('15 minuti')),
-                    DropdownMenuItem(value: 30, child: Text('30 minuti')),
-                    DropdownMenuItem(value: 60, child: Text('1 ora')),
+                    (0, 'Mai', null),
+                    (5, '5 minuti', null),
+                    (15, '15 minuti', null),
+                    (30, '30 minuti', null),
+                    (60, '1 ora', null),
                   ],
                   onChanged: (v) {
-                    setState(() => s.autoLockMinutes = v ?? 0);
+                    setState(() => s.autoLockMinutes = v);
                     app.saveSettings();
                   },
                 ),
@@ -114,13 +113,13 @@ class _SecuritySettingsState extends State<SecuritySettings> {
               label: 'Blocca ora',
               child: Align(
                 alignment: Alignment.centerRight,
-                child: OutlinedButton.icon(
+                child: PushButton(
+                  label: 'Blocca',
+                  icon: AppIcons.lock,
                   onPressed: () {
                     Navigator.of(context).pop();
                     app.lockUi();
                   },
-                  icon: const Icon(Icons.lock_outline_rounded, size: 15),
-                  label: const Text('Blocca'),
                 ),
               ),
             ),
@@ -137,16 +136,16 @@ class _SecuritySettingsState extends State<SecuritySettings> {
   }
 }
 
-class _MasterPasswordDialog extends StatefulWidget {
-  const _MasterPasswordDialog({required this.hasCurrent, required this.remove});
+class _MasterPasswordSheet extends StatefulWidget {
+  const _MasterPasswordSheet({required this.hasCurrent, required this.remove});
   final bool hasCurrent;
   final bool remove;
 
   @override
-  State<_MasterPasswordDialog> createState() => _MasterPasswordDialogState();
+  State<_MasterPasswordSheet> createState() => _MasterPasswordSheetState();
 }
 
-class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
+class _MasterPasswordSheetState extends State<_MasterPasswordSheet> {
   final _current = TextEditingController();
   final _next = TextEditingController();
   final _confirm = TextEditingController();
@@ -181,53 +180,30 @@ class _MasterPasswordDialogState extends State<_MasterPasswordDialog> {
         : widget.hasCurrent
         ? 'Cambia master password'
         : 'Imposta master password';
-    return AlertDialog(
-      title: Text(title),
-      content: SizedBox(
-        width: 380,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (widget.hasCurrent)
-            TextField(
-              controller: _current,
-              obscureText: true,
-              autofocus: true,
-              decoration: const InputDecoration(hintText: 'Password attuale'),
-            ),
-          if (!widget.remove) ...[
-            const SizedBox(height: Gap.sm),
-            TextField(
-              controller: _next,
-              obscureText: true,
-              autofocus: !widget.hasCurrent,
-              decoration: const InputDecoration(hintText: 'Nuova password'),
-            ),
-            const SizedBox(height: Gap.sm),
-            TextField(
-              controller: _confirm,
-              obscureText: true,
-              onSubmitted: (_) => _ok(),
-              decoration: const InputDecoration(hintText: 'Conferma nuova password'),
-            ),
-          ],
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: Gap.sm),
-              child: Text(_error!, style: TextStyle(color: DbColors.of(context).danger, fontSize: TypeSize.small)),
-            ),
-          if (!widget.remove)
-            Padding(
-              padding: const EdgeInsets.only(top: Gap.md),
-              child: Text(
-                'Verrà chiesta all\'avvio. Se la dimentichi le credenziali salvate andranno reinserite.',
-                style: TextStyle(fontSize: TypeSize.small, color: DbColors.of(context).textSecondary),
-              ),
-            ),
-        ]),
-      ),
+    return SheetScaffold(
+      title: title,
+      onSubmit: _ok,
       actions: [
-        OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-        FilledButton(onPressed: _ok, child: Text(widget.remove ? 'Rimuovi' : 'Salva')),
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(label: widget.remove ? 'Rimuovi' : 'Salva', onPressed: _ok),
       ],
+      body: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (widget.hasCurrent) SecureField(controller: _current, autofocus: true, hint: 'Password attuale'),
+        if (!widget.remove) ...[
+          if (widget.hasCurrent) const SizedBox(height: Gap.sm),
+          SecureField(controller: _next, autofocus: !widget.hasCurrent, hint: 'Nuova password'),
+          const SizedBox(height: Gap.sm),
+          SecureField(controller: _confirm, hint: 'Conferma nuova password', onSubmitted: (_) => _ok()),
+        ],
+        if (_error != null) FieldMessage(_error!, error: true),
+        if (!widget.remove)
+          const Padding(
+            padding: EdgeInsets.only(top: Gap.sm),
+            child: FieldMessage(
+              'Verrà chiesta all\'avvio. Se la dimentichi le credenziali salvate andranno reinserite.',
+            ),
+          ),
+      ]),
     );
   }
 }

@@ -148,7 +148,7 @@ class DataCompareTab extends FeatureTab {
   }
 
   @override
-  IconData get icon => Icons.compare_arrows_rounded;
+  IconData get icon => AppIcons.compare;
 
   @override
   DbConnection? get connection => src.conn;
@@ -519,12 +519,11 @@ typedef _Line = ({int row, bool targetLine});
 
 class _DataCompareViewState extends State<_DataCompareView> {
   DataCompareTab get tab => widget.tab;
-  final _hScroll = ScrollController();
-  final _vScroll = ScrollController();
   CompareResult? _linesFor;
   Set<RowDiff>? _linesFilter;
   List<_Line> _lines = const [];
   List<double> _widths = const [];
+  List<bool> _numeric = const [];
 
   @override
   void initState() {
@@ -539,8 +538,6 @@ class _DataCompareViewState extends State<_DataCompareView> {
   @override
   void dispose() {
     tab.removeListener(_changed);
-    _hScroll.dispose();
-    _vScroll.dispose();
     super.dispose();
   }
 
@@ -603,13 +600,9 @@ class _DataCompareViewState extends State<_DataCompareView> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 380,
-                decoration: BoxDecoration(
-                  color: c.chrome,
-                  border: Border(right: BorderSide(color: c.separator)),
-                ),
-                child: AbsorbPointer(absorbing: tab.running, child: _config(c)),
+              AbsorbPointer(
+                absorbing: tab.running,
+                child: Inspector(width: 320, side: InspectorSide.start, children: _config(c)),
               ),
               Expanded(child: _results(c)),
             ],
@@ -621,48 +614,47 @@ class _DataCompareViewState extends State<_DataCompareView> {
 
   Widget _toolbar(DbColors c) {
     final r = tab.result;
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(
-        color: c.content,
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          if (tab.running)
-            PrimaryButton(label: 'Interrompi', icon: Icons.stop_rounded, color: c.danger, onPressed: tab.cancel)
-          else
-            PrimaryButton(
-              label: 'Confronta',
-              icon: Icons.compare_arrows_rounded,
-              tooltip: 'Legge le due tabelle e confronta le righe per chiave',
-              onPressed: _run,
-            ),
-          const SizedBox(width: Gap.xs),
-          ToolButton(
-            icon: Icons.sync_rounded,
-            label: 'Script di sincronizzazione',
-            tooltip: 'Genera INSERT / UPDATE / DELETE per allineare la destinazione all\'origine',
-            onPressed: r == null || tab.running || r.inSync ? null : _sync,
+    return PaneBar(
+      loading: tab.running,
+      children: [
+        if (tab.running)
+          PushButton(
+            label: 'Interrompi',
+            icon: AppIcons.stop,
+            kind: PushButtonKind.destructive,
+            size: ControlScale.small,
+            onPressed: tab.cancel,
+          )
+        else
+          PushButton.primary(
+            label: 'Confronta',
+            icon: AppIcons.compare,
+            size: ControlScale.small,
+            tooltip: 'Legge le due tabelle e confronta le righe per chiave',
+            onPressed: _run,
           ),
-          const ToolSeparator(),
-          Expanded(
-            child: Text(
-              tab.running
-                  ? 'Lettura: ${_n(tab.readSource)} righe origine · ${_n(tab.readTarget)} righe destinazione…'
-                  : r == null
-                  ? ''
-                  : '${_n(r.sourceRows)} righe origine · ${_n(r.targetRows)} righe destinazione · '
-                        '${(r.elapsed.inMilliseconds / 1000).toStringAsFixed(1)} s · '
-                        '${r.hashJoin ? 'confronto in memoria' : 'merge ordinato'}',
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular),
-            ),
+        const SizedBox(width: Gap.xs),
+        ToolButton(
+          icon: AppIcons.sync,
+          label: 'Script di sincronizzazione',
+          tooltip: 'Genera INSERT / UPDATE / DELETE per allineare la destinazione all\'origine',
+          onPressed: r == null || tab.running || r.inSync ? null : _sync,
+        ),
+        const ToolSeparator(),
+        Expanded(
+          child: Text(
+            tab.running
+                ? 'Lettura: ${_n(tab.readSource)} righe origine · ${_n(tab.readTarget)} righe destinazione…'
+                : r == null
+                ? ''
+                : '${_n(r.sourceRows)} righe origine · ${_n(r.targetRows)} righe destinazione · '
+                      '${(r.elapsed.inMilliseconds / 1000).toStringAsFixed(1)} s · '
+                      '${r.hashJoin ? 'confronto in memoria' : 'merge ordinato'}',
+            overflow: TextOverflow.ellipsis,
+            style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular),
           ),
-          if (tab.running) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -680,38 +672,24 @@ class _DataCompareViewState extends State<_DataCompareView> {
   // Configuration panel
   // -------------------------------------------------------------------------
 
-  Widget _dropdown<T>(T? value, List<T> items, String Function(T) label, ValueChanged<T?>? onChanged, {String? hint}) {
-    final c = DbColors.of(context);
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<T>(
+  Widget _dropdown<T>(T? value, List<T> items, String Function(T) label, ValueChanged<T?>? onChanged, {String? hint}) =>
+      PopUpButton<T?>(
         value: items.contains(value) ? value : null,
-        isExpanded: true,
-        isDense: true,
-        hint: hint == null ? null : Text(hint, style: TextStyle(color: c.textTertiary)),
-        style: TextStyle(fontSize: TypeSize.body, color: c.text),
-        items: [
-          for (final x in items)
-            DropdownMenuItem(
-              value: x,
-              child: Text(label(x), overflow: TextOverflow.ellipsis),
-            ),
-        ],
+        expand: true,
+        placeholder: hint,
+        items: [for (final x in items) (x, label(x), null)],
         onChanged: onChanged,
-      ),
-    );
-  }
+      );
 
-  Widget _side(DbColors c, String title, CompareSide side) {
+  Widget _side(DbColors c, CompareSide side) {
     final app = AppScope.of(context);
     final md = side.conn?.metadata;
     final enabled = !side.loading;
     return FormGroup(
-      title: title,
       footer: side.error,
       children: [
         FormRow(
           label: 'Connessione',
-          labelWidth: 100,
           child: Row(
             children: [
               Expanded(
@@ -723,14 +701,13 @@ class _DataCompareViewState extends State<_DataCompareView> {
                   hint: 'Scegli…',
                 ),
               ),
-              if (side.loading) const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+              if (side.loading) ...[const SizedBox(width: Gap.sm), const Spinner(size: Spinner.small)],
             ],
           ),
         ),
         if (md != null && side.catalogs.isNotEmpty)
           FormRow(
             label: md.catalogTerm,
-            labelWidth: 100,
             child: _dropdown<String>(
               side.catalog,
               side.catalogs,
@@ -741,7 +718,6 @@ class _DataCompareViewState extends State<_DataCompareView> {
         if (md != null && side.schemas.isNotEmpty)
           FormRow(
             label: md.schemaTerm,
-            labelWidth: 100,
             child: _dropdown<String>(
               side.schema,
               side.schemas,
@@ -751,7 +727,6 @@ class _DataCompareViewState extends State<_DataCompareView> {
           ),
         FormRow(
           label: 'Tabella',
-          labelWidth: 100,
           child: _dropdown<DbTable>(
             side.table,
             side.tables,
@@ -762,13 +737,8 @@ class _DataCompareViewState extends State<_DataCompareView> {
         ),
         FormRow(
           label: 'Filtro',
-          labelWidth: 100,
           help: 'Condizione WHERE',
-          child: TextField(
-            controller: side.where,
-            style: monoStyle(context, size: 12),
-            decoration: const InputDecoration(hintText: 'es. data >= \'2024-01-01\''),
-          ),
+          child: MacTextField(controller: side.where, mono: true, hint: 'es. data >= \'2024-01-01\''),
         ),
       ],
     );
@@ -778,13 +748,12 @@ class _DataCompareViewState extends State<_DataCompareView> {
     final common = tab.commonColumns;
     if (common.isEmpty) {
       return FormGroup(
-        title: 'Colonne',
         children: [
           Text(
             tab.src.table == null || tab.tgt.table == null
                 ? 'Scegli le due tabelle per vedere le colonne in comune.'
                 : 'Le tabelle non hanno colonne con lo stesso nome.',
-            style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
+            style: uiText(TypeSize.small, color: c.textSecondary),
           ),
         ],
       );
@@ -793,7 +762,6 @@ class _DataCompareViewState extends State<_DataCompareView> {
     final cmp = {for (final k in tab.compareColumns) k.toLowerCase()};
     final onlyS = tab.onlySourceColumns, onlyT = tab.onlyTargetColumns;
     return FormGroup(
-      title: 'Colonne',
       footer: [
         'Chiave: ${tab.keyColumns.isEmpty ? 'nessuna (scegline almeno una)' : tab.keyColumns.join(', ')}',
         if (onlyS.isNotEmpty) 'Solo in origine: ${onlyS.join(', ')}',
@@ -805,16 +773,12 @@ class _DataCompareViewState extends State<_DataCompareView> {
             Expanded(
               child: Text(
                 '${cmp.length} di ${common.length - keys.length} confrontate',
-                style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
+                style: uiText(TypeSize.small, color: c.textSecondary),
               ),
             ),
+            ToolButton(icon: AppIcons.doneAll, tooltip: 'Seleziona tutte', onPressed: () => tab.setAllCompared(true)),
             ToolButton(
-              icon: Icons.done_all_rounded,
-              tooltip: 'Seleziona tutte',
-              onPressed: () => tab.setAllCompared(true),
-            ),
-            ToolButton(
-              icon: Icons.remove_done_rounded,
+              icon: AppIcons.deselectAll,
               tooltip: 'Deseleziona tutte',
               onPressed: () => tab.setAllCompared(false),
             ),
@@ -822,36 +786,29 @@ class _DataCompareViewState extends State<_DataCompareView> {
         ),
         for (final col in common)
           SizedBox(
-            height: 26,
+            height: ControlSize.regular,
             child: Row(
               children: [
-                SizedBox(
-                  width: 28,
-                  child: Checkbox(
-                    value: keys.contains(col.name.toLowerCase()) || cmp.contains(col.name.toLowerCase()),
-                    onChanged: keys.contains(col.name.toLowerCase())
-                        ? null
-                        : (v) => tab.toggleCompare(col.name, v ?? false),
-                  ),
+                MacCheckbox(
+                  value: keys.contains(col.name.toLowerCase()) || cmp.contains(col.name.toLowerCase()),
+                  semanticLabel: col.name,
+                  onChanged: keys.contains(col.name.toLowerCase()) ? null : (v) => tab.toggleCompare(col.name, v),
                 ),
-                Expanded(
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(text: col.name),
-                        TextSpan(
-                          text: '  ${col.fullType.toLowerCase()}',
-                          style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
-                        ),
-                      ],
-                    ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    col.name,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: TypeSize.body, color: c.text),
+                    style: uiText(TypeSize.body, color: c.text),
                   ),
                 ),
+                const SizedBox(width: 6),
+                TypeLabel(col.fullType.toLowerCase()),
+                const Spacer(),
                 ToolButton(
-                  icon: Icons.key_rounded,
-                  size: 14,
+                  icon: AppIcons.key,
+                  extent: 18,
                   active: keys.contains(col.name.toLowerCase()),
                   tooltip: keys.contains(col.name.toLowerCase()) ? 'Rimuovi dalla chiave' : 'Usa come colonna chiave',
                   onPressed: () => tab.toggleKey(col.name),
@@ -863,70 +820,64 @@ class _DataCompareViewState extends State<_DataCompareView> {
     );
   }
 
-  Widget _switchRow(String label, bool value, ValueChanged<bool> onChanged, {String? help}) => FormRow(
-    label: label,
-    help: help,
-    labelWidth: 250,
-    child: Align(
-      alignment: Alignment.centerRight,
-      child: DbSwitch(value: value, onChanged: (v) => tab.setOption(() => onChanged(v))),
-    ),
-  );
+  Widget _checkRow(String label, bool value, ValueChanged<bool> onChanged, {String? help}) =>
+      CheckboxRow(label: label, help: help, value: value, onChanged: (v) => tab.setOption(() => onChanged(v)));
 
-  Widget _config(DbColors c) {
+  List<Widget> _config(DbColors c) {
     final cap = tab.rowCapValue;
-    return ListView(
-      padding: const EdgeInsets.all(Gap.md),
-      children: [
-        _side(c, 'Origine', tab.src),
-        _side(c, 'Destinazione', tab.tgt),
-        _columnsGroup(c),
-        FormGroup(
-          title: 'Opzioni',
-          footer: cap <= 0 || cap > _defaultRowCap
-              ? 'Oltre ${_n(_defaultRowCap)} righe per lato il confronto può richiedere molta memoria e tempo.'
-              : null,
-          children: [
-            _switchRow('Ignora spazi iniziali e finali', tab.trimStrings, (v) => tab.trimStrings = v),
-            _switchRow('Ignora maiuscole/minuscole', tab.ignoreCase, (v) => tab.ignoreCase = v),
-            _switchRow('NULL uguale a stringa vuota', tab.nullEqualsEmpty, (v) => tab.nullEqualsEmpty = v),
-            _switchRow(
-              'Normalizza date e ore',
-              tab.normalizeDates,
-              (v) => tab.normalizeDates = v,
-              help: '2024-01-02 00:00:00 = 2024-01-02',
-            ),
-            FormRow(
-              label: 'Ordinamento indipendente dal DB',
-              help: 'Confronto in memoria: necessario con collation diverse',
-              labelWidth: 250,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: DbSwitch(value: tab.orderIndependent, onChanged: tab.setOrderIndependent),
+    return [
+      InspectorSection(title: 'Origine', children: [_side(c, tab.src)]),
+      InspectorSection(title: 'Destinazione', children: [_side(c, tab.tgt)]),
+      InspectorSection(title: 'Colonne', children: [_columnsGroup(c)]),
+      InspectorSection(
+        title: 'Opzioni',
+        children: [
+          FormGroup(
+            footer: cap <= 0 || cap > _defaultRowCap
+                ? 'Oltre ${_n(_defaultRowCap)} righe per lato il confronto può richiedere molta memoria e tempo.'
+                : null,
+            children: [
+              _checkRow('Ignora spazi iniziali e finali', tab.trimStrings, (v) => tab.trimStrings = v),
+              _checkRow('Ignora maiuscole/minuscole', tab.ignoreCase, (v) => tab.ignoreCase = v),
+              _checkRow('NULL uguale a stringa vuota', tab.nullEqualsEmpty, (v) => tab.nullEqualsEmpty = v),
+              _checkRow(
+                'Normalizza date e ore',
+                tab.normalizeDates,
+                (v) => tab.normalizeDates = v,
+                help: '2024-01-02 00:00:00 = 2024-01-02',
               ),
-            ),
-            FormRow(
-              label: 'Tolleranza numerica',
-              labelWidth: 170,
-              child: TextField(
-                controller: tab.tolerance,
-                style: const TextStyle(fontFeatures: kTabular),
+              CheckboxRow(
+                label: 'Ordinamento indipendente dal DB',
+                help: 'Confronto in memoria: necessario con collation diverse',
+                value: tab.orderIndependent,
+                onChanged: tab.setOrderIndependent,
               ),
-            ),
-            FormRow(
-              label: 'Righe massime per lato',
-              labelWidth: 170,
-              help: '0 = nessun limite',
-              child: TextField(
-                controller: tab.rowCap,
-                style: const TextStyle(fontFeatures: kTabular),
-                onChanged: (_) => setState(() {}),
+              FormRow(
+                label: 'Tolleranza numerica',
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: NumberField(controller: tab.tolerance, min: 0, step: 0.01, decimals: 4),
+                ),
               ),
-            ),
-          ],
-        ),
-      ],
-    );
+              FormRow(
+                label: 'Righe massime per lato',
+                help: '0 = nessun limite',
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: NumberField(
+                    controller: tab.rowCap,
+                    min: 0,
+                    step: 10000,
+                    width: 100,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ];
   }
 
   // -------------------------------------------------------------------------
@@ -960,7 +911,8 @@ class _DataCompareViewState extends State<_DataCompareView> {
     // Column widths from the names and a sample of values.
     final widths = <double>[];
     for (var j = 0; j < r.columns.length; j++) {
-      var w = r.columns[j].length * 7.5 + 28;
+      // Key columns also have the key icon before the name.
+      var w = r.columns[j].length * 7.5 + 28 + (j < r.keyCount ? 15 : 0);
       for (var i = 0; i < min(200, r.rows.length); i++) {
         final v = formatValue(r.rows[i].values[j], nullText: 'NULL', maxLen: 40);
         w = max(w, v.length * 7.2 + 16);
@@ -968,87 +920,30 @@ class _DataCompareViewState extends State<_DataCompareView> {
       widths.add(w.clamp(70, 280).toDouble());
     }
     _widths = widths;
+    _numeric = [
+      for (var j = 0; j < r.columns.length; j++)
+        r.rows.take(200).map((x) => x.values[j]).firstWhere((v) => v != null, orElse: () => null) is num,
+    ];
   }
 
-  Widget _badge(DbColors c, RowDiff k, int count) {
-    final on = tab.filter.contains(k);
-    final col = _kindColor(c, k);
-    return Padding(
-      padding: const EdgeInsets.only(right: Gap.sm),
-      child: Tooltip(
-        message: on ? 'Nascondi: ${k.plural.toLowerCase()}' : 'Mostra: ${k.plural.toLowerCase()}',
-        child: GestureDetector(
-          onTap: () => tab.setOption(() {
-            if (!tab.filter.remove(k)) tab.filter.add(k);
-          }),
-          child: Container(
-            height: 26,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: on ? col.withValues(alpha: 0.14) : Colors.transparent,
-              borderRadius: BorderRadius.circular(13),
-              border: Border.all(color: on ? col.withValues(alpha: 0.5) : c.separator),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                StatusDot(col, size: 7, ring: !on),
-                const SizedBox(width: 6),
-                Text(
-                  k.plural,
-                  style: TextStyle(fontSize: TypeSize.small, color: on ? c.text : c.textSecondary),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  _n(count),
-                  style: TextStyle(
-                    fontSize: TypeSize.small,
-                    fontWeight: FontWeight.w600,
-                    color: on ? col : c.textTertiary,
-                    fontFeatures: kTabular,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _banner(DbColors c, IconData icon, Color color, String text, {Widget? action}) => Container(
-    margin: const EdgeInsets.fromLTRB(Gap.md, 0, Gap.md, Gap.sm),
-    padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.sm),
-    decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(Radii.panel)),
-    child: Row(
-      children: [
-        Icon(icon, size: 15, color: color),
-        const SizedBox(width: Gap.sm),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(fontSize: TypeSize.small, color: c.text),
-          ),
-        ),
-        ?action,
-      ],
-    ),
+  Widget _banner(NoticeKind kind, String text, {Widget? action}) => Padding(
+    padding: const EdgeInsets.fromLTRB(Gap.md, 0, Gap.md, Gap.sm),
+    child: Notice(kind: kind, message: text, actions: [?action]),
   );
 
   Widget _results(DbColors c) {
     final r = tab.result;
     if (tab.error != null) {
-      return EmptyState(
-        icon: Icons.error_outline_rounded,
+      return EmptyState.error(
+        tab.error!,
         title: 'Confronto non riuscito',
-        message: tab.error is OdbcException ? (tab.error as OdbcException).message : tab.error.toString(),
-        action: OutlinedButton(onPressed: _run, child: const Text('Riprova')),
+        action: PushButton(label: 'Riprova', onPressed: _run),
       );
     }
     if (r == null) {
       if (tab.running) {
         return EmptyState(
-          icon: Icons.hourglass_top_rounded,
+          icon: AppIcons.hourglass,
           title: 'Confronto in corso…',
           message:
               '${_n(tab.readSource)} righe lette dall\'origine, ${_n(tab.readTarget)} dalla destinazione.'
@@ -1056,7 +951,7 @@ class _DataCompareViewState extends State<_DataCompareView> {
         );
       }
       return EmptyState(
-        icon: Icons.compare_arrows_rounded,
+        icon: AppIcons.compare,
         title: tab.note ?? 'Confronta i dati di due tabelle',
         message:
             'Scegli origine e destinazione (anche su connessioni diverse), le colonne chiave e premi Confronta. '
@@ -1069,39 +964,48 @@ class _DataCompareViewState extends State<_DataCompareView> {
       children: [
         Padding(
           padding: const EdgeInsets.all(Gap.md),
-          child: Row(children: [for (final k in RowDiff.values) _badge(c, k, r.count(k))]),
+          child: ScopeBar<RowDiff>(
+            items: [
+              for (final k in RowDiff.values)
+                ScopeItem(
+                  k,
+                  k.plural,
+                  dot: _kindColor(c, k),
+                  count: r.count(k),
+                  tooltip: '${tab.filter.contains(k) ? 'Nascondi' : 'Mostra'}: ${k.plural.toLowerCase()}',
+                ),
+            ],
+            selected: tab.filter,
+            onChanged: (v) => tab.setOption(() => tab.filter = v),
+          ),
         ),
         if (tab.stale)
           _banner(
-            c,
-            Icons.info_outline_rounded,
-            c.accent,
+            NoticeKind.info,
             'La destinazione è stata modificata: i risultati non sono aggiornati.',
-            action: ToolButton(
-              icon: Icons.refresh_rounded,
+            action: PushButton(
               label: 'Ricalcola',
+              size: ControlScale.small,
               tooltip: 'Ripeti il confronto',
               onPressed: _run,
             ),
           ),
         if (r.truncated)
           _banner(
-            c,
-            Icons.warning_amber_rounded,
-            c.warning,
+            NoticeKind.warning,
             'Raggiunto il limite di ${_n(tab.rowCapValue)} righe per lato: il confronto copre solo una parte dei dati.',
           ),
-        if (tab.note != null) _banner(c, Icons.info_outline_rounded, c.accent, tab.note!),
+        if (tab.note != null) _banner(NoticeKind.info, tab.note!),
         Expanded(
           child: r.inSync && !tab.filter.contains(RowDiff.identical)
               ? const EmptyState(
-                  icon: Icons.check_circle_outline_rounded,
+                  icon: AppIcons.checkCircle,
                   title: 'Le tabelle sono allineate',
                   message: 'Tutte le righe confrontate sono identiche.',
                 )
               : _lines.isEmpty
               ? const EmptyState(
-                  icon: Icons.filter_alt_off_outlined,
+                  icon: AppIcons.filterOff,
                   title: 'Nessuna riga con questi filtri',
                   message: 'Attiva le categorie da mostrare con i contatori qui sopra.',
                 )
@@ -1111,141 +1015,70 @@ class _DataCompareViewState extends State<_DataCompareView> {
     );
   }
 
-  static const _statusWidth = 150.0;
-  static const _rowHeight = 26.0;
-
   Widget _grid(DbColors c, CompareResult r) {
-    final total = _statusWidth + _widths.fold<double>(0, (a, b) => a + b);
-    return LayoutBuilder(
-      builder: (context, box) => Scrollbar(
-        controller: _hScroll,
-        child: SingleChildScrollView(
-          controller: _hScroll,
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: max(total, box.maxWidth),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _header(c, r),
-                Expanded(
-                  child: Scrollbar(
-                    controller: _vScroll,
-                    child: ListView.builder(
-                      controller: _vScroll,
-                      itemExtent: _rowHeight,
-                      itemCount: _lines.length,
-                      itemBuilder: (_, i) => _line(c, r, i),
-                    ),
-                  ),
-                ),
-              ],
+    final headers = ['Stato', ...r.columns];
+    return MacTable(
+      headers: headers,
+      rowCount: _lines.length,
+      resizable: true,
+      zebra: false,
+      // Both lines of a differing row share the zebra stripe.
+      rowTint: (i) => _lines[i].row.isOdd ? c.zebra : c.content,
+      rowStatus: (i) => _lines[i].targetLine ? null : _kindColor(c, r.rows[_lines[i].row].kind),
+      headerLeading: (j) => j > 0 && j <= r.keyCount ? Icon(AppIcons.key, size: 11, color: c.keyIcon) : null,
+      width: (j) => j == 0 ? 150 : _widths[j - 1],
+      numeric: (j) => j > 0 && _numeric[j - 1],
+      // A changed value: diffChanged behind the cell, as in the data grid.
+      cellTint: (i, j) => j > 0 && r.rows[_lines[i].row].diffColumns.contains(j - 1)
+          ? c.diffChanged.withValues(alpha: Tint.strong)
+          : null,
+      cell: (i, j) => j == 0 ? _status(_lines[i], r) : _text(_values(_lines[i], r)[j - 1]),
+      cellBuilder: (context, i, j) {
+        final l = _lines[i];
+        final row = r.rows[l.row];
+        if (j == 0) {
+          return Text(
+            _status(l, r),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: uiText(
+              TypeSize.small,
+              color: row.kind == RowDiff.different && l.targetLine ? c.textSecondary : _kindColor(c, row.kind),
+              weight: l.targetLine ? null : FontWeight.w500,
             ),
-          ),
-        ),
-      ),
+          );
+        }
+        return _cell(c, _values(l, r)[j - 1], dim: l.targetLine && j - 1 < r.keyCount);
+      },
     );
   }
 
-  Widget _header(DbColors c, CompareResult r) => Container(
-    height: 30,
-    decoration: BoxDecoration(
-      color: c.chrome,
-      border: Border(bottom: BorderSide(color: c.separator)),
-    ),
-    child: Row(
-      children: [
-        SizedBox(
-          width: _statusWidth,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-            child: Text(
-              'Stato',
-              style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600, color: c.text),
-            ),
-          ),
-        ),
-        for (var j = 0; j < r.columns.length; j++)
-          SizedBox(
-            width: _widths[j],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-              child: Row(
-                children: [
-                  if (j < r.keyCount) ...[
-                    Icon(Icons.key_rounded, size: 12, color: c.warning),
-                    const SizedBox(width: 3),
-                  ],
-                  Flexible(
-                    child: Text(
-                      r.columns[j],
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600, color: c.text),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    ),
-  );
-
-  Widget _line(DbColors c, CompareResult r, int i) {
-    final l = _lines[i];
+  List<Object?> _values(_Line l, CompareResult r) {
     final row = r.rows[l.row];
-    final values = l.targetLine ? row.target! : (row.source ?? row.target!);
-    final diff = row.diffColumns.toSet();
-    final col = _kindColor(c, row.kind);
-    final zebra = l.row.isOdd ? c.zebra : c.content;
-    final tint = c.warning.withValues(alpha: 0.18);
-    final status = row.kind == RowDiff.different ? (l.targetLine ? 'destinazione' : 'origine') : row.kind.singular;
-    return Container(
-      color: zebra,
-      child: Row(
-        children: [
-          Container(width: 3, color: l.targetLine ? Colors.transparent : col),
-          SizedBox(
-            width: _statusWidth - 3,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-              child: Text(
-                row.kind == RowDiff.different && !l.targetLine ? 'Diverso · origine' : status,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: TypeSize.small,
-                  color: row.kind == RowDiff.different && l.targetLine ? c.textSecondary : col,
-                  fontWeight: l.targetLine ? null : FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-          for (var j = 0; j < r.columns.length; j++)
-            Container(
-              width: _widths[j],
-              height: _rowHeight,
-              alignment: values[j] is num ? Alignment.centerRight : Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-              color: diff.contains(j) ? tint : null,
-              child: _cell(c, values[j], dim: l.targetLine && j < r.keyCount),
-            ),
-        ],
-      ),
-    );
+    return l.targetLine ? row.target! : (row.source ?? row.target!);
   }
+
+  String _status(_Line l, CompareResult r) {
+    final k = r.rows[l.row].kind;
+    if (k != RowDiff.different) return k.singular;
+    return l.targetLine ? 'destinazione' : 'Diverso · origine';
+  }
+
+  static String _text(Object? v) => v == null ? 'NULL' : formatValue(v, maxLen: 200).replaceAll('\n', ' ');
 
   Widget _cell(DbColors c, Object? v, {bool dim = false}) {
     if (v == null) {
       return Text(
         'NULL',
-        style: TextStyle(fontSize: TypeSize.small, fontStyle: FontStyle.italic, color: c.textTertiary),
+        style: uiText(TypeSize.body, color: c.textTertiary).copyWith(fontStyle: FontStyle.italic),
       );
     }
     return Text(
-      formatValue(v, maxLen: 200).replaceAll('\n', ' '),
+      _text(v),
       maxLines: 1,
+      softWrap: false,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(fontSize: TypeSize.body, color: dim ? c.textTertiary : c.text, fontFeatures: kTabular),
+      style: uiText(TypeSize.body, color: dim ? c.textTertiary : c.text, features: kTabular),
     );
   }
 }

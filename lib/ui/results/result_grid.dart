@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:two_dimensional_scrollables/two_dimensional_scrollables.dart';
@@ -55,8 +57,14 @@ class ResultGridState extends State<ResultGrid> {
   final _editCtrl = TextEditingController();
   final _editFocus = FocusNode();
 
-  static const double _rowH = 26;
-  static const double _headH = 30;
+  static const double _rowH = GridMetrics.row;
+  static const double _headH = GridMetrics.header;
+
+  bool _hasFocus = false;
+
+  // Last primary click, for double-click detection without a gesture arena.
+  (int, int)? _lastClickCell;
+  Duration? _lastClickTime;
 
   ResultSetModel get m => widget.model;
 
@@ -440,10 +448,12 @@ class ResultGridState extends State<ResultGrid> {
     final c = DbColors.of(context);
     final cols = m.columns.length;
     final rows = m.view.length;
-    final vLine = BorderSide(color: c.separator.withValues(alpha: c.separator.a * 0.6), width: 1);
+    final hairline = BorderSide(color: c.separator, width: 0.5);
+    final selRows = {for (final e in _sel) e.$1};
     return Focus(
       focusNode: _focus,
       onKeyEvent: _onKey,
+      onFocusChange: (v) => setState(() => _hasFocus = v),
       child: ColoredBox(
         color: c.content,
         child: Scrollbar(
@@ -462,21 +472,17 @@ class ResultGridState extends State<ResultGrid> {
                 rowCount: rows + 1,
                 columnBuilder: (i) => TableSpan(
                   extent: FixedTableSpanExtent(i == 0 ? _rowNumWidth : _colWidth(i - 1)),
-                  foregroundDecoration: TableSpanDecoration(border: TableSpanBorder(trailing: vLine)),
+                  foregroundDecoration: i == 0 ? TableSpanDecoration(border: TableSpanBorder(trailing: hairline)) : null,
                 ),
                 rowBuilder: (i) => TableSpan(
                   extent: FixedTableSpanExtent(i == 0 ? _headH : _rowH),
                   backgroundDecoration: i > 0 && i.isEven ? TableSpanDecoration(color: c.zebra) : null,
-                  foregroundDecoration: i == 0
-                      ? TableSpanDecoration(
-                          border: TableSpanBorder(trailing: BorderSide(color: c.separator)),
-                        )
-                      : null,
+                  foregroundDecoration: i == 0 ? TableSpanDecoration(border: TableSpanBorder(trailing: hairline)) : null,
                 ),
                 cellBuilder: (context, v) {
                   if (v.row == 0 && v.column == 0) return TableViewCell(child: _corner(c));
                   if (v.row == 0) return TableViewCell(child: _header(c, v.column - 1));
-                  if (v.column == 0) return TableViewCell(child: _rowHeader(c, v.row - 1));
+                  if (v.column == 0) return TableViewCell(child: _rowHeader(c, v.row - 1, selRows.contains(v.row - 1)));
                   return TableViewCell(child: _cell(c, v.row - 1, v.column - 1));
                 },
               ),
@@ -499,92 +505,42 @@ class ResultGridState extends State<ResultGrid> {
     final col = m.columns[i];
     final isKey =
         !m.keyIsVirtual && m.keyColumns.any((k) => k.toLowerCase() == (col.baseColumn ?? col.name).toLowerCase());
-    final sorted = m.sortColumn == i;
-    final typeLabel = col.displayType.toLowerCase();
-    return Container(
+    final size = col.size > 0 ? '(${col.size}${col.decimals > 0 ? ',${col.decimals}' : ''})' : '';
+    return ColoredBox(
       color: c.chrome,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: () => m.setSort(i),
-              onSecondaryTapDown: (d) => _headerMenu(i, d.globalPosition),
-              child: Tooltip(
-                message:
-                    '${col.name}\n${col.displayType}'
-                    '${col.size > 0 ? '(${col.size}${col.decimals > 0 ? ',${col.decimals}' : ''})' : ''}'
-                    '${col.nullable ? '' : ' NOT NULL'}'
-                    '${col.autoIncrement ? ' AUTO' : ''}'
-                    '${col.baseTable != null ? '\n${col.baseTable}.${col.baseColumn ?? col.name}' : ''}'
-                    '\nClic per ordinare',
-                waitDuration: const Duration(milliseconds: 700),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-                  child: Row(
-                    children: [
-                      if (isKey) ...[
-                        const Icon(Icons.key_rounded, size: 11, color: Color(0xFFE8A200)),
-                        const SizedBox(width: 4),
-                      ],
-                      Flexible(
-                        child: Text(
-                          col.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: widget.fontSize - 0.5, fontWeight: FontWeight.w600, color: c.text),
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          typeLabel,
-                          overflow: TextOverflow.clip,
-                          softWrap: false,
-                          style: TextStyle(fontSize: TypeSize.caption - 0.5, color: c.textTertiary),
-                        ),
-                      ),
-                      if (sorted)
-                        Icon(
-                          m.sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-                          size: 12,
-                          color: c.accent,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: 7,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.resizeColumn,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragUpdate: (d) => setState(() {
-                  _widths[i] = (_colWidth(i) + d.delta.dx).clamp(30.0, 2000.0);
-                }),
-                onDoubleTap: () => setState(() => _widths.remove(i)),
-              ),
-            ),
-          ),
+      child: RichTooltip(
+        title: col.name,
+        rows: [
+          ('Tipo', '${col.displayType}$size'),
+          ('Null', col.nullable ? 'sì' : 'no'),
+          if (col.autoIncrement) ('Auto', 'sì'),
+          if (col.baseTable != null) ('Origine', '${col.baseTable}.${col.baseColumn ?? col.name}'),
         ],
+        footer: 'Clic per ordinare',
+        child: TableHeaderCell(
+          label: col.name,
+          type: col.displayType.toLowerCase(),
+          fontSize: widget.fontSize - 1,
+          leading: isKey ? Icon(AppIcons.key, size: 11, color: c.keyIcon) : null,
+          sorted: m.sortColumn == i ? m.sortAscending : null,
+          onTap: () => m.setSort(i),
+          onSecondaryTapDown: (d) => _headerMenu(i, d.globalPosition),
+          onResize: (dx) => setState(() => _widths[i] = (_colWidth(i) + dx).clamp(30.0, 2000.0)),
+          onResetWidth: () => setState(() => _widths.remove(i)),
+        ),
       ),
     );
   }
 
-  Widget _rowHeader(DbColors c, int r) {
+  Widget _rowHeader(DbColors c, int r, bool selected) {
     final row = m.rowAt(r);
-    final selected = _sel.any((e) => e.$1 == r);
     Color? mark;
     if (row.deleted) {
-      mark = c.danger;
+      mark = c.diffRemoved;
     } else if (row.inserted) {
-      mark = c.success;
+      mark = c.diffAdded;
     } else if (row.changedCells.isNotEmpty) {
-      mark = c.warning;
+      mark = c.diffChanged;
     }
     return GestureDetector(
       onTapDown: (_) {
@@ -600,15 +556,15 @@ class ResultGridState extends State<ResultGrid> {
         padding: const EdgeInsets.only(right: Gap.sm),
         child: Row(
           children: [
-            Container(width: 3, color: mark ?? Colors.transparent),
+            Container(width: GridMetrics.marker, color: mark ?? Colors.transparent),
             Expanded(
               child: Text(
                 row.inserted ? 'nuova' : '${m.view[r] + 1}',
                 textAlign: TextAlign.right,
-                style: TextStyle(
-                  fontSize: widget.fontSize - 1.5,
+                style: uiText(
+                  TypeSize.caption,
                   color: selected ? c.text : c.textTertiary,
-                  fontFeatures: kTabular,
+                  features: kTabular,
                 ),
               ),
             ),
@@ -626,11 +582,8 @@ class ResultGridState extends State<ResultGrid> {
     final isCursor = _cursor == (r, i);
 
     if (_editing == (r, i)) {
-      return Container(
-        decoration: BoxDecoration(
-          color: c.content,
-          border: Border.all(color: c.accent, width: 2),
-        ),
+      return ColoredBox(
+        color: c.content,
         child: CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.escape): _cancelEdit,
@@ -642,15 +595,8 @@ class ResultGridState extends State<ResultGrid> {
           child: TextField(
             controller: _editCtrl,
             focusNode: _editFocus,
-            style: TextStyle(fontSize: widget.fontSize, fontFeatures: kTabular),
-            decoration: const InputDecoration(
-              isDense: true,
-              filled: false,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            ),
+            style: uiText(widget.fontSize, color: c.text, features: kTabular),
+            decoration: cellEditorDecoration(context, padding: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: 5)),
             onSubmitted: (_) => _commitEdit(move: true),
             onTapOutside: (_) => _commitEdit(),
           ),
@@ -660,87 +606,90 @@ class ResultGridState extends State<ResultGrid> {
 
     Color? bg;
     if (row.deleted) {
-      bg = c.danger.withValues(alpha: 0.10);
+      bg = c.diffRemoved.withValues(alpha: Tint.subtle);
     } else if (row.inserted) {
-      bg = c.success.withValues(alpha: 0.10);
+      bg = c.diffAdded.withValues(alpha: Tint.subtle);
     } else if (row.changedCells.contains(i)) {
-      bg = c.warning.withValues(alpha: 0.22);
+      bg = c.diffChanged.withValues(alpha: Tint.strong);
     }
     if (selected) bg = Color.alphaBlend(c.selection, bg ?? Colors.transparent);
 
     final isNull = v == null;
     final text = isNull ? widget.nullText : formatValue(v, maxLen: 300).replaceAll('\n', '↵');
-    return GestureDetector(
-      onTapDown: (_) {
-        _focus.requestFocus();
-        final hw = HardwareKeyboard.instance;
-        _select(r, i, extend: hw.isShiftPressed, toggle: hw.isControlPressed || hw.isMetaPressed);
-      },
-      onDoubleTap: () => startEdit(r, i),
-      onSecondaryTapDown: (d) {
-        if (!selected) _select(r, i);
-        _cellMenu(r, i, d.globalPosition);
-      },
-      child: Container(
-        decoration: BoxDecoration(
+    // A raw Listener instead of a GestureDetector: with onDoubleTap in the
+    // arena, onTapDown only fires after the press timeout, so every click
+    // felt late. Opaque so the whole cell is clickable, not just the text.
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (e) => _onCellPointerDown(e, r, i),
+      child: FocusRing(
+        visible: isCursor && _hasFocus,
+        inset: true,
+        radius: 0,
+        animated: false,
+        child: Container(
           color: bg,
-          border: isCursor ? Border.all(color: c.accent.withValues(alpha: 0.8), width: 1.5) : null,
-        ),
-        alignment: col.isNumeric && !isNull ? Alignment.centerRight : Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-        child: Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: isNull ? widget.fontSize - 1.5 : widget.fontSize,
-            fontStyle: isNull ? FontStyle.italic : null,
-            color: isNull ? c.textTertiary : c.text,
-            fontFeatures: kTabular,
-            decoration: row.deleted ? TextDecoration.lineThrough : null,
+          alignment: col.isNumeric && !isNull ? Alignment.centerRight : Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: uiText(
+              isNull ? widget.fontSize - 1 : widget.fontSize,
+              style: isNull ? FontStyle.italic : null,
+              color: isNull ? c.textTertiary : c.text,
+              features: kTabular,
+            ).copyWith(decoration: row.deleted ? TextDecoration.lineThrough : null),
           ),
         ),
       ),
     );
   }
 
+  void _onCellPointerDown(PointerDownEvent e, int r, int c) {
+    _focus.requestFocus();
+    if (e.buttons & kSecondaryMouseButton != 0) {
+      if (!_sel.contains((r, c))) _select(r, c);
+      _cellMenu(r, c, e.position);
+      return;
+    }
+    if (e.buttons & kPrimaryButton == 0) return;
+    final last = _lastClickTime;
+    final isDouble = _lastClickCell == (r, c) && last != null && e.timeStamp - last <= kDoubleTapTimeout;
+    if (isDouble) {
+      _lastClickCell = null;
+      _lastClickTime = null;
+      startEdit(r, c);
+      return;
+    }
+    _lastClickCell = (r, c);
+    _lastClickTime = e.timeStamp;
+    final hw = HardwareKeyboard.instance;
+    _select(r, c, extend: hw.isShiftPressed, toggle: hw.isControlPressed || hw.isMetaPressed);
+  }
+
   // -------------------------------------------------------------------------
   // Context menus
   // -------------------------------------------------------------------------
 
-  PopupMenuEntry<VoidCallback> _mi(String label, IconData icon, VoidCallback? f, [String? sc]) =>
-      PopupMenuItem<VoidCallback>(
-        value: f,
-        enabled: f != null,
-        height: 28,
-        child: Row(
-          children: [
-            Icon(icon, size: 16),
-            const SizedBox(width: 10),
-            Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
-            if (sc != null) Text(sc, style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor)),
-          ],
-        ),
-      );
+  MenuEntry<void> _mi(String label, VoidCallback? f, [SingleActivator? shortcut]) =>
+      MenuEntry<void>(label, onSelected: f, enabled: f != null, shortcut: shortcut);
 
-  Future<void> _show(Offset pos, List<PopupMenuEntry<VoidCallback>> items) async {
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final f = await showMenu<VoidCallback>(
-      context: context,
-      position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & overlay.size),
-      items: items,
-    );
-    f?.call();
-  }
+  void _show(Offset pos, List<MenuEntry<void>> entries) => showMacMenu<void>(context, position: pos, entries: entries);
+
+  /// ⌘ on macOS, Ctrl elsewhere.
+  static SingleActivator _cmd(LogicalKeyboardKey k, {bool shift = false}) =>
+      SingleActivator(k, meta: Platform.isMacOS, control: !Platform.isMacOS, shift: shift);
 
   void _headerMenu(int c, Offset pos) {
     final col = m.columns[c];
     _show(pos, [
-      _mi('Ordina crescente', Icons.arrow_upward, () => m.sortBy(c)),
-      _mi('Ordina decrescente', Icons.arrow_downward, () => m.sortBy(c, ascending: false)),
-      _mi('Rimuovi ordinamento', Icons.clear, m.sortColumn == null ? null : () => m.sortBy(null)),
-      const PopupMenuDivider(height: 9),
-      _mi('Seleziona colonna', Icons.view_column, () {
+      _mi('Ordina crescente', () => m.sortBy(c)),
+      _mi('Ordina decrescente', () => m.sortBy(c, ascending: false)),
+      _mi('Rimuovi ordinamento', m.sortColumn == null ? null : () => m.sortBy(null)),
+      const MenuEntry.divider(),
+      _mi('Seleziona colonna', () {
         setState(() {
           _sel.clear();
           for (var r = 0; r < m.view.length; r++) {
@@ -748,8 +697,8 @@ class ResultGridState extends State<ResultGrid> {
           }
         });
       }),
-      _mi('Copia nome colonna', Icons.content_copy, () => Clipboard.setData(ClipboardData(text: col.name))),
-      _mi('Adatta larghezza', Icons.width_normal, () => setState(() => _widths.remove(c))),
+      _mi('Copia nome colonna', () => Clipboard.setData(ClipboardData(text: col.name))),
+      _mi('Adatta larghezza', () => setState(() => _widths.remove(c))),
     ]);
   }
 
@@ -758,38 +707,39 @@ class ResultGridState extends State<ResultGrid> {
     final v = m.rowAt(r).values[c];
     final editable = m.isEditable;
     _show(pos, [
-      _mi('Copia', Icons.content_copy, () => copy(), 'Ctrl+C'),
-      _mi('Copia con intestazioni', Icons.copy_all, () => copy(header: true), 'Ctrl+Shift+C'),
-      _mi('Copia come CSV', Icons.copy, () => copy(format: ExportFormat.csv)),
-      _mi('Copia come JSON', Icons.data_object, () => copy(format: ExportFormat.json)),
-      _mi('Copia come Markdown', Icons.table_rows_outlined, () => copy(format: ExportFormat.markdown)),
-      if (!widget.simpleMode) _mi('Copia come SQL INSERT', Icons.code, () => copy(format: ExportFormat.sql)),
-      _mi('Incolla', Icons.content_paste, editable ? paste : null, 'Ctrl+V'),
-      const PopupMenuDivider(height: 9),
-      _mi('Visualizza / modifica valore…', Icons.open_in_full, () => openValueEditor(r, c), 'Shift+Invio'),
-      _mi('Modifica cella', Icons.edit, editable ? () => startEdit(r, c) : null, 'Invio'),
-      _mi('Imposta NULL', Icons.block, editable ? setNull : null),
-      const PopupMenuDivider(height: 9),
-      _mi('Aggiungi riga', Icons.add, editable ? addRow : null, 'Ins'),
-      _mi('Duplica riga', Icons.control_point_duplicate, editable ? duplicateRow : null),
-      _mi('Elimina righe', Icons.remove, editable ? deleteSelectedRows : null, 'Canc'),
+      _mi('Copia', () => copy(), _cmd(LogicalKeyboardKey.keyC)),
+      _mi('Copia con intestazioni', () => copy(header: true), _cmd(LogicalKeyboardKey.keyC, shift: true)),
+      MenuEntry.submenu('Copia come', children: [
+        _mi('CSV', () => copy(format: ExportFormat.csv)),
+        _mi('JSON', () => copy(format: ExportFormat.json)),
+        _mi('Markdown', () => copy(format: ExportFormat.markdown)),
+        if (!widget.simpleMode) _mi('SQL INSERT', () => copy(format: ExportFormat.sql)),
+      ]),
+      _mi('Incolla', editable ? paste : null, _cmd(LogicalKeyboardKey.keyV)),
+      const MenuEntry.divider(),
+      _mi(
+        'Visualizza / modifica valore…',
+        () => openValueEditor(r, c),
+        const SingleActivator(LogicalKeyboardKey.enter, shift: true),
+      ),
+      _mi('Modifica cella', editable ? () => startEdit(r, c) : null, const SingleActivator(LogicalKeyboardKey.enter)),
+      _mi('Imposta NULL', editable ? setNull : null),
+      const MenuEntry.divider(),
+      _mi('Aggiungi riga', editable ? addRow : null, const SingleActivator(LogicalKeyboardKey.insert)),
+      _mi('Duplica riga', editable ? duplicateRow : null),
+      _mi('Elimina righe', editable ? deleteSelectedRows : null, const SingleActivator(LogicalKeyboardKey.delete)),
       if (widget.onFilterByValue != null) ...[
-        const PopupMenuDivider(height: 9),
+        const MenuEntry.divider(),
         _mi(
           v == null ? 'Filtra: ${col.name} IS NULL' : 'Filtra: ${col.name} = ${formatValue(v, maxLen: 30)}',
-          Icons.filter_alt_outlined,
           () => widget.onFilterByValue!(col, v, '='),
         ),
         if (v != null)
-          _mi(
-            'Filtra: ${col.name} <> ${formatValue(v, maxLen: 30)}',
-            Icons.filter_alt_off_outlined,
-            () => widget.onFilterByValue!(col, v, '<>'),
-          ),
+          _mi('Filtra: ${col.name} <> ${formatValue(v, maxLen: 30)}', () => widget.onFilterByValue!(col, v, '<>')),
       ],
       if (widget.onExport != null) ...[
-        const PopupMenuDivider(height: 9),
-        _mi('Esporta dati…', Icons.file_upload_outlined, widget.onExport),
+        const MenuEntry.divider(),
+        _mi('Esporta dati…', widget.onExport),
       ],
     ]);
   }

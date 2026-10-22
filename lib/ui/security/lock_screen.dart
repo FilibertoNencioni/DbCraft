@@ -67,54 +67,43 @@ class _LockScreenState extends State<LockScreen> {
     return ColoredBox(
       color: c.chrome,
       child: Center(
-        child: Container(
+        child: SheetSurface(
           width: 360,
-          padding: const EdgeInsets.all(Gap.xl),
-          decoration: BoxDecoration(
-            color: c.raised,
-            borderRadius: BorderRadius.circular(Radii.sheet),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 24, offset: const Offset(0, 8))],
-          ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.lock_outline_rounded, size: 36, color: c.accent),
-            const SizedBox(height: Gap.md),
-            Text('DbCraft è bloccato', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: Gap.xs),
-            Text(
-              widget.message ?? 'Inserisci la master password per accedere alle credenziali salvate.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary, height: 1.4),
-            ),
-            const SizedBox(height: Gap.lg),
-            TextField(
-              controller: _password,
-              focusNode: _focus,
-              autofocus: true,
-              obscureText: true,
-              enabled: !_busy,
-              onSubmitted: (_) => _submit(),
-              decoration: InputDecoration(
-                hintText: 'Master password',
-                errorText: _wrong ? 'Password errata' : null,
+          child: Padding(
+            padding: const EdgeInsets.all(Gap.xl),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(AppIcons.lock, size: 36, color: c.accent),
+              const SizedBox(height: Gap.md),
+              Text('DbCraft è bloccato', style: uiText(TypeSize.title, weight: FontWeight.w700, color: c.text)),
+              const SizedBox(height: Gap.xs),
+              Text(
+                widget.message ?? 'Inserisci la master password per accedere alle credenziali salvate.',
+                textAlign: TextAlign.center,
+                style: uiText(TypeSize.small, color: c.textSecondary, height: 1.4),
               ),
-            ),
-            const SizedBox(height: Gap.lg),
-            SizedBox(
-              width: double.infinity,
-              child: PrimaryButton(
+              const SizedBox(height: Gap.lg),
+              SecureField(
+                controller: _password,
+                focusNode: _focus,
+                autofocus: true,
+                enabled: !_busy,
+                revealable: false,
+                hint: 'Master password',
+                error: _wrong ? 'Password errata' : null,
+                onSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: Gap.lg),
+              PushButton.primary(
                 label: _busy ? 'Verifica…' : 'Sblocca',
-                icon: Icons.lock_open_rounded,
+                expand: true,
                 onPressed: _busy ? null : _submit,
               ),
-            ),
-            if (widget.onReset != null) ...[
-              const SizedBox(height: Gap.sm),
-              TextButton(
-                onPressed: _busy ? null : _reset,
-                child: Text('Password dimenticata?', style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary)),
-              ),
-            ],
-          ]),
+              if (widget.onReset != null) ...[
+                const SizedBox(height: Gap.md),
+                LinkButton(label: 'Password dimenticata?', small: true, onPressed: _busy ? null : _reset),
+              ],
+            ]),
+          ),
         ),
       ),
     );

@@ -14,7 +14,6 @@ import '../../state/editor_tabs.dart';
 import '../../ui/actions.dart';
 import '../../ui/widgets/common.dart';
 import '../../ui/widgets/split_view.dart';
-import '../performance/lite_table.dart';
 import 'pg_debug_controller.dart';
 import 'pg_debug_logic.dart';
 
@@ -60,7 +59,7 @@ class PgDebuggerTab extends FeatureTab {
   @override
   String get tooltip => '${dc.config.name}: debug di ${procedure.cleanName}';
   @override
-  IconData get icon => Icons.bug_report_outlined;
+  IconData get icon => AppIcons.debug;
   @override
   DbConnection get connection => dc;
 
@@ -91,46 +90,26 @@ class PgDebuggerTab extends FeatureTab {
 }
 
 /// Lets the user choose one of the overloads of a function.
-Future<PgFunctionCandidate?> pickPgOverload(BuildContext context, List<PgFunctionCandidate> list) =>
-    showDialog<PgFunctionCandidate>(
-      context: context,
-      builder: (ctx) {
-        final c = DbColors.of(ctx);
-        return SimpleDialog(
-          title: const Text('Scegli la funzione da analizzare'),
-          children: [
-            for (final f in list)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, f),
-                child: Row(
-                  children: [
-                    Icon(
-                      f.kind == 'p' ? Icons.settings_applications_outlined : Icons.functions,
-                      size: 16,
-                      color: c.textSecondary,
-                    ),
-                    const SizedBox(width: Gap.sm),
-                    Expanded(
-                      child: Text(f.signature, style: monoStyle(ctx, size: TypeSize.small + 0.5)),
-                    ),
-                    Badge2(f.language),
-                  ],
-                ),
-              ),
-          ],
-        );
-      },
-    );
+Future<PgFunctionCandidate?> pickPgOverload(BuildContext context, List<PgFunctionCandidate> list) {
+  final accent = DbColors.of(context).accent;
+  return showListPicker<PgFunctionCandidate>(
+    context,
+    title: 'Scegli la funzione da analizzare',
+    items: list,
+    label: (f) => f.signature,
+    detail: (f) => f.language,
+    icon: (f) => f.kind == 'p' ? AppIcons.procedure : AppIcons.function,
+    iconColor: (_) => accent,
+    choose: 'Analizza',
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Parameters dialog
 // ---------------------------------------------------------------------------
 
 Future<PgDebugStart?> showPgDebugParamsDialog(BuildContext context, PgDebugController ctl, {PgDebugStart? previous}) =>
-    showDialog<PgDebugStart>(
-      context: context,
-      builder: (_) => _ParamsDialog(ctl: ctl, previous: previous),
-    );
+    showSheet<PgDebugStart>(context, builder: (_) => _ParamsDialog(ctl: ctl, previous: previous));
 
 class _ParamsDialog extends StatefulWidget {
   const _ParamsDialog({required this.ctl, this.previous});
@@ -207,96 +186,65 @@ class _ParamsDialogState extends State<_ParamsDialog> {
         error = e is ArgumentError ? e.message.toString() : e.toString();
       }
     }
-    return AlertDialog(
-      title: Text('Debug di ${f.name}'),
-      content: SizedBox(
-        width: 620,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
+    final canStart = error == null && !(f.isTrigger && !indirect);
+    void start() =>
+        Navigator.pop(context, PgDebugStart(values: values, rollback: rollback && !indirect, indirect: indirect));
+    return SheetScaffold(
+      title: 'Debug di ${f.name}',
+      onSubmit: canStart ? start : null,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            f.signature,
+            style: monoStyle(context, size: TypeSize.mono, color: c.textSecondary),
+          ),
+          const SizedBox(height: Gap.md),
+          if (f.language != 'plpgsql')
+            Padding(
+              padding: const EdgeInsets.only(bottom: Gap.md),
+              child: Notice(
+                message: 'La funzione è scritta in ${f.language}; il debugger supporta solo PL/pgSQL.',
+              ),
+            ),
+          if (!indirect && inputs.isNotEmpty)
+            FormGroup(title: 'Parametri', children: [for (final i in inputs) _argRow(context, i)]),
+          if (!indirect && inputs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: Gap.md),
+              child: Text(
+                'La funzione non ha parametri di input.',
+                style: uiText(TypeSize.small, color: c.textSecondary),
+              ),
+            ),
+          FormGroup(
+            title: 'Opzioni',
             children: [
-              Text(
-                f.signature,
-                style: monoStyle(context, size: TypeSize.small, color: c.textSecondary),
+              FormRow(
+                label: 'Annulla le modifiche',
+                help: 'Esegue la chiamata in una transazione annullata al termine',
+                child: DbSwitch(
+                  value: rollback,
+                  onChanged: indirect ? null : (v) => setState(() => rollback = v),
+                ),
               ),
-              const SizedBox(height: Gap.md),
-              if (f.language != 'plpgsql')
-                Padding(
-                  padding: const EdgeInsets.only(bottom: Gap.md),
-                  child: Text(
-                    'Attenzione: la funzione è scritta in ${f.language}; il debugger supporta solo PL/pgSQL.',
-                    style: TextStyle(fontSize: TypeSize.small, color: c.warning),
-                  ),
-                ),
-              if (!indirect && inputs.isNotEmpty)
-                FormGroup(title: 'Parametri', children: [for (final i in inputs) _argRow(context, i)]),
-              if (!indirect && inputs.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: Gap.md),
-                  child: Text(
-                    'La funzione non ha parametri di input.',
-                    style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-                  ),
-                ),
-              FormGroup(
-                title: 'Opzioni',
-                children: [
-                  FormRow(
-                    label: 'Annulla le modifiche',
-                    help: 'Esegue la chiamata in una transazione annullata al termine',
-                    labelWidth: 260,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: DbSwitch(
-                        value: rollback,
-                        onChanged: indirect ? null : (v) => setState(() => rollback = v),
-                      ),
-                    ),
-                  ),
-                  FormRow(
-                    label: 'Attendi una chiamata esterna',
-                    help: f.isTrigger
-                        ? 'Le funzioni trigger si eseguono tramite il loro trigger'
-                        : 'Debug indiretto: si ferma quando un\'altra sessione chiama la funzione',
-                    labelWidth: 260,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: DbSwitch(value: indirect, onChanged: (v) => setState(() => indirect = v)),
-                    ),
-                  ),
-                ],
+              FormRow(
+                label: 'Attendi una chiamata esterna',
+                help: f.isTrigger
+                    ? 'Le funzioni trigger si eseguono tramite il loro trigger'
+                    : 'Debug indiretto: si ferma quando un\'altra sessione chiama la funzione',
+                child: DbSwitch(value: indirect, onChanged: (v) => setState(() => indirect = v)),
               ),
-              if (preview != null)
-                Container(
-                  padding: const EdgeInsets.all(Gap.sm),
-                  decoration: BoxDecoration(
-                    color: c.chrome,
-                    borderRadius: BorderRadius.circular(Radii.control),
-                    border: Border.all(color: c.separator),
-                  ),
-                  child: SelectableText(preview, style: monoStyle(context, size: TypeSize.small)),
-                ),
-              if (error != null)
-                Text(
-                  error,
-                  style: TextStyle(fontSize: TypeSize.small, color: c.danger),
-                ),
             ],
           ),
-        ),
+          if (preview != null) CodeBox(preview, wrap: true),
+          if (error != null) FieldMessage(error, error: true),
+        ],
       ),
       actions: [
-        OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-        FilledButton(
-          onPressed: error != null || (f.isTrigger && !indirect)
-              ? null
-              : () => Navigator.pop(
-                  context,
-                  PgDebugStart(values: values, rollback: rollback && !indirect, indirect: indirect),
-                ),
-          child: const Text('Avvia debug'),
-        ),
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(label: 'Avvia debug', onPressed: canStart ? start : null),
       ],
     );
   }
@@ -308,27 +256,7 @@ class _ParamsDialogState extends State<_ParamsDialog> {
     final disabled = v.isNull || v.useDefault;
     Widget check(String label, bool value, ValueChanged<bool> onChanged, {String? tip}) => Tooltip(
       message: tip ?? label,
-      child: InkWell(
-        onTap: () => setState(() => onChanged(!value)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 22,
-              height: 22,
-              child: Checkbox(
-                value: value,
-                visualDensity: VisualDensity.compact,
-                onChanged: (x) => setState(() => onChanged(x ?? false)),
-              ),
-            ),
-            Text(
-              label,
-              style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-            ),
-          ],
-        ),
-      ),
+      child: CheckboxRow(small: true, label: label, value: value, onChanged: (x) => setState(() => onChanged(x))),
     );
     return Row(
       children: [
@@ -339,35 +267,21 @@ class _ParamsDialogState extends State<_ParamsDialog> {
             children: [
               Text(
                 a.name.isEmpty ? '\$${i + 1}' : a.name,
-                style: TextStyle(fontSize: TypeSize.body, color: c.text),
+                style: uiText(TypeSize.body, color: c.text),
                 overflow: TextOverflow.ellipsis,
               ),
-              Text(
-                '${a.mode == 'i' ? '' : '${a.modeLabel} '}${a.type}',
-                style: TextStyle(fontSize: TypeSize.caption, color: c.textSecondary),
-                overflow: TextOverflow.ellipsis,
-              ),
+              TypeLabel('${a.mode == 'i' ? '' : '${a.modeLabel} '}${a.type}', mono: true),
             ],
           ),
         ),
         const SizedBox(width: Gap.sm),
         Expanded(
-          child: SizedBox(
-            height: 28,
-            child: TextField(
-              controller: ctrls[i],
-              enabled: !disabled,
-              style: v.expression
-                  ? monoStyle(context, size: TypeSize.small + 0.5)
-                  : const TextStyle(fontSize: TypeSize.body),
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: v.useDefault ? 'default: ${a.defaultExpr}' : (v.isNull ? 'NULL' : _hint(a.type)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(Radii.control)),
-              ),
-              onChanged: (t) => setState(() => v.text = t),
-            ),
+          child: MacTextField(
+            controller: ctrls[i],
+            enabled: !disabled,
+            mono: v.expression,
+            hint: v.useDefault ? 'default: ${a.defaultExpr}' : (v.isNull ? 'NULL' : _hint(a.type)),
+            onChanged: (t) => setState(() => v.text = t),
           ),
         ),
         const SizedBox(width: Gap.sm),
@@ -464,12 +378,12 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
     final dc = widget.tab.dc;
     if (!dc.isConnected) {
       return EmptyState(
-        icon: Icons.power_off_outlined,
+        icon: AppIcons.disconnect,
         title: 'Connessione non attiva',
         message: 'Connetti "${dc.config.name}" per avviare il debugger.',
-        action: PrimaryButton(
+        action: PushButton.primary(
           label: 'Connetti',
-          icon: Icons.power_outlined,
+          icon: AppIcons.connect,
           onPressed: () async {
             if (await ensureConnected(context, dc)) await _prepare();
             if (mounted) setState(() {});
@@ -479,7 +393,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
     }
     if (dc.dialect.family != DbFamily.postgres) {
       return const EmptyState(
-        icon: Icons.bug_report_outlined,
+        icon: AppIcons.debug,
         title: 'Debugger non disponibile',
         message: 'Il debugger di procedure è disponibile solo per PostgreSQL (estensione pldbgapi).',
       );
@@ -488,27 +402,27 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
       listenable: ctl,
       builder: (context, _) {
         if (ctl.preparing || (ctl.info == null && ctl.prepareError == null)) {
-          return const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)));
+          return const Center(child: Spinner(size: Spinner.large));
         }
         if (ctl.prepareError != null) {
           return EmptyState(
-            icon: Icons.error_outline_rounded,
+            icon: AppIcons.error,
             title: 'Impossibile preparare il debug',
             message: ctl.prepareError,
-            action: PrimaryButton(label: 'Riprova', icon: Icons.refresh_rounded, onPressed: _prepare),
+            action: PushButton.primary(label: 'Riprova', icon: AppIcons.refresh, onPressed: _prepare),
           );
         }
         final av = ctl.availability;
         if (av != null && !av.available) {
           return EmptyState(
-            icon: Icons.extension_off_outlined,
+            icon: AppIcons.extension,
             title: 'Estensione pldbgapi non installata',
             message:
                 'Il debugger usa l\'estensione pldbgapi (pldebugger, la stessa di pgAdmin). Sul server: '
                 'installa il pacchetto pldebugger, aggiungi shared_preload_libraries = \'plugin_debugger\' a '
                 'postgresql.conf, riavvia PostgreSQL ed esegui CREATE EXTENSION pldbgapi; nel database.'
                 '${av.error == null ? '' : '\n\n${av.error}'}',
-            action: PrimaryButton(label: 'Verifica di nuovo', icon: Icons.refresh_rounded, onPressed: _prepare),
+            action: PushButton.primary(label: 'Verifica di nuovo', icon: AppIcons.refresh, onPressed: _prepare),
           );
         }
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToLine(ctl.displayLine));
@@ -554,128 +468,73 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
   }
 
   List<Widget> _warnings(BuildContext context, PgDebuggerAvailability av) {
-    final c = DbColors.of(context);
     final notes = [
       if (av.preloadOk == false)
         'plugin_debugger non risulta in shared_preload_libraries: il target potrebbe non fermarsi ai breakpoint.',
       if (av.superuser == false) 'I breakpoint globali di pldebugger richiedono un utente superuser.',
     ];
-    return [
-      for (final n in notes)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: 5),
-          color: c.warning.withValues(alpha: 0.1),
-          child: Row(
-            children: [
-              Icon(Icons.info_outline_rounded, size: 14, color: c.warning),
-              const SizedBox(width: Gap.sm),
-              Expanded(
-                child: Text(
-                  n,
-                  style: TextStyle(fontSize: TypeSize.small, color: c.text),
-                ),
-              ),
-            ],
-          ),
-        ),
-    ];
+    return [for (final n in notes) Notice.strip(message: n)];
   }
 
   Widget _toolbar(BuildContext context) {
     final c = DbColors.of(context);
     final sm = ctl.sm;
-    final statusColor = switch (sm.phase) {
-      DebugPhase.paused => c.warning,
-      DebugPhase.running || DebugPhase.waitingTarget || DebugPhase.starting => c.accent,
-      DebugPhase.failed => c.danger,
-      DebugPhase.finished => c.success,
-      DebugPhase.idle => c.textTertiary,
+    final status = switch (sm.phase) {
+      DebugPhase.running || DebugPhase.waitingTarget || DebugPhase.starting => StatusLine.busy(ctl.status),
+      DebugPhase.failed => StatusLine(ctl.status, kind: StatusKind.danger, maxLines: 1),
+      DebugPhase.finished => StatusLine(ctl.status, kind: StatusKind.success, maxLines: 1),
+      // Paused keeps the amber dot: the target is waiting for a step.
+      DebugPhase.paused => StatusLine(ctl.status, maxLines: 1, dot: c.warning),
+      DebugPhase.idle => StatusLine(ctl.status, maxLines: 1),
     };
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          if (sm.isActive)
-            PrimaryButton(
-              label: 'Stop',
-              icon: Icons.stop_rounded,
-              color: c.danger,
-              tooltip: 'Interrompi il debug (⇧F5)',
-              onPressed: sm.canStop ? ctl.stop : null,
-            )
-          else
-            PrimaryButton(
-              label: 'Avvia',
-              icon: Icons.play_arrow_rounded,
-              tooltip: 'Avvia il debug (F5)',
-              onPressed: _start,
-            ),
-          const SizedBox(width: Gap.xs),
-          ToolButton(
-            icon: Icons.fast_forward_rounded,
-            tooltip: 'Continua fino al prossimo breakpoint (F8)',
-            onPressed: sm.canStep ? ctl.continueExecution : null,
+    return PaneBar(
+      children: [
+        if (sm.isActive)
+          PushButton(
+            label: 'Stop',
+            icon: AppIcons.stop,
+            kind: PushButtonKind.destructive,
+            size: ControlScale.small,
+            tooltip: 'Interrompi il debug (⇧F5)',
+            onPressed: sm.canStop ? ctl.stop : null,
+          )
+        else
+          PushButton.primary(
+            label: 'Avvia',
+            icon: AppIcons.run,
+            size: ControlScale.small,
+            tooltip: 'Avvia il debug (F5)',
+            onPressed: _start,
           ),
-          ToolButton(
-            icon: Icons.subdirectory_arrow_right_rounded,
-            tooltip: 'Step into: entra nelle funzioni chiamate (F7)',
-            onPressed: sm.canStep ? ctl.stepInto : null,
-          ),
-          ToolButton(
-            icon: Icons.redo_rounded,
-            tooltip: 'Step over: esegue la riga corrente (F6)',
-            onPressed: sm.canStep ? ctl.stepOver : null,
-          ),
-          const ToolSeparator(),
-          ToolButton(
-            icon: Icons.replay_rounded,
-            tooltip: 'Ricomincia con gli stessi parametri',
-            onPressed: sm.canRestart && ctl.lastStart != null ? ctl.restart : null,
-          ),
-          const Spacer(),
-          if (sm.phase == DebugPhase.running || sm.phase == DebugPhase.waitingTarget || sm.phase == DebugPhase.starting)
-            const Padding(
-              padding: EdgeInsets.only(right: Gap.sm),
-              child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5)),
-            )
-          else
-            Padding(padding: const EdgeInsets.only(right: 6), child: StatusDot(statusColor, size: 7)),
-          Text(
-            ctl.status,
-            style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.textSecondary, fontFeatures: kTabular),
-          ),
-          if (ctl.targetPid != null) ...[const SizedBox(width: Gap.sm), Badge2('PID ${ctl.targetPid}')],
-          const SizedBox(width: Gap.sm),
-        ],
-      ),
-    );
-  }
-
-  Widget _paneHeader(BuildContext context, String title, {List<Widget> actions = const []}) {
-    final c = DbColors.of(context);
-    return Container(
-      height: 28,
-      padding: const EdgeInsets.only(left: Gap.md, right: Gap.xs),
-      decoration: BoxDecoration(
-        color: c.chrome,
-        border: Border(bottom: BorderSide(color: c.separator)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.small, fontWeight: FontWeight.w600, color: c.textSecondary),
-            ),
-          ),
-          ...actions,
-        ],
-      ),
+        const SizedBox(width: Gap.xs),
+        ToolButton(
+          icon: AppIcons.stepOver,
+          tooltip: 'Continua fino al prossimo breakpoint (F8)',
+          onPressed: sm.canStep ? ctl.continueExecution : null,
+        ),
+        ToolButton(
+          icon: AppIcons.subdirectory,
+          tooltip: 'Step into: entra nelle funzioni chiamate (F7)',
+          onPressed: sm.canStep ? ctl.stepInto : null,
+        ),
+        ToolButton(
+          icon: AppIcons.redo,
+          tooltip: 'Step over: esegue la riga corrente (F6)',
+          onPressed: sm.canStep ? ctl.stepOver : null,
+        ),
+        const ToolSeparator(),
+        ToolButton(
+          icon: AppIcons.replay,
+          tooltip: 'Ricomincia con gli stessi parametri',
+          onPressed: sm.canRestart && ctl.lastStart != null ? ctl.restart : null,
+        ),
+        const SizedBox(width: Gap.md),
+        Expanded(
+          child: Align(alignment: Alignment.centerRight, child: status),
+        ),
+        if (ctl.targetPid != null) ...[const SizedBox(width: Gap.sm), Tag('PID ${ctl.targetPid}')],
+        const SizedBox(width: Gap.xs),
+      ],
     );
   }
 
@@ -686,13 +545,13 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
     final lines = src.split('\n');
     final current = ctl.displayLine;
     final bps = ctl.breakpointLines(func);
-    final mono = monoStyle(context, size: TypeSize.small + 0.5);
+    final mono = monoStyle(context, size: TypeSize.mono);
     final canToggle = ctl.sm.phase != DebugPhase.running && ctl.sm.phase != DebugPhase.starting;
     final name = func == null ? '' : (func == ctl.info?.oid ? ctl.info!.signature : (ctl.funcNames[func] ?? '$func'));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _paneHeader(context, name),
+        PaneHeader(title: name),
         Expanded(
           child: Container(
             color: c.codeBackground,
@@ -707,7 +566,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                   final isCurrent = current == n;
                   final hasBp = bps.contains(n);
                   return Container(
-                    color: isCurrent ? c.accent.withValues(alpha: 0.16) : null,
+                    color: isCurrent ? c.accent.withValues(alpha: Tint.regular) : null,
                     child: Row(
                       children: [
                         GestureDetector(
@@ -715,7 +574,6 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                           onTap: func == null || !canToggle ? null : () => ctl.toggleBreakpoint(func, n),
                           child: Tooltip(
                             message: hasBp ? 'Rimuovi breakpoint' : 'Aggiungi breakpoint',
-                            waitDuration: const Duration(seconds: 1),
                             child: Container(
                               width: 58,
                               color: c.gutter,
@@ -727,14 +585,14 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                                     child: hasBp
                                         ? Center(child: StatusDot(c.danger, size: 9))
                                         : (isCurrent
-                                              ? Icon(Icons.arrow_right_rounded, size: 18, color: c.accent)
+                                              ? Icon(AppIcons.chevronRight, size: 18, color: c.accent)
                                               : null),
                                   ),
                                   Expanded(
                                     child: Text(
                                       '$n',
                                       textAlign: TextAlign.right,
-                                      style: monoStyle(context, size: TypeSize.caption + 0.5, color: c.textTertiary),
+                                      style: monoStyle(context, size: TypeSize.monoSmall, color: c.textTertiary),
                                     ),
                                   ),
                                 ],
@@ -743,7 +601,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                           ),
                         ),
                         if (hasBp && isCurrent)
-                          Icon(Icons.arrow_right_rounded, size: 16, color: c.accent)
+                          Icon(AppIcons.chevronRight, size: 16, color: c.accent)
                         else
                           const SizedBox(width: 16),
                         Expanded(
@@ -777,12 +635,13 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _paneHeader(context, 'Stack'),
+        PaneHeader(title: 'Stack'),
         Expanded(
           flex: 2,
           child: stack.isEmpty
               ? _hint(context, 'Disponibile quando il debugger è fermo')
-              : LiteTable(
+              : MacTable(
+                  dense: true,
                   headers: const ['#', 'Funzione', 'Riga', 'Argomenti'],
                   rowCount: stack.length,
                   cell: (r, i) => switch (i) {
@@ -797,12 +656,13 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                 ),
         ),
         Container(height: 1, color: c.separator),
-        _paneHeader(context, 'Variabili'),
+        PaneHeader(title: 'Variabili'),
         Expanded(
           flex: 3,
           child: vars.isEmpty
               ? _hint(context, 'Doppio clic su un valore per modificarlo')
-              : LiteTable(
+              : MacTable(
+                  dense: true,
                   headers: const ['Nome', 'Tipo', 'Valore'],
                   rowCount: vars.length,
                   cell: (r, i) => switch (i) {
@@ -818,35 +678,23 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
                 ),
         ),
         Container(height: 1, color: c.separator),
-        _paneHeader(context, 'Breakpoint'),
+        PaneHeader(title: 'Breakpoint'),
         Expanded(
           flex: 2,
           child: bps.isEmpty
               ? _hint(context, 'Clic sul numero di riga per aggiungerne uno')
               : ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.xs, vertical: 2),
                   children: [
                     for (final b in bps)
-                      Container(
-                        height: 26,
-                        padding: const EdgeInsets.only(left: Gap.md, right: Gap.xs),
-                        child: Row(
-                          children: [
-                            StatusDot(c.danger, size: 8),
-                            const SizedBox(width: Gap.sm),
-                            Expanded(
-                              child: Text(
-                                '${ctl.funcNames[b.func] ?? (b.target.isEmpty ? b.func : b.target)} · riga ${b.line}',
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: TypeSize.small + 0.5, color: c.text, fontFeatures: kTabular),
-                              ),
-                            ),
-                            ToolButton(
-                              icon: Icons.close_rounded,
-                              size: 13,
-                              tooltip: 'Rimuovi',
-                              onPressed: ctl.sm.phase == DebugPhase.running ? null : () => ctl.removeBreakpoint(b),
-                            ),
-                          ],
+                      ListRow(
+                        leading: StatusDot(c.danger, size: 8),
+                        title: '${ctl.funcNames[b.func] ?? (b.target.isEmpty ? b.func : b.target)} · riga ${b.line}',
+                        trailing: ToolButton(
+                          icon: AppIcons.close,
+                          extent: 18,
+                          tooltip: 'Rimuovi',
+                          onPressed: ctl.sm.phase == DebugPhase.running ? null : () => ctl.removeBreakpoint(b),
                         ),
                       ),
                   ],
@@ -862,7 +710,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: TypeSize.small, color: DbColors.of(context).textTertiary),
+        style: uiText(TypeSize.small, color: DbColors.of(context).textTertiary),
       ),
     ),
   );
@@ -879,37 +727,24 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
   }
 
   Widget _outputPane(BuildContext context) {
-    final c = DbColors.of(context);
     final r = ctl.result;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-          decoration: BoxDecoration(
-            color: c.chrome,
-            border: Border(bottom: BorderSide(color: c.separator)),
-          ),
-          child: Row(
-            children: [
-              Segmented<int>(
-                value: _outputPage,
-                items: [
-                  (0, 'Messaggi', null),
-                  (1, r != null && r.isResultSet ? 'Risultato (${r.rows.length})' : 'Risultato', null),
-                ],
-                onChanged: (v) => setState(() => _outputPage = v),
-              ),
-              const Spacer(),
-              if (ctl.callSql != null)
-                ToolButton(
-                  icon: Icons.copy_rounded,
+        PaneTabs<int>(
+          value: _outputPage,
+          tabs: [
+            const PaneTab(0, 'Messaggi'),
+            PaneTab(1, 'Risultato', count: r != null && r.isResultSet ? r.rows.length : null),
+          ],
+          onChanged: (v) => setState(() => _outputPage = v),
+          trailing: ctl.callSql == null
+              ? null
+              : ToolButton(
+                  icon: AppIcons.copy,
                   tooltip: 'Copia la chiamata SQL',
                   onPressed: () => Clipboard.setData(ClipboardData(text: ctl.callSql!)),
                 ),
-            ],
-          ),
         ),
         Expanded(child: _outputPage == 0 ? _messages(context) : _result(context)),
       ],
@@ -933,13 +768,13 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
           children: [
             Text(
               '${two(m[i].time.hour)}:${two(m[i].time.minute)}:${two(m[i].time.second)}',
-              style: monoStyle(context, size: TypeSize.caption + 0.5, color: c.textTertiary),
+              style: monoStyle(context, size: TypeSize.monoSmall, color: c.textTertiary),
             ),
             const SizedBox(width: Gap.sm),
             Expanded(
               child: SelectableText(
                 m[i].text,
-                style: monoStyle(context, size: TypeSize.small, color: m[i].error ? c.danger : c.text),
+                style: monoStyle(context, size: TypeSize.mono, color: m[i].error ? c.danger : c.text),
               ),
             ),
           ],
@@ -955,7 +790,7 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
         padding: const EdgeInsets.all(Gap.md),
         child: SelectableText(
           ctl.resultError!,
-          style: monoStyle(context, size: TypeSize.small, color: c.danger),
+          style: monoStyle(context, size: TypeSize.mono, color: c.danger),
         ),
       );
     }
@@ -965,7 +800,8 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
       return _hint(context, r.rowsAffected >= 0 ? 'Righe modificate: ${r.rowsAffected}' : 'Esecuzione completata');
     }
     final nullText = AppScope.read(context).settings.nullText;
-    return LiteTable(
+    return MacTable(
+      dense: true,
       headers: [for (final col in r.columns) col.name],
       rowCount: r.rows.length,
       cell: (row, i) => formatValue(r.rows[row][i], nullText: nullText, maxLen: 500),

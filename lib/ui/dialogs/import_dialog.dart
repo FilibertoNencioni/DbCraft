@@ -13,9 +13,9 @@ import '../widgets/common.dart';
 Future<void> showImportDialog(BuildContext context, DbConnection dc, DbTable t, {String? initialPath}) async {
   final cols = await dc.metadata!.columns(t);
   if (!context.mounted) return;
-  await showDialog<void>(
-    context: context,
-    barrierDismissible: false,
+  await showSheet<void>(
+    context,
+    size: SheetSize.large,
     builder: (_) => _ImportDialog(dc: dc, table: t, columns: cols, initialPath: initialPath),
   );
 }
@@ -164,120 +164,134 @@ class _ImportDialogState extends State<_ImportDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final c = DbColors.of(context);
     final header = _csvHeader;
-    return AlertDialog(
-      title: Text('Importa CSV in ${widget.table.name}'),
-      content: SizedBox(
-        width: 720,
-        height: 520,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final rows = _rows;
+    String sample(int i) {
+      final m = _mapping[i];
+      return rows.isNotEmpty && m != null && m < rows.first.length ? rows.first[m] : '';
+    }
+
+    return PopScope(
+      canPop: !_running,
+      child: SheetScaffold(
+        title: 'Importa CSV in ${widget.table.name}',
+        onSubmit: _running || rows.isEmpty ? null : _import,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            FormGroup(
               children: [
-                FilledButton.tonalIcon(
-                  onPressed: _running ? null : _pick,
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('Scegli file…'),
+                FormRow(
+                  label: 'File',
+                  child: PathField(
+                    path: _path,
+                    hint: 'Nessun file selezionato',
+                    chooseLabel: 'Scegli file…',
+                    onChoose: _running ? null : _pick,
+                  ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(child: Text(_path ?? 'Nessun file selezionato', overflow: TextOverflow.ellipsis)),
+                FormRow(
+                  label: 'Delimitatore',
+                  child: PopUpButton<String>(
+                    value: _delimiter,
+                    items: const [
+                      (',', 'Virgola ,', null),
+                      (';', 'Punto e virgola ;', null),
+                      ('\t', 'Tab', null),
+                      ('|', 'Pipe |', null),
+                    ],
+                    onChanged: _running
+                        ? null
+                        : (v) {
+                            _delimiter = v;
+                            _parse();
+                          },
+                  ),
+                ),
+                FormRow(
+                  label: 'Opzioni',
+                  child: Wrap(
+                    spacing: Gap.lg,
+                    runSpacing: Gap.xs,
+                    children: [
+                      CheckboxRow(
+                        label: 'Prima riga = intestazione',
+                        value: _header,
+                        onChanged: (v) {
+                          _header = v;
+                          _parse();
+                        },
+                      ),
+                      CheckboxRow(
+                        label: 'Vuoto = NULL',
+                        value: _emptyIsNull,
+                        onChanged: (v) => setState(() => _emptyIsNull = v),
+                      ),
+                      CheckboxRow(
+                        label: 'Svuota tabella prima',
+                        value: _truncate,
+                        onChanged: (v) => setState(() => _truncate = v),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 16,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                DropdownButton<String>(
-                  value: _delimiter,
-                  items: const [
-                    DropdownMenuItem(value: ',', child: Text('Virgola ,')),
-                    DropdownMenuItem(value: ';', child: Text('Punto e virgola ;')),
-                    DropdownMenuItem(value: '\t', child: Text('Tab')),
-                    DropdownMenuItem(value: '|', child: Text('Pipe |')),
-                  ],
-                  onChanged: (v) {
-                    _delimiter = v!;
-                    _parse();
-                  },
-                ),
-                FilterChip(
-                  label: const Text('Prima riga = intestazione'),
-                  selected: _header,
-                  onSelected: (v) {
-                    _header = v;
-                    _parse();
-                  },
-                ),
-                FilterChip(
-                  label: const Text('Vuoto = NULL'),
-                  selected: _emptyIsNull,
-                  onSelected: (v) => setState(() => _emptyIsNull = v),
-                ),
-                FilterChip(
-                  label: const Text('Svuota tabella prima'),
-                  selected: _truncate,
-                  onSelected: (v) => setState(() => _truncate = v),
-                ),
-              ],
+            SectionLabel(
+              '${rows.length} righe nel file · associazione colonne',
+              padding: const EdgeInsets.only(left: 2, bottom: 6),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '${_rows.length} righe nel file · associazione colonne:',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
             Expanded(
-              child: ListView(
-                children: [
-                  for (var i = 0; i < widget.columns.length; i++)
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 260,
-                          child: Text(
-                            '${widget.columns[i].name}  (${widget.columns[i].fullType})',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const Icon(Icons.arrow_back, size: 16),
-                        const SizedBox(width: 8),
-                        DropdownButton<int?>(
-                          value: _mapping[i],
-                          hint: const Text('— ignora —'),
-                          items: [
-                            const DropdownMenuItem<int?>(value: null, child: Text('— ignora —')),
-                            for (var j = 0; j < header.length; j++)
-                              DropdownMenuItem<int?>(value: j, child: Text(header[j])),
-                          ],
-                          onChanged: (v) => setState(() => _mapping[i] = v),
-                        ),
-                        const SizedBox(width: 12),
-                        if (_rows.isNotEmpty && _mapping[i] != null && _mapping[i]! < _rows.first.length)
-                          Expanded(
-                            child: Text(
-                              'es. ${_rows.first[_mapping[i]!]}',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Theme.of(context).hintColor),
-                            ),
-                          ),
-                      ],
-                    ),
-                ],
+              child: MacTable(
+                bordered: true,
+                resizable: false,
+                headers: const ['Colonna', 'Tipo', 'Dal file', 'Esempio'],
+                rowCount: widget.columns.length,
+                width: (col) => switch (col) {
+                  0 => 200,
+                  1 => 130,
+                  2 => 180,
+                  _ => null,
+                },
+                emphasis: 0,
+                mono: (col) => col == 1,
+                cell: (row, col) => switch (col) {
+                  0 => widget.columns[row].name,
+                  1 => widget.columns[row].fullType,
+                  2 => _mapping[row] == null ? '— ignora —' : header[_mapping[row]!],
+                  _ => sample(row),
+                },
+                cellBuilder: (context, row, col) => col != 2
+                    ? null
+                    : PopUpButton<int?>(
+                        value: _mapping[row],
+                        style: PopUpStyle.inline,
+                        small: true,
+                        items: [
+                          (null, '— ignora —', null),
+                          for (var j = 0; j < header.length; j++) (j, header[j], null),
+                        ],
+                        onChanged: _running ? null : (v) => setState(() => _mapping[row] = v),
+                      ),
               ),
             ),
             if (_running) ...[
-              LinearProgressIndicator(value: _rows.isEmpty ? null : _done / _rows.length),
-              Text('$_done / ${_rows.length}'),
+              const SizedBox(height: Gap.md),
+              ProgressBar(value: rows.isEmpty ? null : _done / rows.length),
+              const SizedBox(height: Gap.xs),
+              Text(
+                '$_done / ${rows.length}',
+                style: uiText(TypeSize.caption, color: c.textSecondary, features: kTabular),
+              ),
             ],
           ],
         ),
+        actions: [
+          PushButton(label: 'Annulla', onPressed: _running ? null : () => Navigator.pop(context)),
+          PushButton.primary(label: 'Importa', onPressed: _running || rows.isEmpty ? null : _import),
+        ],
       ),
-      actions: [
-        TextButton(onPressed: _running ? null : () => Navigator.pop(context), child: const Text('Annulla')),
-        FilledButton(onPressed: _running || _rows.isEmpty ? null : _import, child: const Text('Importa')),
-      ],
     );
   }
 }

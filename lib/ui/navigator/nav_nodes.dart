@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../model/db_objects.dart';
 import '../../state/db_connection.dart';
+import '../theme/app_icons.dart';
 
 /// A node of the database navigator tree. Children are loaded lazily.
 abstract class NavNode {
@@ -16,7 +17,6 @@ abstract class NavNode {
   String get label;
   String? get detail => null;
   IconData get icon;
-  Color? get iconColor => null;
   bool get expandable => true;
   String get key;
 
@@ -40,9 +40,7 @@ class FolderNode extends NavNode {
   @override
   String get label => name;
   @override
-  IconData get icon => Icons.folder;
-  @override
-  Color? get iconColor => const Color(0xFFE0A526);
+  IconData get icon => AppIcons.folder;
   @override
   String get key => 'folder:$name';
   @override
@@ -60,8 +58,6 @@ class ConnectionNode extends NavNode {
   String? get detail => dc.isConnected ? dc.serverLabel : null;
   @override
   IconData get icon => dc.config.template.icon;
-  @override
-  Color? get iconColor => dc.config.template.color;
   @override
   String get key => 'conn:${dc.config.id}';
 
@@ -99,9 +95,7 @@ class CatalogNode extends NavNode {
   @override
   String? get detail => current ? 'predefinito' : null;
   @override
-  IconData get icon => Icons.storage;
-  @override
-  Color? get iconColor => const Color(0xFF8D6E63);
+  IconData get icon => AppIcons.database;
   @override
   String get key => 'cat:${connection!.config.id}:$catalog';
 
@@ -124,9 +118,7 @@ class SchemaNode extends NavNode {
   @override
   String get label => schema;
   @override
-  IconData get icon => Icons.schema_outlined;
-  @override
-  Color? get iconColor => const Color(0xFF5C6BC0);
+  IconData get icon => AppIcons.schema;
   @override
   String get key => 'sch:${connection!.config.id}:${catalog ?? ''}:$schema';
 
@@ -135,10 +127,10 @@ class SchemaNode extends NavNode {
 }
 
 enum ObjectKind {
-  tables('Tabelle', Icons.table_chart_outlined),
-  views('Viste', Icons.view_quilt_outlined),
-  system('Altri oggetti', Icons.settings_outlined),
-  procedures('Procedure e funzioni', Icons.functions);
+  tables('Tabelle', AppIcons.table),
+  views('Viste', AppIcons.erDiagram),
+  system('Altri oggetti', AppIcons.settings),
+  procedures('Procedure e funzioni', AppIcons.function);
 
   const ObjectKind(this.label, this.icon);
   final String label;
@@ -156,9 +148,7 @@ class ObjectFolderNode extends NavNode {
   @override
   String? get detail => children == null ? null : '${children!.length}';
   @override
-  IconData get icon => Icons.folder_outlined;
-  @override
-  Color? get iconColor => const Color(0xFFE0A526);
+  IconData get icon => AppIcons.folder;
   @override
   String get key => 'objs:${connection!.config.id}:${catalog ?? ''}:${schema ?? ''}:${kind.name}';
 
@@ -202,12 +192,10 @@ class TableNode extends NavNode {
 
   @override
   IconData get icon => table.isView
-      ? Icons.view_quilt_outlined
+      ? AppIcons.erDiagram
       : table.type.toUpperCase().contains('SYSTEM')
-      ? Icons.table_view
-      : Icons.table_chart_outlined;
-  @override
-  Color? get iconColor => table.isView ? const Color(0xFF26A69A) : const Color(0xFF1E88E5);
+      ? AppIcons.table
+      : AppIcons.table;
   @override
   bool get filterable => true;
   @override
@@ -224,11 +212,11 @@ class TableNode extends NavNode {
 }
 
 enum TablePart {
-  columns('Colonne', Icons.view_column_outlined),
-  keys('Chiavi', Icons.vpn_key_outlined),
-  foreignKeys('Chiavi esterne', Icons.link),
-  references('Riferimenti', Icons.call_received),
-  indexes('Indici', Icons.sort);
+  columns('Colonne', AppIcons.column),
+  keys('Chiavi', AppIcons.key),
+  foreignKeys('Chiavi esterne', AppIcons.link),
+  references('Riferimenti', AppIcons.incoming),
+  indexes('Indici', AppIcons.sort);
 
   const TablePart(this.label, this.icon);
   final String label;
@@ -243,9 +231,7 @@ class TablePartNode extends NavNode {
   @override
   String get label => part.label;
   @override
-  IconData get icon => Icons.folder_outlined;
-  @override
-  Color? get iconColor => const Color(0xFFE0A526);
+  IconData get icon => AppIcons.folder;
   @override
   String get key => 'part:${connection!.config.id}:${table.key}:${part.name}';
 
@@ -262,8 +248,8 @@ class TablePartNode extends NavNode {
               connection!,
               c.name,
               detail: '${c.fullType}${c.nullable ? '' : ' NOT NULL'}',
-              icon: pk?.columns.contains(c.name) ?? false ? Icons.key : Icons.view_column_outlined,
-              color: pk?.columns.contains(c.name) ?? false ? const Color(0xFFFFB300) : null,
+              icon: pk?.columns.contains(c.name) ?? false ? AppIcons.key : AppIcons.column,
+              isKey: pk?.columns.contains(c.name) ?? false,
               id: '${table.key}:${c.name}',
             ),
         ];
@@ -275,8 +261,8 @@ class TablePartNode extends NavNode {
             connection!,
             pk.name ?? 'PRIMARY KEY',
             detail: pk.columns.join(', '),
-            icon: Icons.vpn_key,
-            color: const Color(0xFFFFB300),
+            icon: AppIcons.key,
+            isKey: true,
             id: '${table.key}:pk',
           ),
         ];
@@ -293,8 +279,7 @@ class TablePartNode extends NavNode {
               detail: part == TablePart.foreignKeys
                   ? '(${f.columns.join(', ')}) → ${f.pkTable}(${f.refColumns.join(', ')})'
                   : '${f.fkTable}(${f.columns.join(', ')})',
-              icon: Icons.link,
-              color: const Color(0xFF7E57C2),
+              icon: AppIcons.link,
               id: '${table.key}:fk:${f.name}:${f.fkTable}',
             ),
         ];
@@ -306,8 +291,7 @@ class TablePartNode extends NavNode {
               connection!,
               i.name,
               detail: '${i.unique ? 'UNIQUE ' : ''}(${i.columns.join(', ')})',
-              icon: Icons.sort,
-              color: const Color(0xFF43A047),
+              icon: AppIcons.sort,
               id: '${table.key}:ix:${i.name}',
             ),
         ];
@@ -324,9 +308,7 @@ class ProcedureNode extends NavNode {
   @override
   String? get detail => procedure.type == 2 ? 'funzione' : null;
   @override
-  IconData get icon => procedure.type == 2 ? Icons.functions : Icons.settings_applications_outlined;
-  @override
-  Color? get iconColor => const Color(0xFF8E24AA);
+  IconData get icon => procedure.type == 2 ? AppIcons.function : AppIcons.procedure;
   @override
   bool get expandable => false;
   @override
@@ -343,7 +325,7 @@ class LeafNode extends NavNode {
     this.name, {
     String? detail,
     required IconData icon,
-    this.color,
+    this.isKey = false,
     required this.id,
   })
     // ignore: prefer_initializing_formals
@@ -353,7 +335,8 @@ class LeafNode extends NavNode {
   final String name;
   final String? _detail;
   final IconData _icon;
-  final Color? color;
+  /// Primary key column or constraint (drawn with the key color).
+  final bool isKey;
   final String id;
 
   @override
@@ -362,8 +345,6 @@ class LeafNode extends NavNode {
   String? get detail => _detail;
   @override
   IconData get icon => _icon;
-  @override
-  Color? get iconColor => color;
   @override
   bool get expandable => false;
   @override

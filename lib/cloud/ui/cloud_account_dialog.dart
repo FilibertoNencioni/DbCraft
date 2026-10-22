@@ -15,17 +15,16 @@ import '../cloud_common.dart';
 /// Returns the saved account, or null when cancelled.
 Future<CloudAccount?> showCloudAccountDialog(BuildContext context, {CloudAccount? existing}) {
   final store = CloudAccountsStore.of(AppScope.read(context));
-  return showDialog<CloudAccount>(
-    context: context,
-    barrierDismissible: false,
+  return showSheet<CloudAccount>(
+    context,
     builder: (_) => _CloudAccountDialog(store: store, existing: existing),
   );
 }
 
 IconData cloudProviderIcon(CloudProvider p) => switch (p) {
-  CloudProvider.aws => Icons.cloud_queue_rounded,
-  CloudProvider.azure => Icons.cloud_circle_outlined,
-  CloudProvider.gcp => Icons.cloud_outlined,
+  CloudProvider.aws => AppIcons.cloud,
+  CloudProvider.azure => AppIcons.cloud,
+  CloudProvider.gcp => AppIcons.cloud,
 };
 
 Color cloudProviderColor(CloudProvider p) => switch (p) {
@@ -69,7 +68,6 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
   final _name = TextEditingController();
   final Map<String, TextEditingController> _fields = {};
   final Map<String, TextEditingController> _secrets = {};
-  bool _showSecrets = false;
   bool _testing = false;
   String? _testOk;
   Object? _testError;
@@ -194,92 +192,77 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Dialog(
-      insetPadding: const EdgeInsets.all(Gap.xl),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600, maxHeight: 720),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg + 2, Gap.xl, Gap.md),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  widget.existing == null ? 'Nuovo account cloud' : 'Modifica account cloud',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-            ),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.xs, Gap.xl, Gap.sm),
-                children: [
-                  FormGroup(
-                    children: [
-                      FormRow(label: 'Nome', child: _field(_name, _autoName())),
-                      FormRow(
-                        label: 'Provider',
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Segmented<CloudProvider>(
-                            value: _a.provider,
-                            items: const [
-                              (CloudProvider.aws, 'AWS', null),
-                              (CloudProvider.azure, 'Azure', null),
-                              (CloudProvider.gcp, 'Google Cloud', null),
-                            ],
-                            onChanged: widget.existing != null
-                                ? (_) {}
-                                : (p) => setState(() {
-                                    _a.provider = p;
-                                    _a.authKind = CloudAuthKind.forProvider(p).first;
-                                    _testOk = null;
-                                    _testError = null;
-                                  }),
-                          ),
-                        ),
-                      ),
+    return SheetScaffold(
+      title: widget.existing == null ? 'Nuovo account cloud' : 'Modifica account cloud',
+      onSubmit: _save,
+      leading: [
+        PushButton(label: 'Prova', onPressed: _testing ? null : _test),
+        Flexible(child: _status()),
+      ],
+      actions: [
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(label: widget.existing == null ? 'Aggiungi' : 'Salva', onPressed: _save),
+      ],
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FormGroup(
+            children: [
+              FormRow(label: 'Nome', child: _field(_name, _autoName())),
+              FormRow(
+                label: 'Provider',
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Segmented<CloudProvider>(
+                    value: _a.provider,
+                    items: const [
+                      (CloudProvider.aws, 'AWS', null),
+                      (CloudProvider.azure, 'Azure', null),
+                      (CloudProvider.gcp, 'Google Cloud', null),
                     ],
-                  ),
-                  FormGroup(
-                    title: 'Autenticazione',
-                    footer: _authHelp(_a.authKind),
-                    children: [
-                      FormRow(
-                        label: 'Metodo',
-                        child: SelectField<CloudAuthKind>(
-                          value: _a.authKind,
-                          items: [for (final k in CloudAuthKind.forProvider(_a.provider)) (k, k.label, null)],
-                          onChanged: (k) => setState(() {
-                            _a.authKind = k;
+                    onChanged: widget.existing != null
+                        ? (_) {}
+                        : (p) => setState(() {
+                            _a.provider = p;
+                            _a.authKind = CloudAuthKind.forProvider(p).first;
                             _testOk = null;
                             _testError = null;
                           }),
-                        ),
-                      ),
-                      for (final k in _fieldKeys.where(_isAuthField)) _fieldRow(k),
-                      for (final k in _secretKeys) _secretRow(k),
-                    ],
                   ),
-                  if (_fieldKeys.any((k) => !_isAuthField(k)))
-                    FormGroup(
-                      title: _a.provider == CloudProvider.aws ? 'Endpoint' : 'Risorsa',
-                      footer: _a.provider == CloudProvider.aws
-                          ? 'Lascia vuoto l\'endpoint per Amazon S3; per MinIO, Cloudflare R2, Wasabi… indica l\'URL '
-                                'del servizio e di solito attiva lo stile path.'
-                          : null,
-                      children: [for (final k in _fieldKeys.where((k) => !_isAuthField(k))) _fieldRow(k)],
-                    ),
-                ],
+                ),
               ),
+            ],
+          ),
+          FormGroup(
+            title: 'Autenticazione',
+            footer: _authHelp(_a.authKind),
+            children: [
+              FormRow(
+                label: 'Metodo',
+                child: SelectField<CloudAuthKind>(
+                  value: _a.authKind,
+                  items: [for (final k in CloudAuthKind.forProvider(_a.provider)) (k, k.label, null)],
+                  onChanged: (k) => setState(() {
+                    _a.authKind = k;
+                    _testOk = null;
+                    _testError = null;
+                  }),
+                ),
+              ),
+              for (final k in _fieldKeys.where(_isAuthField)) _fieldRow(k),
+              for (final k in _secretKeys) _secretRow(k),
+            ],
+          ),
+          if (_fieldKeys.any((k) => !_isAuthField(k)))
+            FormGroup(
+              title: _a.provider == CloudProvider.aws ? 'Endpoint' : 'Risorsa',
+              footer: _a.provider == CloudProvider.aws
+                  ? 'Lascia vuoto l\'endpoint per Amazon S3; per MinIO, Cloudflare R2, Wasabi… indica l\'URL '
+                        'del servizio e di solito attiva lo stile path.'
+                  : null,
+              children: [for (final k in _fieldKeys.where((k) => !_isAuthField(k))) _fieldRow(k)],
             ),
-            Divider(height: 1, color: c.separator),
-            _footer(),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -292,95 +275,29 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
     CloudField.keyFile,
   }.contains(k);
 
-  Widget _footer() {
-    final c = DbColors.of(context);
-    Widget status;
-    if (_testing) {
-      status = Row(
-        children: [
-          const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5)),
-          const SizedBox(width: Gap.sm),
-          Text(
-            'Verifica in corso…',
-            style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-          ),
-        ],
+  Widget _status() {
+    if (_testing) return const StatusLine.busy('Verifica in corso…');
+    if (_testOk != null) return StatusLine(_testOk!, kind: StatusKind.success, maxLines: 1);
+    if (_testError != null) {
+      return StatusLine(
+        _testError.toString().split('\n').first,
+        kind: StatusKind.danger,
+        maxLines: 1,
+        onDetails: () => showErrorDialog(context, _testError!, title: 'Accesso non riuscito'),
       );
-    } else if (_testOk != null) {
-      status = Row(
-        children: [
-          Icon(Icons.check_rounded, size: 15, color: c.success),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              _testOk!,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.small, color: c.text, fontFeatures: kTabular),
-            ),
-          ),
-        ],
-      );
-    } else if (_testError != null) {
-      status = Row(
-        children: [
-          Icon(Icons.close_rounded, size: 15, color: c.danger),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              _testError.toString().split('\n').first,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: TypeSize.small, color: c.danger),
-            ),
-          ),
-          TextButton(
-            onPressed: () => showErrorDialog(context, _testError!, title: 'Accesso non riuscito'),
-            child: const Text('Dettagli…'),
-          ),
-        ],
-      );
-    } else {
-      status = const SizedBox.shrink();
     }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.md, Gap.xl, Gap.md + 2),
-      child: Row(
-        children: [
-          OutlinedButton(onPressed: _testing ? null : _test, child: const Text('Prova')),
-          const SizedBox(width: Gap.md),
-          Expanded(child: status),
-          const SizedBox(width: Gap.md),
-          OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-          const SizedBox(width: Gap.sm),
-          FilledButton(onPressed: _save, child: Text(widget.existing == null ? 'Aggiungi' : 'Salva')),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
-  Widget _field(
-    TextEditingController ctrl,
-    String hint, {
-    bool obscure = false,
-    Widget? suffix,
-    int maxLines = 1,
-    bool mono = false,
-  }) {
-    return TextField(
-      controller: ctrl,
-      obscureText: obscure,
-      maxLines: obscure ? 1 : maxLines,
-      minLines: 1,
-      style: mono ? monoStyle(context, size: 12.5) : const TextStyle(fontSize: TypeSize.body),
-      decoration: InputDecoration(hintText: hint, suffixIcon: suffix),
-      onChanged: (_) => setState(() {
-        _testOk = null;
-        _testError = null;
-      }),
-    );
-  }
+  void _clearTest() => setState(() {
+    _testOk = null;
+    _testError = null;
+  });
+
+  Widget _field(TextEditingController ctrl, String hint) =>
+      MacTextField(controller: ctrl, hint: hint, onChanged: (_) => _clearTest());
 
   Widget _fieldRow(String k) {
-    final c = DbColors.of(context);
     switch (k) {
       case CloudField.pathStyle:
         return FormRow(
@@ -397,46 +314,30 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
       case CloudField.profile:
         return FormRow(
           label: 'Profilo',
-          child: _field(
-            _f(k),
-            'default',
-            suffix: _profiles.isEmpty
-                ? null
-                : PopupMenuButton<String>(
-                    tooltip: 'Profili in ~/.aws',
-                    padding: EdgeInsets.zero,
-                    position: PopupMenuPosition.under,
-                    icon: Icon(Icons.unfold_more_rounded, size: 15, color: c.textSecondary),
-                    onSelected: (v) => setState(() => _f(k).text = v),
-                    itemBuilder: (_) => [
-                      for (final p in _profiles)
-                        PopupMenuItem(
-                          value: p,
-                          height: 28,
-                          child: Text(p, style: const TextStyle(fontSize: TypeSize.body)),
-                        ),
-                    ],
-                  ),
-          ),
+          child: _profiles.isEmpty
+              ? _field(_f(k), 'default')
+              : ComboField(
+                  controller: _f(k),
+                  options: () => _profiles,
+                  hint: 'default',
+                  onChanged: (_) => _clearTest(),
+                ),
         );
       case CloudField.keyFile:
         return FormRow(
           label: 'File chiave JSON',
-          child: _field(
-            _f(k),
-            'Percorso del file .json',
-            suffix: ToolButton(
-              icon: Icons.folder_open_outlined,
-              tooltip: 'Sfoglia…',
-              onPressed: () async {
-                final f = await openFile(
-                  acceptedTypeGroups: const [
-                    XTypeGroup(label: 'JSON', extensions: ['json']),
-                  ],
-                );
-                if (f != null) setState(() => _f(k).text = f.path);
-              },
-            ),
+          child: PathField(
+            controller: _f(k),
+            hint: 'Percorso del file .json',
+            onChanged: (_) => _clearTest(),
+            onChoose: () async {
+              final f = await openFile(
+                acceptedTypeGroups: const [
+                  XTypeGroup(label: 'JSON', extensions: ['json']),
+                ],
+              );
+              if (f != null) setState(() => _f(k).text = f.path);
+            },
           ),
         );
     }
@@ -471,12 +372,6 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
   }
 
   Widget _secretRow(String k) {
-    final eye = ToolButton(
-      icon: _showSecrets ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-      tooltip: _showSecrets ? 'Nascondi' : 'Mostra',
-      size: 15,
-      onPressed: () => setState(() => _showSecrets = !_showSecrets),
-    );
     final (label, hint, multiline) = switch (k) {
       CloudSecret.secretAccessKey => ('Secret access key', '', false),
       CloudSecret.sessionToken => ('Session token', 'Facoltativo (credenziali temporanee)', false),
@@ -484,20 +379,35 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
       CloudSecret.sas => ('Token SAS', 'sv=…&ss=b&srt=…&sp=rl&sig=…', false),
       CloudSecret.connectionString => ('Stringa di connessione', 'DefaultEndpointsProtocol=https;AccountName=…', true),
       CloudSecret.clientSecret => ('Client secret', '', false),
-      CloudSecret.keyJson => ('Oppure JSON', 'Incolla il contenuto della chiave (salvato nel vault)', true),
+      CloudSecret.keyJson => ('Oppure JSON', 'Incolla o scegli il file della chiave (salvata nel vault)', true),
       CloudSecret.token => ('Access token', 'ya29.…', false),
       _ => (k, '', false),
     };
-    if (multiline && _showSecrets) {
-      return FormRow(
-        label: label,
-        child: _field(_s(k), hint, maxLines: 4, mono: true, suffix: eye),
-      );
-    }
+    // Multi-line secrets stay on one masked line until revealed, then grow to four.
     return FormRow(
       label: label,
-      help: multiline && !_showSecrets && _s(k).text.isNotEmpty ? 'Contenuto nascosto' : null,
-      child: _field(_s(k), hint, obscure: !_showSecrets, suffix: eye, mono: _showSecrets),
+      child: SecureField(
+        controller: _s(k),
+        hint: hint,
+        maxLines: multiline ? 4 : 1,
+        onChanged: (_) => _clearTest(),
+        onChoose: k == CloudSecret.keyJson ? () => _loadSecret(k) : null,
+        chooseTooltip: 'Carica il contenuto da un file .json',
+      ),
     );
+  }
+
+  /// Reads a JSON key file into the secret [k] (stored in the vault).
+  Future<void> _loadSecret(String k) async {
+    final f = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+    );
+    if (f == null) return;
+    final text = await f.readAsString();
+    if (!mounted) return;
+    _s(k).text = text.trim();
+    _clearTest();
   }
 }

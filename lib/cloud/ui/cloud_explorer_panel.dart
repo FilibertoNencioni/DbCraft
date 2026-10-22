@@ -283,6 +283,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
     final store = _store!;
     final roots = _rootNodes();
     final visible = _flatten(roots);
+    final selected = visible.indexWhere((v) => v.node == _selected);
     return Column(
       children: [
         SectionLabel(
@@ -291,9 +292,9 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ToolButton(icon: Icons.add_rounded, tooltip: 'Nuovo account cloud', onPressed: _newAccount),
+              ToolButton(icon: AppIcons.add, tooltip: 'Nuovo account cloud', onPressed: _newAccount),
               ToolButton(
-                icon: Icons.unfold_less_rounded,
+                icon: AppIcons.collapseAll,
                 tooltip: 'Comprimi tutto',
                 onPressed: () => setState(() {
                   void collapse(_Node n) {
@@ -307,7 +308,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
                 }),
               ),
               ToolButton(
-                icon: Icons.refresh_rounded,
+                icon: AppIcons.refresh,
                 tooltip: 'Aggiorna (F5)',
                 onPressed: _selected == null ? null : () => _refresh(_selected),
               ),
@@ -323,25 +324,30 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
               ? const SizedBox.shrink()
               : roots.isEmpty
               ? EmptyState(
-                  icon: Icons.cloud_outlined,
+                  icon: AppIcons.cloud,
                   title: 'Nessun account cloud',
                   message:
                       'Aggiungi un account AWS, Azure o Google Cloud per sfogliare bucket e container come '
                       'cartelle, caricare e scaricare file.',
-                  action: PrimaryButton(label: 'Nuovo account…', onPressed: _newAccount),
+                  action: PushButton.primary(label: 'Nuovo account…', onPressed: _newAccount),
                 )
-              : Focus(
-                  focusNode: _focus,
-                  onFocusChange: (_) => setState(() {}),
-                  onKeyEvent: (node, e) => _onKey(e, visible),
+              : CallbackShortcuts(
+                  bindings: {const SingleActivator(LogicalKeyboardKey.f5): () => _refresh(_selected)},
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onSecondaryTapDown: (d) => _emptyMenu(d.globalPosition),
-                    child: ListView.builder(
+                    child: SourceList(
+                      focusNode: _focus,
                       controller: _scroll,
-                      padding: const EdgeInsets.only(bottom: Gap.md),
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, Gap.md),
                       itemCount: visible.length,
-                      itemExtent: 26,
+                      selectedIndex: selected < 0 ? null : selected,
+                      onSelect: (i) => setState(() => _selected = visible[i].node),
+                      onExpand: (i, expand) {
+                        final n = visible[i].node;
+                        expand ? _expand(n) : setState(() => n.expanded = false);
+                      },
+                      onActivate: (i) => _open(visible[i].node),
                       itemBuilder: (context, i) => _row(context, visible[i]),
                     ),
                   ),
@@ -352,142 +358,58 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
     );
   }
 
-  KeyEventResult _onKey(KeyEvent e, List<_VisibleNode> visible) {
-    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
-    final idx = visible.indexWhere((v) => v.node == _selected);
-    void sel(int i) {
-      if (i < 0 || i >= visible.length) return;
-      setState(() => _selected = visible[i].node);
-    }
-
-    switch (e.logicalKey) {
-      case LogicalKeyboardKey.arrowDown:
-        sel(idx + 1);
-      case LogicalKeyboardKey.arrowUp:
-        sel(idx - 1);
-      case LogicalKeyboardKey.arrowRight:
-        if (_selected != null) _expand(_selected!);
-      case LogicalKeyboardKey.arrowLeft:
-        if (_selected != null) setState(() => _selected!.expanded = false);
-      case LogicalKeyboardKey.enter:
-        if (_selected != null) _open(_selected!);
-      case LogicalKeyboardKey.f5:
-        _refresh(_selected);
-      default:
-        return KeyEventResult.ignored;
-    }
-    return KeyEventResult.handled;
-  }
-
   IconData _icon(_Node n) => switch (n.kind) {
     _Kind.account => cloudProviderIcon(n.account.provider),
-    _Kind.bucket => Icons.inventory_2_outlined,
-    _Kind.folder => n.expanded ? Icons.folder_open_outlined : Icons.folder_outlined,
-    _Kind.more => Icons.more_horiz_rounded,
+    _Kind.bucket => AppIcons.archive,
+    _Kind.folder => n.expanded ? AppIcons.folderOpen : AppIcons.folder,
+    _Kind.more => AppIcons.more,
     _Kind.file => cloudFileIcon(n.object!.extension),
   };
 
   Widget _row(BuildContext context, _VisibleNode v) {
     final c = DbColors.of(context);
     final n = v.node;
-    final selected = n == _selected;
-    final strong = selected && _focus.hasFocus;
-    final fg = strong ? Colors.white : c.text;
-    final fgSecondary = strong ? Colors.white.withValues(alpha: 0.8) : c.textTertiary;
-    final iconColor = strong
-        ? Colors.white
-        : switch (n.kind) {
-            _Kind.account => cloudProviderColor(n.account.provider),
-            _Kind.bucket => c.accent,
-            _Kind.folder => c.textSecondary,
-            _ => c.textTertiary,
-          };
     final detail = switch (n.kind) {
       _Kind.account => n.account.subtitle,
       _Kind.bucket => n.region ?? '',
       _Kind.file => n.object!.size >= 0 ? formatBytes(n.object!.size) : '',
       _ => '',
     };
-    return GestureDetector(
-      onSecondaryTapDown: (d) {
-        setState(() => _selected = n);
-        _contextMenu(n, d.globalPosition);
+    return OutlineRow(
+      title: n.label,
+      icon: _icon(n),
+      iconColor: switch (n.kind) {
+        _Kind.account => cloudProviderColor(n.account.provider),
+        _Kind.bucket => c.accent,
+        _Kind.folder => c.textSecondary,
+        _ => c.textTertiary,
       },
+      depth: v.depth,
+      expanded: n.expandable ? n.expanded : null,
+      onExpand: (_) => _toggle(n),
+      busy: n.loading,
+      reserveDisclosure: true,
+      detail: detail.isEmpty ? null : detail,
+      strong: n.kind == _Kind.account,
+      titleColor: n.error != null ? c.danger : (n.kind == _Kind.more ? c.accent : null),
+      accessories: [
+        if (n.error != null)
+          Builder(
+            builder: (context) => Icon(
+              AppIcons.warning,
+              size: 14,
+              color: RowTint.emphasizedOf(context) ? c.onSelectionEmphasized : c.danger,
+            ),
+          ),
+      ],
+      selected: n == _selected,
+      tooltip: n.error ?? (n.kind == _Kind.file ? n.object!.key : n.label),
+      onTap: () => n.kind == _Kind.more ? _loadMore(n) : setState(() => _selected = n),
       onDoubleTap: () => _open(n),
-      onTap: () {
-        _focus.requestFocus();
-        if (n.kind == _Kind.more) {
-          _loadMore(n);
-          return;
-        }
+      onMenu: (pos) {
         setState(() => _selected = n);
+        _contextMenu(n, pos);
       },
-      child: Tooltip(
-        message: n.error ?? (n.kind == _Kind.file ? n.object!.key : n.label),
-        waitDuration: const Duration(milliseconds: 1000),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: Gap.sm, vertical: 1),
-          decoration: BoxDecoration(
-            color: selected ? (strong ? c.accent : c.selectionMuted) : Colors.transparent,
-            borderRadius: BorderRadius.circular(Radii.control - 1),
-          ),
-          padding: EdgeInsets.only(left: 2.0 + v.depth * 14, right: Gap.sm),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 18,
-                child: n.loading
-                    ? const Padding(padding: EdgeInsets.all(4), child: CircularProgressIndicator(strokeWidth: 1.5))
-                    : n.expandable
-                    ? GestureDetector(
-                        onTap: () => _toggle(n),
-                        child: AnimatedRotation(
-                          turns: n.expanded ? 0.25 : 0,
-                          duration: const Duration(milliseconds: 120),
-                          curve: Curves.easeOut,
-                          child: Icon(Icons.chevron_right_rounded, size: 15, color: fgSecondary),
-                        ),
-                      )
-                    : null,
-              ),
-              Icon(_icon(n), size: 15, color: iconColor),
-              const SizedBox(width: 7),
-              Flexible(
-                child: Text(
-                  n.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: TypeSize.body,
-                    fontWeight: n.kind == _Kind.account ? FontWeight.w600 : null,
-                    color: n.error != null && !strong ? c.danger : (n.kind == _Kind.more ? c.accent : fg),
-                  ),
-                ),
-              ),
-              if (detail.isNotEmpty && n.kind != _Kind.file) ...[
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    detail,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: TypeSize.small - 0.5, color: fgSecondary),
-                  ),
-                ),
-              ],
-              const Spacer(),
-              if (n.kind == _Kind.file && detail.isNotEmpty)
-                Text(
-                  detail,
-                  style: TextStyle(fontSize: TypeSize.small - 0.5, color: fgSecondary, fontFeatures: kTabular),
-                ),
-              if (n.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Icon(Icons.warning_amber_rounded, size: 14, color: strong ? Colors.white : c.danger),
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -495,77 +417,43 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
   // Context menus
   // -------------------------------------------------------------------------
 
-  PopupMenuItem<VoidCallback> _item(String label, IconData icon, VoidCallback? action, {String? shortcut}) =>
-      PopupMenuItem<VoidCallback>(
-        value: action,
-        enabled: action != null,
-        height: 28,
-        child: Row(
-          children: [
-            Icon(icon, size: 15, color: DbColors.of(context).textSecondary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(label, style: const TextStyle(fontSize: TypeSize.body)),
-            ),
-            if (shortcut != null)
-              Text(
-                shortcut,
-                style: TextStyle(fontSize: TypeSize.caption, color: DbColors.of(context).textTertiary),
-              ),
-          ],
-        ),
-      );
+  static const _divider = MenuEntry<void>.divider();
+  static const _f5 = SingleActivator(LogicalKeyboardKey.f5);
 
-  static const _divider = PopupMenuDivider(height: 9);
+  MenuEntry<void> _item(String label, VoidCallback? action, {SingleActivator? shortcut}) =>
+      MenuEntry<void>(label, onSelected: action, enabled: action != null, shortcut: shortcut);
 
-  Future<void> _showMenu(Offset pos, List<PopupMenuEntry<VoidCallback>> items) async {
-    if (items.isEmpty) return;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final action = await showMenu<VoidCallback>(
-      context: context,
-      position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & overlay.size),
-      items: items,
-    );
-    action?.call();
-  }
+  Future<void> _showMenu(Offset pos, List<MenuEntry<void>> items) =>
+      showMacMenu<void>(context, position: pos, entries: items);
 
   void _emptyMenu(Offset pos) {
     if (_selected != null) return;
-    _showMenu(pos, [_item('Nuovo account…', Icons.add_rounded, _newAccount)]);
+    _showMenu(pos, [_item('Nuovo account…', _newAccount)]);
   }
 
   Future<void> _contextMenu(_Node n, Offset pos) async {
-    final items = <PopupMenuEntry<VoidCallback>>[];
+    final items = <MenuEntry<void>>[];
     final app = AppScope.read(context);
     switch (n.kind) {
       case _Kind.account:
         items.addAll([
-          _item('Aggiorna', Icons.refresh, () => _refresh(n), shortcut: 'F5'),
+          _item('Aggiorna', () => _refresh(n), shortcut: _f5),
           _divider,
-          _item('Modifica…', Icons.edit, () => _editAccount(n)),
-          _item('Elimina', Icons.delete_outline, () => _deleteAccount(n)),
+          _item('Modifica…', () => _editAccount(n)),
+          _item('Elimina', () => _deleteAccount(n)),
           _divider,
-          _item('Nuovo account…', Icons.add_rounded, _newAccount),
+          _item('Nuovo account…', _newAccount),
         ]);
       case _Kind.bucket:
       case _Kind.folder:
         final o = n.asObject;
         items.addAll([
-          _item('Apri nel browser', Icons.open_in_new, () => _openBrowser(n)),
+          _item('Apri nel browser', () => _openBrowser(n)),
           _divider,
-          _item(
-            'Nuova cartella…',
-            Icons.create_new_folder_outlined,
-            () => _withStorage(n, (s) => cloudNewFolder(context, s, n.bucket!, n.prefix)),
-          ),
-          _item(
-            'Carica file…',
-            Icons.upload_outlined,
-            () => _withStorage(n, (s) => cloudUploadFiles(context, s, n.bucket!, n.prefix)),
-          ),
+          _item('Nuova cartella…', () => _withStorage(n, (s) => cloudNewFolder(context, s, n.bucket!, n.prefix))),
+          _item('Carica file…', () => _withStorage(n, (s) => cloudUploadFiles(context, s, n.bucket!, n.prefix))),
           _item(
             'Scarica…',
-            Icons.download_outlined,
             () => _withStorage(n, (s) async {
               await cloudDownloadFolder(context, s, n.bucket!, n.prefix);
               return false;
@@ -574,26 +462,17 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           _divider,
           _item(
             'Copia URI',
-            Icons.content_copy,
             () => _withStorage(n, (s) async {
               await cloudCopyUri(context, s, n.bucket!, n.prefix);
               return false;
             }),
           ),
           if (n.kind == _Kind.folder) ...[
-            _item(
-              'Rinomina…',
-              Icons.drive_file_rename_outline,
-              () => _withStorage(n, (s) => cloudRename(context, s, o), refresh: n.parent),
-            ),
-            _item(
-              'Elimina…',
-              Icons.delete_outline,
-              () => _withStorage(n, (s) => cloudDelete(context, s, [o]), refresh: n.parent),
-            ),
+            _item('Rinomina…', () => _withStorage(n, (s) => cloudRename(context, s, o), refresh: n.parent)),
+            _item('Elimina…', () => _withStorage(n, (s) => cloudDelete(context, s, [o]), refresh: n.parent)),
           ],
-          if (n.kind == _Kind.bucket) _item('Proprietà', Icons.info_outline, () => _bucketProperties(n)),
-          _item('Aggiorna', Icons.refresh, () => _refresh(n), shortcut: 'F5'),
+          if (n.kind == _Kind.bucket) _item('Proprietà', () => _bucketProperties(n)),
+          _item('Aggiorna', () => _refresh(n), shortcut: _f5),
         ]);
       case _Kind.file:
         final o = n.object!;
@@ -604,7 +483,6 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           if (cloudTextExtensions.contains(ext))
             _item(
               'Apri nell\'editor SQL',
-              Icons.edit_note_rounded,
               () => _withStorage(n, (s) async {
                 await cloudOpenInEditor(context, n.account, s, o);
                 return false;
@@ -613,13 +491,11 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           if (hasLocal)
             _item(
               'Salva nel cloud la copia locale',
-              Icons.cloud_upload_outlined,
               () => _withStorage(n, (s) => cloudSaveLocalCopy(context, n.account, s, o), refresh: n.parent),
             ),
           if (cloudCsvExtensions.contains(ext))
             _item(
               'Importa in tabella…',
-              Icons.table_chart_outlined,
               () => _withStorage(n, (s) async {
                 await cloudImportCsv(context, s, o);
                 return false;
@@ -628,7 +504,6 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           if (cloudTextExtensions.contains(ext) || cloudCsvExtensions.contains(ext) || hasLocal) _divider,
           _item(
             'Scarica…',
-            Icons.download_outlined,
             () => _withStorage(n, (s) async {
               await cloudDownload(context, s, o);
               return false;
@@ -636,7 +511,6 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           ),
           _item(
             'Copia link di condivisione…',
-            Icons.link_rounded,
             () => _withStorage(n, (s) async {
               await cloudShareLink(context, s, o);
               return false;
@@ -644,27 +518,17 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           ),
           _item(
             'Copia URI',
-            Icons.content_copy,
             () => _withStorage(n, (s) async {
               await cloudCopyUri(context, s, o.bucket, o.key);
               return false;
             }),
           ),
           _divider,
-          _item(
-            'Rinomina…',
-            Icons.drive_file_rename_outline,
-            () => _withStorage(n, (s) => cloudRename(context, s, o), refresh: n.parent),
-          ),
-          _item(
-            'Elimina…',
-            Icons.delete_outline,
-            () => _withStorage(n, (s) => cloudDelete(context, s, [o]), refresh: n.parent),
-          ),
+          _item('Rinomina…', () => _withStorage(n, (s) => cloudRename(context, s, o), refresh: n.parent)),
+          _item('Elimina…', () => _withStorage(n, (s) => cloudDelete(context, s, [o]), refresh: n.parent)),
           _divider,
           _item(
             'Proprietà',
-            Icons.info_outline,
             () => _withStorage(n, (s) async {
               await cloudProperties(context, s, o);
               return false;
@@ -672,7 +536,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           ),
         ]);
       case _Kind.more:
-        items.add(_item('Carica altri', Icons.more_horiz, () => _loadMore(n)));
+        items.add(_item('Carica altri', () => _loadMore(n)));
     }
     await _showMenu(pos, items);
   }
@@ -680,35 +544,32 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
   Future<void> _bucketProperties(_Node n) async {
     final s = await _storage(n);
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(n.bucket!),
-        content: SizedBox(
-          width: 480,
-          child: PropertyTable(
-            labelWidth: 140,
-            entries: [
-              ('Account', n.account.name),
-              ('Servizio', n.account.provider.storageLabel),
-              (n.account.provider.bucketTerm, n.bucket!),
-              ('Regione', n.region ?? ''),
-              ('URI', s.uri(n.bucket!, '')),
-            ],
-          ),
+    await showSheet<void>(
+      context,
+      builder: (ctx) => SheetScaffold(
+        title: n.bucket!,
+        onSubmit: () => Navigator.pop(ctx),
+        body: PropertyTable(
+          entries: [
+            ('Account', n.account.name),
+            ('Servizio', n.account.provider.storageLabel),
+            (n.account.provider.bucketTerm, n.bucket!),
+            ('Regione', n.region ?? ''),
+            ('URI', s.uri(n.bucket!, '')),
+          ],
         ),
-        actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Chiudi'))],
+        actions: [PushButton.primary(label: 'Fine', onPressed: () => Navigator.pop(ctx))],
       ),
     );
   }
 }
 
 IconData cloudFileIcon(String ext) => switch (ext) {
-  'sql' || 'ddl' || 'pgsql' || 'psql' => Icons.description_outlined,
-  'csv' || 'tsv' || 'xlsx' || 'parquet' || 'avro' => Icons.table_chart_outlined,
-  'json' || 'jsonl' || 'ndjson' || 'xml' || 'yaml' || 'yml' => Icons.data_object_rounded,
-  'png' || 'jpg' || 'jpeg' || 'gif' || 'svg' => Icons.image_outlined,
-  'zip' || 'gz' || 'tar' || 'bz2' => Icons.folder_zip_outlined,
-  'txt' || 'md' || 'log' => Icons.article_outlined,
-  _ => Icons.insert_drive_file_outlined,
+  'sql' || 'ddl' || 'pgsql' || 'psql' => AppIcons.document,
+  'csv' || 'tsv' || 'xlsx' || 'parquet' || 'avro' => AppIcons.table,
+  'json' || 'jsonl' || 'ndjson' || 'xml' || 'yaml' || 'yml' => AppIcons.json,
+  'png' || 'jpg' || 'jpeg' || 'gif' || 'svg' => AppIcons.image,
+  'zip' || 'gz' || 'tar' || 'bz2' => AppIcons.zip,
+  'txt' || 'md' || 'log' => AppIcons.article,
+  _ => AppIcons.file,
 };

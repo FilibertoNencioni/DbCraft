@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/common.dart';
+
 enum _ParamType { auto, text, number, nul }
 
 /// Asks the values of `:name` / `?` parameters (DBeaver "Bind parameters").
@@ -8,8 +10,8 @@ Future<Map<String, Object?>?> showParametersDialog(
   List<String> names,
   Map<String, Object?> previous,
 ) {
-  return showDialog<Map<String, Object?>>(
-    context: context,
+  return showSheet<Map<String, Object?>>(
+    context,
     builder: (ctx) => _ParametersDialog(names: names, previous: previous),
   );
 }
@@ -54,58 +56,53 @@ class _ParametersDialogState extends State<_ParametersDialog> {
   }
 
   @override
+  void dispose() {
+    for (final c in _ctrl.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Parametri della query'),
-      content: SizedBox(
-        width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final (i, n) in widget.names.indexed)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 110,
-                        child: Text(
-                          n.startsWith('?') ? 'Parametro ${n.substring(1)}' : ':$n',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _ctrl[n],
-                          autofocus: i == 0,
-                          enabled: _type[n] != _ParamType.nul,
-                          decoration: const InputDecoration(isDense: true),
-                          onSubmitted: (_) => _submit(),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      DropdownButton<_ParamType>(
-                        value: _type[n],
-                        isDense: true,
-                        items: const [
-                          DropdownMenuItem(value: _ParamType.auto, child: Text('Auto')),
-                          DropdownMenuItem(value: _ParamType.text, child: Text('Testo')),
-                          DropdownMenuItem(value: _ParamType.number, child: Text('Numero')),
-                          DropdownMenuItem(value: _ParamType.nul, child: Text('NULL')),
-                        ],
-                        onChanged: (v) => setState(() => _type[n] = v!),
-                      ),
-                    ],
+    return SheetScaffold(
+      title: 'Parametri della query',
+      onSubmit: _submit,
+      body: FormGroup(
+        children: [
+          for (final (i, n) in widget.names.indexed)
+            FormRow(
+              label: n.startsWith('?') ? 'Parametro ${n.substring(1)}' : ':$n',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: MacTextField(
+                      controller: _ctrl[n],
+                      autofocus: i == 0,
+                      enabled: _type[n] != _ParamType.nul,
+                      hint: _type[n] == _ParamType.nul ? 'NULL' : null,
+                    ),
                   ),
-                ),
-            ],
-          ),
-        ),
+                  const SizedBox(width: Gap.sm),
+                  PopUpButton<_ParamType>(
+                    value: _type[n]!,
+                    width: 96,
+                    items: const [
+                      (_ParamType.auto, 'Auto', null),
+                      (_ParamType.text, 'Testo', null),
+                      (_ParamType.number, 'Numero', null),
+                      (_ParamType.nul, 'NULL', null),
+                    ],
+                    onChanged: (v) => setState(() => _type[n] = v),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-        FilledButton(onPressed: _submit, child: const Text('Esegui')),
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(label: 'Esegui', onPressed: _submit),
       ],
     );
   }

@@ -6,6 +6,7 @@ import '../../state/editor_tabs.dart';
 import '../../state/result_set_model.dart';
 import 'query_builder_view.dart';
 import 'query_model.dart';
+import '../../ui/theme/app_icons.dart';
 
 /// Bottom pane of the builder.
 enum QueryBuilderPane { columns, results }
@@ -50,7 +51,7 @@ class QueryBuilderTab extends FeatureTab {
   String get tooltip => '${dc.config.name}: query builder visuale';
 
   @override
-  IconData get icon => Icons.join_inner_rounded;
+  IconData get icon => AppIcons.join;
 
   @override
   Widget buildView(BuildContext context) => QueryBuilderView(key: ValueKey(id), tab: this);

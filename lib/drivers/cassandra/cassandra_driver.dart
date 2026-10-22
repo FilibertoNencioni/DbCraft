@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../db_session.dart';
 import '../native_driver.dart';
 import 'cassandra_session.dart';
+import '../../ui/theme/app_icons.dart';
 
 const _yesNo = ['no', 'sì'];
 
@@ -19,7 +20,7 @@ class CassandraDriver extends NativeDriver {
       'Database a colonne larghe Apache Cassandra 3.0+ (anche ScyllaDB, DataStax Enterprise e Astra con TLS). '
       'Query CQL con paginazione.';
   @override
-  IconData get icon => Icons.remove_red_eye_outlined;
+  IconData get icon => AppIcons.eye;
   @override
   Color get color => const Color(0xFF1287B1);
   @override

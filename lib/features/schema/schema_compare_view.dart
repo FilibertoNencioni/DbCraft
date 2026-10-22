@@ -65,7 +65,7 @@ class SchemaCompareTab extends FeatureTab {
   String get tooltip => 'Confronto schemi: ${source.label} → ${target.label}';
 
   @override
-  IconData get icon => Icons.compare_arrows_rounded;
+  IconData get icon => AppIcons.compare;
 
   @override
   DbConnection? get connection => source.connection;
@@ -319,7 +319,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
           padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.sm, Gap.lg, Gap.sm),
           decoration: BoxDecoration(
             color: c.chrome,
-            border: Border(bottom: BorderSide(color: c.separator)),
+            border: Border(bottom: BorderSide(color: c.separator, width: 0.5)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -331,7 +331,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
                     child: ToolButton(
-                      icon: Icons.swap_horiz_rounded,
+                      icon: AppIcons.swapHorizontal,
                       tooltip: 'Scambia origine e destinazione',
                       onPressed: _running ? null : _swap,
                     ),
@@ -347,7 +347,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
         Expanded(
           child: diff == null
               ? EmptyState(
-                  icon: Icons.compare_arrows_rounded,
+                  icon: AppIcons.compare,
                   title: _running ? 'Confronto in corso…' : 'Confronta due schemi',
                   message: _running
                       ? _progress
@@ -379,38 +379,13 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
     required String Function(T) label,
     required ValueChanged<T?>? onChanged,
     String hint = '',
-  }) {
-    final c = DbColors.of(context);
-    return Container(
-      height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-      decoration: BoxDecoration(
-        color: c.content,
-        borderRadius: BorderRadius.circular(Radii.control),
-        border: Border.all(color: c.separator),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: items.contains(value) ? value : null,
-          isExpanded: true,
-          isDense: true,
-          hint: Text(
-            hint,
-            style: TextStyle(fontSize: TypeSize.body, color: c.textTertiary),
-          ),
-          style: TextStyle(fontSize: TypeSize.body, color: c.text),
-          items: [
-            for (final i in items)
-              DropdownMenuItem<T>(
-                value: i,
-                child: Text(label(i), overflow: TextOverflow.ellipsis),
-              ),
-          ],
-          onChanged: onChanged,
-        ),
-      ),
-    );
-  }
+  }) => PopUpButton<T?>(
+    value: items.contains(value) ? value : null,
+    expand: true,
+    placeholder: hint,
+    items: [for (final i in items) (i, label(i), null)],
+    onChanged: onChanged,
+  );
 
   Widget _sidePanel(String title, CompareSide side, _SideLists lists) {
     final connections = widget.connections ?? AppScope.of(context).connections;
@@ -422,9 +397,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
         SectionLabel(
           title,
           padding: const EdgeInsets.only(left: 2, bottom: Gap.xs),
-          trailing: lists.loading
-              ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5))
-              : null,
+          trailing: lists.loading ? const Spinner(size: Spinner.small) : null,
         ),
         Row(
           children: [
@@ -499,20 +472,14 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
   }
 
   Widget _optionsBar(DbColors c) {
-    Widget opt(String label, bool value, ValueChanged<bool> on, {Color? color, String? tooltip}) {
-      final w = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          DbSwitch(value: value, onChanged: _running ? null : on),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(fontSize: TypeSize.small, color: color ?? c.textSecondary),
-          ),
-        ],
-      );
-      return tooltip == null ? w : Tooltip(message: tooltip, child: w);
-    }
+    Widget opt(String label, bool value, ValueChanged<bool> on, {String? tooltip, Color? color}) => CheckboxRow(
+      label: label,
+      small: true,
+      value: value,
+      onChanged: _running ? null : on,
+      tooltip: tooltip,
+      labelColor: color,
+    );
 
     void setOptions(CompareOptions o) => setState(() {
       tab.options = o;
@@ -546,22 +513,22 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
         ),
         const SizedBox(width: Gap.md),
         if (_running) ...[
-          const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+          const Spinner(size: Spinner.small),
           const SizedBox(width: Gap.sm),
           Text(
             _progress ?? '',
-            style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular),
+            style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular),
           ),
           const SizedBox(width: Gap.sm),
           ToolButton(
-            icon: Icons.stop_circle_outlined,
+            icon: AppIcons.stopCircle,
             color: c.danger,
             tooltip: 'Interrompi',
             onPressed: () => tab._cancel?.cancel(),
           ),
           const SizedBox(width: Gap.sm),
         ],
-        PrimaryButton(label: 'Confronta', icon: Icons.compare_arrows_rounded, onPressed: _running ? null : _compare),
+        PushButton.primary(label: 'Confronta', icon: AppIcons.compare, onPressed: _running ? null : _compare),
       ],
     );
   }
@@ -607,105 +574,68 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
 
   Widget _tree(SchemaDiff diff, DbColors c) {
     final groups = [DiffStatus.different, DiffStatus.onlyInSource, DiffStatus.onlyInTarget, DiffStatus.identical];
-    final rows = <Widget>[];
+    // Flat outline: a group header (table null) followed by its tables.
+    final items = <(DiffStatus, TableDiff?)>[];
     for (final g in groups) {
-      final items = diff.withStatus(g).toList();
-      if (items.isEmpty) continue;
-      final collapsed = g == DiffStatus.identical && !_showIdentical;
-      rows.add(
-        InkWell(
-          onTap: g == DiffStatus.identical ? () => setState(() => _showIdentical = !_showIdentical) : null,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(Gap.sm, Gap.md, Gap.md, Gap.xs),
-            child: Row(
-              children: [
-                Icon(
-                  collapsed ? Icons.chevron_right_rounded : Icons.expand_more_rounded,
-                  size: 16,
-                  color: g == DiffStatus.identical ? c.textTertiary : Colors.transparent,
-                ),
-                const SizedBox(width: 2),
-                Expanded(
-                  child: Text(
-                    g.label,
-                    style: TextStyle(fontSize: TypeSize.caption, fontWeight: FontWeight.w600, color: c.textTertiary),
-                  ),
-                ),
-                Badge2('${items.length}', color: statusColor(c, g)),
-              ],
-            ),
-          ),
-        ),
-      );
-      if (collapsed) continue;
-      for (final td in items) {
-        final selected = tab.selectedTable == td.id;
-        final n = td.changeCount(includeDestructive: tab.dropExtra);
-        rows.add(
-          GestureDetector(
-            onTap: () => setState(() => tab.selectedTable = td.id),
-            child: Container(
-              height: 26,
-              padding: const EdgeInsets.only(left: Gap.sm, right: Gap.md),
-              color: selected ? c.selection : Colors.transparent,
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 24,
-                    child: td.status == DiffStatus.identical
-                        ? null
-                        : Checkbox(
-                            tristate: true,
-                            value: _tableCheck(td),
-                            onChanged: td.changes.any(_enabled) ? (_) => _toggleTable(td) : null,
-                          ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.table_chart_outlined, size: 14, color: statusColor(c, td.status)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      td.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: TypeSize.body),
-                    ),
-                  ),
-                  if (td.status == DiffStatus.different)
-                    Text(
-                      '$n',
-                      style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary, fontFeatures: kTabular),
-                    ),
-                  const SizedBox(width: 6),
-                  Badge2(statusTag(td.status), color: statusColor(c, td.status)),
-                ],
-              ),
-            ),
-          ),
-        );
+      final tables = diff.withStatus(g).toList();
+      if (tables.isEmpty) continue;
+      items.add((g, null));
+      if (g == DiffStatus.identical && !_showIdentical) continue;
+      for (final td in tables) {
+        items.add((g, td));
       }
     }
+    final selected = items.indexWhere((e) => e.$2 != null && e.$2!.id == tab.selectedTable);
     final total = diff.changeCount(includeDestructive: tab.dropExtra);
-    return Container(
+    return ColoredBox(
       color: c.content,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-            alignment: Alignment.centerLeft,
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: c.separator)),
-            ),
-            child: Text(
-              '${diff.tables.length} tabelle · $total differenze',
-              style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary, fontFeatures: kTabular),
-            ),
-          ),
+          PaneHeader(title: '${diff.tables.length} tabelle · $total differenze'),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: Gap.md),
-              children: rows,
+            child: SourceList(
+              dense: true,
+              background: c.content,
+              itemCount: items.length,
+              selectedIndex: selected < 0 ? null : selected,
+              selectable: (i) => items[i].$2 != null,
+              onSelect: (i) => setState(() => tab.selectedTable = items[i].$2!.id),
+              itemBuilder: (context, i) {
+                final (g, td) = items[i];
+                if (td == null) {
+                  return SectionLabel(
+                    g.label,
+                    padding: const EdgeInsets.fromLTRB(Gap.xs, Gap.sm, Gap.xs, 0),
+                    expanded: g != DiffStatus.identical || _showIdentical,
+                    onToggle: g == DiffStatus.identical ? (v) => setState(() => _showIdentical = v) : null,
+                    trailing: Padding(
+                      padding: const EdgeInsets.only(left: Gap.sm),
+                      child: CountBadge(diff.withStatus(g).length),
+                    ),
+                  );
+                }
+                final n = td.changeCount(includeDestructive: tab.dropExtra);
+                return OutlineRow(
+                  dense: true,
+                  title: td.name,
+                  icon: AppIcons.table,
+                  iconColor: statusColor(c, td.status),
+                  // The checkbox sits before the table icon; identical tables
+                  // keep its space, so the names stay aligned.
+                  leading: td.status == DiffStatus.identical
+                      ? const SizedBox(width: 14)
+                      : MacCheckbox(
+                          value: _tableCheck(td),
+                          semanticLabel: 'Includi ${td.name}',
+                          onChanged: td.changes.any(_enabled) ? (_) => _toggleTable(td) : null,
+                        ),
+                  detail: td.status == DiffStatus.different ? '$n' : null,
+                  accessories: [Tag(statusTag(td.status), color: statusColor(c, td.status))],
+                  selected: tab.selectedTable == td.id,
+                  onTap: () => setState(() => tab.selectedTable = td.id),
+                );
+              },
             ),
           ),
         ],
@@ -721,7 +651,7 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
     final td = diff.tables.where((t) => t.id == tab.selectedTable).firstOrNull;
     if (td == null) {
       return const EmptyState(
-        icon: Icons.table_chart_outlined,
+        icon: AppIcons.table,
         title: 'Nessuna tabella selezionata',
         message: 'Seleziona una tabella a sinistra per vedere le differenze colonna per colonna.',
       );
@@ -734,9 +664,12 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
         children: [
           Row(
             children: [
-              Text(td.name, style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                td.name,
+                style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text),
+              ),
               const SizedBox(width: Gap.sm),
-              Badge2(td.status.label.toLowerCase(), color: statusColor(c, td.status)),
+              Tag(td.status.label.toLowerCase(), color: statusColor(c, td.status)),
             ],
           ),
           if (changes.isNotEmpty) ...[
@@ -747,28 +680,25 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
                 for (final ch in changes)
                   Row(
                     children: [
-                      SizedBox(
-                        width: 24,
-                        child: Checkbox(
-                          value: _enabled(ch) && !tab.excluded.contains(ch.id),
-                          onChanged: _enabled(ch)
-                              ? (v) => setState(() => v == true ? tab.excluded.remove(ch.id) : tab.excluded.add(ch.id))
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(width: Gap.sm),
                       Expanded(
-                        child: Text(
-                          ch.label,
-                          style: TextStyle(fontSize: TypeSize.body, color: _enabled(ch) ? c.text : c.textTertiary),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: CheckboxRow(
+                            label: ch.label,
+                            value: _enabled(ch) && !tab.excluded.contains(ch.id),
+                            onChanged: _enabled(ch)
+                                ? (v) => setState(() => v ? tab.excluded.remove(ch.id) : tab.excluded.add(ch.id))
+                                : null,
+                          ),
                         ),
                       ),
                       if (ch.destructive)
-                        Tooltip(
-                          message: tab.dropExtra
+                        Tag(
+                          'pericoloso',
+                          color: c.danger,
+                          tooltip: tab.dropExtra
                               ? 'Elimina dati o oggetti'
                               : 'Attiva "Elimina oggetti in più" per includerla',
-                          child: Badge2('pericoloso', color: c.danger),
                         ),
                     ],
                   ),
@@ -801,93 +731,64 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
         : td.status == DiffStatus.onlyInTarget
         ? [for (final x in td.target!.columns) ColumnDiff(DiffStatus.onlyInTarget, null, x)]
         : td.columns;
-    final head = TextStyle(fontSize: TypeSize.caption, fontWeight: FontWeight.w600, color: c.textTertiary);
-    Widget cell(ColumnDef? col, ColumnDiff d, bool left) {
-      final present = col != null;
-      final highlight = switch (d.status) {
-        DiffStatus.onlyInSource => left ? c.success : null,
-        DiffStatus.onlyInTarget => left ? null : c.danger,
-        DiffStatus.different => c.warning,
+    // Columns: source name, source definition, target name, target definition.
+    ColumnDef? colOf(ColumnDiff d, int col) => col < 2 ? d.source : d.target;
+    Color? highlight(ColumnDiff d, bool left) => switch (d.status) {
+      DiffStatus.onlyInSource => left ? c.diffAdded : null,
+      DiffStatus.onlyInTarget => left ? null : c.diffRemoved,
+      DiffStatus.different => c.diffChanged,
+      DiffStatus.identical => null,
+    };
+    return MacTable(
+      headers: ['Origine · ${tab.source.label}', 'Definizione', 'Destinazione · ${tab.target.label}', 'Definizione'],
+      rowCount: rows.length,
+      shrinkWrap: true,
+      bordered: true,
+      resizable: false,
+      // Names 200, definitions share the rest (at least 120 each).
+      width: (col) => col.isEven ? 200 : 120,
+      flex: (col) => col.isOdd ? 1 : null,
+      rowStatus: (r) => switch (rows[r].status) {
+        DiffStatus.onlyInSource => c.diffAdded,
+        DiffStatus.onlyInTarget => c.diffRemoved,
+        DiffStatus.different => c.diffChanged,
         DiffStatus.identical => null,
-      };
-      return Expanded(
-        child: Container(
-          height: 26,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-          color: highlight?.withValues(alpha: 0.10),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 160,
-                child: Text(
-                  present ? col.name : '',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: TypeSize.body,
-                    fontWeight: FontWeight.w500,
-                    color: d.aspects.contains(ColumnAspect.name) ? c.warning : c.text,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  _colText(col),
-                  overflow: TextOverflow.ellipsis,
-                  style: monoStyle(context, size: 11.5, color: highlight ?? c.textSecondary),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(Radii.panel + 2),
-        border: Border.all(color: c.separator),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 28,
-            color: c.chrome,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-                    child: Text('Origine · ${tab.source.label}', overflow: TextOverflow.ellipsis, style: head),
-                  ),
-                ),
-                Container(width: 1, color: c.separator),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
-                    child: Text('Destinazione · ${tab.target.label}', overflow: TextOverflow.ellipsis, style: head),
-                  ),
-                ),
-              ],
+      },
+      cell: (r, col) {
+        final x = colOf(rows[r], col);
+        if (x == null) return '';
+        return col.isEven ? x.name : _colText(x);
+      },
+      cellBuilder: (context, r, col) {
+        final d = rows[r];
+        final x = colOf(d, col);
+        if (x == null) return const SizedBox.shrink();
+        if (col.isEven) {
+          return Text(
+            x.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: uiText(
+              TypeSize.body,
+              weight: FontWeight.w500,
+              color: d.aspects.contains(ColumnAspect.name) ? c.diffChanged : c.text,
             ),
-          ),
-          for (final (i, d) in rows.indexed)
-            Container(
-              color: i.isOdd ? c.zebra : null,
-              child: Tooltip(
-                message: d.aspects.isEmpty ? '' : 'Differenze: ${d.aspects.map((a) => a.label).join(', ')}',
-                child: Row(
-                  children: [
-                    cell(d.source, d, true),
-                    Container(width: 1, height: 26, color: c.separator),
-                    cell(d.target, d, false),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
+          );
+        }
+        final h = highlight(d, col < 2);
+        if (h == null) return TypeLabel(_colText(x), mono: true, size: TypeSize.small);
+        return Text(
+          _colText(x),
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.fade,
+          style: monoStyle(context, size: TypeSize.monoSmall, color: h),
+        );
+      },
+      tooltip: (r, _) {
+        final a = rows[r].aspects;
+        return a.isEmpty ? null : 'Differenze: ${a.map((x) => x.label).join(', ')}';
+      },
     );
   }
 
@@ -924,10 +825,10 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
           Row(
             children: [
               Expanded(
-                child: Text(text, style: const TextStyle(fontSize: TypeSize.body)),
+                child: Text(text, style: uiText(TypeSize.body, color: c.text)),
               ),
               const SizedBox(width: Gap.sm),
-              Badge2(statusTag(s), color: statusColor(c, s)),
+              Tag(statusTag(s), color: statusColor(c, s)),
             ],
           ),
       ],
@@ -949,75 +850,65 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            height: 36,
-            padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-            decoration: BoxDecoration(
-              color: c.chrome,
-              border: Border(bottom: BorderSide(color: c.separator)),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  'Script di migrazione',
-                  style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w600, color: c.text),
-                ),
+          PaneBar(
+            padding: const EdgeInsets.only(left: Gap.md, right: Gap.sm),
+            children: [
+              Text(
+                'Script di migrazione',
+                style: uiText(TypeSize.body, weight: FontWeight.w600, color: c.text),
+              ),
+              const SizedBox(width: Gap.sm),
+              CountBadge(count, tooltip: '$count istruzioni'),
+              if (tab.targetDialect != null) ...[
                 const SizedBox(width: Gap.sm),
-                Badge2('$count istruzioni'),
-                if (tab.targetDialect != null) ...[
-                  const SizedBox(width: Gap.sm),
-                  Text(
-                    tab.targetDialect!.dbmsName,
-                    style: TextStyle(fontSize: TypeSize.small, color: c.textTertiary),
-                  ),
-                ],
-                const Spacer(),
-                ToolButton(
-                  icon: Icons.edit_note_rounded,
-                  label: 'Apri nell\'editor SQL',
-                  tooltip: 'Apri lo script in un editor SQL sulla destinazione',
-                  onPressed: count == 0 || dc == null
-                      ? null
-                      : () => AppScope.read(context).openSqlEditor(dc, initialSql: script),
-                ),
-                ToolButton(
-                  icon: Icons.copy_rounded,
-                  tooltip: 'Copia',
-                  onPressed: count == 0
-                      ? null
-                      : () {
-                          Clipboard.setData(ClipboardData(text: script));
-                          showToast(context, 'Script copiato');
-                        },
-                ),
-                ToolButton(
-                  icon: Icons.save_outlined,
-                  tooltip: 'Salva…',
-                  onPressed: count == 0 ? null : () => _save(script),
-                ),
-                const ToolSeparator(),
-                ToolButton(
-                  icon: Icons.play_arrow_rounded,
-                  label: 'Esegui sulla destinazione',
-                  color: c.accent,
-                  tooltip: readOnly ? 'La destinazione è in sola lettura' : 'Esegui lo script su ${tab.target.label}',
-                  onPressed: count == 0 || readOnly || _running ? null : () => _execute(statements),
-                ),
+                Text(tab.targetDialect!.dbmsName, style: uiText(TypeSize.small, color: c.textTertiary)),
               ],
-            ),
+              const Spacer(),
+              ToolButton(
+                icon: AppIcons.script,
+                label: 'Apri nell\'editor SQL',
+                tooltip: 'Apri lo script in un editor SQL sulla destinazione',
+                onPressed: count == 0 || dc == null
+                    ? null
+                    : () => AppScope.read(context).openSqlEditor(dc, initialSql: script),
+              ),
+              ToolButton(
+                icon: AppIcons.copy,
+                tooltip: 'Copia',
+                onPressed: count == 0
+                    ? null
+                    : () {
+                        Clipboard.setData(ClipboardData(text: script));
+                        showToast(context, 'Script copiato');
+                      },
+              ),
+              ToolButton(icon: AppIcons.save, tooltip: 'Salva…', onPressed: count == 0 ? null : () => _save(script)),
+              const ToolSeparator(),
+              const SizedBox(width: Gap.xs),
+              PushButton.primary(
+                label: 'Esegui sulla destinazione',
+                icon: AppIcons.run,
+                size: ControlScale.small,
+                tooltip: readOnly ? 'La destinazione è in sola lettura' : 'Esegui lo script su ${tab.target.label}',
+                onPressed: count == 0 || readOnly || _running ? null : () => _execute(statements),
+              ),
+            ],
           ),
           Expanded(
             child: count == 0
                 ? EmptyState(
-                    icon: Icons.check_circle_outline_rounded,
+                    icon: AppIcons.checkCircle,
                     title: 'Nessuna istruzione',
                     message: tab.diff!.changeCount(includeDestructive: tab.dropExtra) == 0
                         ? 'Gli schemi sono allineati con le opzioni scelte.'
                         : 'Tutte le modifiche sono escluse: selezionale a sinistra.',
                   )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(Gap.md),
-                    child: SelectableText(script, style: monoStyle(context, size: 12.5)),
+                : ColoredBox(
+                    color: c.codeBackground,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(Gap.md),
+                      child: SelectableText(script, style: monoStyle(context, size: TypeSize.mono)),
+                    ),
                   ),
           ),
         ],

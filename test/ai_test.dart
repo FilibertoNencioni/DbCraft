@@ -5,6 +5,7 @@ import 'package:dbcraft/features/ai/claude_client.dart';
 import 'package:dbcraft/features/ai/markdown_view.dart';
 import 'package:dbcraft/model/db_objects.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
+import 'package:dbcraft/ui/widgets/surfaces.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -328,7 +329,7 @@ void main() {
 
     test('line diff', () {
       final d = diffLines('select a\nfrom t\nwhere x', 'select a\nfrom t2\nwhere x');
-      expect(d.map((l) => l.kind).toList(), [DiffKind.same, DiffKind.removed, DiffKind.added, DiffKind.same]);
+      expect(d.map((l) => l.kind).toList(), [DiffLineKind.context, DiffLineKind.removed, DiffLineKind.added, DiffLineKind.context]);
     });
   });
 

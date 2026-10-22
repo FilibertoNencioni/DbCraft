@@ -10,6 +10,7 @@ import '../services/sql_splitter.dart';
 import '../services/storage.dart';
 import 'db_connection.dart';
 import 'result_set_model.dart';
+import '../ui/theme/app_icons.dart';
 
 int _tabSeq = 0;
 
@@ -134,7 +135,7 @@ class SqlEditorTab extends EditorTab {
   }
 
   @override
-  IconData get icon => Icons.description_outlined;
+  IconData get icon => AppIcons.document;
 
   @override
   bool get isDirty => _dirty;
@@ -539,7 +540,7 @@ class TableEditorTab extends EditorTab {
   @override
   String get tooltip => '${_connection.config.name}: ${table.displayPath}';
   @override
-  IconData get icon => table.isView ? Icons.view_quilt_outlined : Icons.table_chart_outlined;
+  IconData get icon => table.isView ? AppIcons.erDiagram : AppIcons.table;
   @override
   bool get isDirty => data?.isDirty ?? false;
 
@@ -559,7 +560,7 @@ class ProcedureEditorTab extends EditorTab {
   @override
   String get title => procedure.cleanName;
   @override
-  IconData get icon => Icons.functions;
+  IconData get icon => AppIcons.function;
 }
 
 class ErDiagramTab extends EditorTab {
@@ -574,7 +575,7 @@ class ErDiagramTab extends EditorTab {
   @override
   String get title => 'ER ${focus?.name ?? schema ?? catalog ?? _connection.config.name}';
   @override
-  IconData get icon => Icons.account_tree_outlined;
+  IconData get icon => AppIcons.tree;
 }
 
 class ConnectionInfoTab extends EditorTab {
@@ -585,5 +586,5 @@ class ConnectionInfoTab extends EditorTab {
   @override
   String get title => _connection.config.name;
   @override
-  IconData get icon => Icons.info_outline;
+  IconData get icon => AppIcons.info;
 }

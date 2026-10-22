@@ -30,7 +30,7 @@ class _ProcedureViewState extends State<ProcedureView> {
   Widget build(BuildContext context) {
     final p = widget.tab.procedure;
     final c = widget.tab.connection;
-    final theme = Theme.of(context);
+    final colors = DbColors.of(context);
     return FutureBuilder<List<DbProcedureParam>>(
       future: _params,
       builder: (context, snap) {
@@ -41,18 +41,17 @@ class _ProcedureViewState extends State<ProcedureView> {
             Row(
               children: [
                 Icon(
-                  p.type == 2 ? Icons.functions : Icons.settings_applications_outlined,
-                  color: const Color(0xFF8E24AA),
+                  p.type == 2 ? AppIcons.function : AppIcons.procedure,
+                  color: colors.accent,
                   size: 28,
                 ),
                 const SizedBox(width: 10),
-                Text(p.cleanName, style: theme.textTheme.titleLarge),
+                Text(p.cleanName, style: uiText(TypeSize.sheetTitle, weight: FontWeight.w700, color: colors.text)),
                 const Spacer(),
-                FilledButton.tonalIcon(
-                  onPressed: () =>
-                      AppScope.read(context).sqlEditorWith(c, c.dialect.procedureCall(p, params)),
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Genera chiamata in editor SQL'),
+                PushButton(
+                  label: 'Genera chiamata in editor SQL',
+                  icon: AppIcons.run,
+                  onPressed: () => AppScope.read(context).sqlEditorWith(c, c.dialect.procedureCall(p, params)),
                 ),
               ],
             ),
@@ -67,10 +66,9 @@ class _ProcedureViewState extends State<ProcedureView> {
               ],
             ),
             const SizedBox(height: 20),
-            Text('Parametri', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
+            const SectionLabel('Parametri', padding: EdgeInsets.only(bottom: Gap.sm)),
             if (snap.connectionState != ConnectionState.done)
-              const LinearProgressIndicator()
+              const ProgressBar()
             else
               SizedBox(
                 height: 400,
@@ -86,7 +84,7 @@ class _ProcedureViewState extends State<ProcedureView> {
             Text(
               'Nota: il corpo della procedura non è esposto dalle API ODBC standard; '
               'usa le viste di sistema del DBMS (es. sys.sql_modules, pg_proc, information_schema.routines).',
-              style: TextStyle(color: theme.hintColor, fontSize: 12),
+              style: uiText(TypeSize.small, color: colors.textSecondary),
             ),
           ],
         );
@@ -103,11 +101,11 @@ class ErDiagramTabView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!tab.connection.isConnected) {
-      return Center(
-        child: FilledButton(
-          onPressed: () => ensureConnected(context, tab.connection),
-          child: const Text('Connetti'),
-        ),
+      return EmptyState(
+        icon: AppIcons.erDiagram,
+        title: 'Connessione non attiva',
+        message: 'Connettiti a ${tab.connection.config.name} per vedere il diagramma.',
+        action: PushButton.primary(label: 'Connetti', onPressed: () => ensureConnected(context, tab.connection)),
       );
     }
     return ErDiagramView(
@@ -136,7 +134,7 @@ class _ConnectionInfoViewState extends State<ConnectionInfoView> {
   Widget build(BuildContext context) {
     final c = widget.tab.connection;
     final i = c.info;
-    final theme = Theme.of(context);
+    final colors = DbColors.of(context);
     String s(String k) => i[k]?.toString() ?? '';
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -145,17 +143,14 @@ class _ConnectionInfoViewState extends State<ConnectionInfoView> {
           children: [
             Icon(c.config.template.icon, color: c.config.template.color, size: 28),
             const SizedBox(width: 10),
-            Text(c.config.name, style: theme.textTheme.titleLarge),
+            Text(c.config.name, style: uiText(TypeSize.sheetTitle, weight: FontWeight.w700, color: colors.text)),
             const SizedBox(width: 12),
-            Chip(
-              avatar: CircleAvatar(backgroundColor: c.config.type.color, radius: 5),
-              label: Text(c.config.type.label),
-            ),
+            Tag(c.config.type.label, color: c.config.type.colorOf(colors)),
           ],
         ),
         const SizedBox(height: 16),
-        Text('Server', style: theme.textTheme.titleMedium),
         PropertyTable(
+          title: 'Server',
           entries: [
             ('DBMS', '${s('dbmsName')} ${s('dbmsVersion')}'),
             ('Server', s('serverName')),
@@ -166,8 +161,8 @@ class _ConnectionInfoViewState extends State<ConnectionInfoView> {
           ],
         ),
         const SizedBox(height: 16),
-        Text('Driver ODBC', style: theme.textTheme.titleMedium),
         PropertyTable(
+          title: 'Driver ODBC',
           entries: [
             ('Driver', '${s('driverName')} ${s('driverVersion')}'),
             ('Versione ODBC driver', s('driverOdbcVersion')),
@@ -176,8 +171,8 @@ class _ConnectionInfoViewState extends State<ConnectionInfoView> {
           ],
         ),
         const SizedBox(height: 16),
-        Text('Capacità', style: theme.textTheme.titleMedium),
         PropertyTable(
+          title: 'Capacità',
           entries: [
             ('Termine catalogo', s('catalogTerm')),
             ('Termine schema', s('schemaTerm')),
@@ -203,25 +198,31 @@ class _ConnectionInfoViewState extends State<ConnectionInfoView> {
           ],
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Text('Tipi di dato (SQLGetTypeInfo)', style: theme.textTheme.titleMedium),
-            const SizedBox(width: 12),
-            if (_types == null)
-              TextButton(
-                onPressed: () => setState(() {
-                  _types = c.metadata?.typeInfo();
-                }),
-                child: const Text('Carica'),
-              ),
-          ],
+        SectionLabel(
+          'Tipi di dato (SQLGetTypeInfo)',
+          padding: const EdgeInsets.only(bottom: Gap.sm),
+          trailing: _types != null
+              ? null
+              : LinkButton(
+                  label: 'Carica',
+                  small: true,
+                  onPressed: () => setState(() {
+                    _types = c.metadata?.typeInfo();
+                  }),
+                ),
         ),
         if (_types != null)
           FutureBuilder<ResultPage>(
             future: _types,
             builder: (context, snap) {
-              if (snap.hasError) return Text('${snap.error}');
-              if (!snap.hasData) return const LinearProgressIndicator();
+              if (snap.hasError) {
+                return Notice(
+                  kind: NoticeKind.danger,
+                  title: 'Impossibile leggere i tipi',
+                  message: describeError(snap.error!),
+                );
+              }
+              if (!snap.hasData) return const ProgressBar();
               final r = snap.data!;
               return SizedBox(
                 height: 420,

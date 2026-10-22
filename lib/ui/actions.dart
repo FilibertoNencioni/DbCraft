@@ -36,17 +36,16 @@ Future<bool> ensureConnected(BuildContext context, DbConnection dc) async {
 Future<void> disconnectWithCheck(BuildContext context, DbConnection dc) async {
   if (!dc.isConnected) return;
   if (!dc.autoCommit && dc.pendingStatements > 0) {
-    final commit = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Transazione aperta'),
-        content: Text('Ci sono ${dc.pendingStatements} istruzioni non confermate su "${dc.config.name}".'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla')),
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Rollback')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Commit')),
-        ],
-      ),
+    final commit = await showAlert<bool?>(
+      context,
+      title: 'Transazione aperta',
+      message: 'Ci sono ${dc.pendingStatements} istruzioni non confermate su "${dc.config.name}".',
+      style: AlertStyle.warning,
+      buttons: const [
+        AlertButton('Commit', true, role: AlertRole.defaultAction),
+        AlertButton('Rollback', false, role: AlertRole.destructive),
+        AlertButton('Annulla', null, role: AlertRole.cancel),
+      ],
     );
     if (commit == null) return;
     if (!context.mounted) return;

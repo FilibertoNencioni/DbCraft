@@ -28,8 +28,9 @@ Future<TableEditResult?> showTableDefDialog(
   String? catalog,
   String? schema,
   Set<String> takenNames = const {},
-}) => showDialog<TableEditResult>(
-  context: context,
+}) => showSheet<TableEditResult>(
+  context,
+  size: SheetSize.xlarge,
   builder: (_) => _TableDefDialog(
     dialect: dialect,
     initial: initial,
@@ -220,209 +221,161 @@ class _TableDefDialogState extends State<_TableDefDialog> {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final types = commonTypes(widget.dialect.family);
-    final head = TextStyle(fontSize: TypeSize.caption, fontWeight: FontWeight.w600, color: c.textTertiary);
-    InputDecoration deco([String? hint]) =>
-        InputDecoration(hintText: hint, contentPadding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7));
-    const fieldStyle = TextStyle(fontSize: TypeSize.body);
-    Widget check(bool v, ValueChanged<bool> on, {bool enabled = true}) => SizedBox(
+    final head = uiText(TypeSize.caption, weight: FontWeight.w600, color: c.textSecondary);
+    Widget check(bool v, ValueChanged<bool> on, {bool enabled = true, required String label}) => SizedBox(
       width: 46,
       child: Center(
-        child: Checkbox(value: v, onChanged: enabled ? (x) => setState(() => on(x ?? false)) : null),
+        child: MacCheckbox(value: v, semanticLabel: label, onChanged: enabled ? (x) => setState(() => on(x)) : null),
       ),
     );
-    return AlertDialog(
-      title: Text(widget.initial == null ? 'Nuova tabella' : 'Modifica tabella'),
-      content: SizedBox(
-        width: 900,
-        height: 460,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+    return SheetScaffold(
+      title: widget.initial == null ? 'Nuova tabella' : 'Modifica tabella',
+      onSubmit: _save,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text('Nome', style: uiText(TypeSize.body, color: c.text)),
+              const SizedBox(width: Gap.sm),
+              Expanded(
+                child: MacTextField(controller: _name, autofocus: widget.initial == null),
+              ),
+              const SizedBox(width: Gap.lg),
+              Text('Commento', style: uiText(TypeSize.body, color: c.text)),
+              const SizedBox(width: Gap.sm),
+              Expanded(flex: 2, child: MacTextField(controller: _comment)),
+            ],
+          ),
+          const SizedBox(height: Gap.lg),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _name,
-                    autofocus: widget.initial == null,
-                    style: fieldStyle,
-                    decoration: const InputDecoration(labelText: 'Nome'),
-                  ),
+                Expanded(flex: 3, child: Text('Nome', style: head)),
+                const SizedBox(width: 6),
+                Expanded(flex: 3, child: Text('Tipo', style: head)),
+                const SizedBox(width: 6),
+                SizedBox(width: 78, child: Text('Dimensione', style: head)),
+                SizedBox(
+                  width: 46,
+                  child: Center(child: Text('Null', style: head)),
                 ),
-                const SizedBox(width: Gap.md),
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: _comment,
-                    style: fieldStyle,
-                    decoration: const InputDecoration(labelText: 'Commento'),
-                  ),
+                const SizedBox(width: 6),
+                Expanded(flex: 2, child: Text('Default', style: head)),
+                SizedBox(
+                  width: 46,
+                  child: Center(child: Text('PK', style: head)),
                 ),
+                SizedBox(
+                  width: 46,
+                  child: Center(child: Text('Auto', style: head)),
+                ),
+                const SizedBox(width: 60),
               ],
             ),
-            const SizedBox(height: Gap.lg),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Row(
-                children: [
-                  Expanded(flex: 3, child: Text('Nome', style: head)),
-                  const SizedBox(width: 6),
-                  Expanded(flex: 3, child: Text('Tipo', style: head)),
-                  const SizedBox(width: 6),
-                  SizedBox(width: 78, child: Text('Dimensione', style: head)),
-                  SizedBox(
-                    width: 46,
-                    child: Center(child: Text('Null', style: head)),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(flex: 2, child: Text('Default', style: head)),
-                  SizedBox(
-                    width: 46,
-                    child: Center(child: Text('PK', style: head)),
-                  ),
-                  SizedBox(
-                    width: 46,
-                    child: Center(child: Text('Auto', style: head)),
-                  ),
-                  const SizedBox(width: 90),
-                ],
-              ),
-            ),
-            const SizedBox(height: Gap.xs),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: c.separator),
-                  borderRadius: BorderRadius.circular(Radii.panel),
-                ),
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: Gap.xs),
-                  itemCount: _rows.length,
-                  itemBuilder: (context, i) {
-                    final r = _rows[i];
-                    final isNew = r.initialName == null && widget.initial != null;
-                    return Container(
-                      key: ObjectKey(r),
-                      color: i.isOdd ? c.zebra : null,
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: TextField(
-                              controller: r.name,
-                              style: fieldStyle.copyWith(color: isNew ? c.success : null),
-                              decoration: deco('nome'),
-                            ),
+          ),
+          const SizedBox(height: Gap.xs),
+          Expanded(
+            child: InsetBox(
+              child: ListView.builder(
+                itemCount: _rows.length,
+                itemBuilder: (context, i) {
+                  final r = _rows[i];
+                  final isNew = r.initialName == null && widget.initial != null;
+                  return Container(
+                    key: ObjectKey(r),
+                    color: i.isOdd ? c.zebra : null,
+                    padding: const EdgeInsets.fromLTRB(4, 3, 4, 3),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          // New column of an existing table: its name in the "added" color.
+                          child: MacTextField(
+                            controller: r.name,
+                            small: true,
+                            hint: 'nome',
+                            color: isNew ? c.diffAdded : null,
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            flex: 3,
-                            child: TextField(
-                              controller: r.type,
-                              style: fieldStyle,
-                              decoration: deco('tipo').copyWith(
-                                suffixIcon: PopupMenuButton<String>(
-                                  tooltip: 'Tipi comuni',
-                                  padding: EdgeInsets.zero,
-                                  iconSize: 18,
-                                  icon: const Icon(Icons.arrow_drop_down_rounded),
-                                  itemBuilder: (_) => [
-                                    for (final t in types)
-                                      PopupMenuItem(
-                                        value: t,
-                                        height: 28,
-                                        child: Text(t, style: monoStyle(context, size: 12)),
-                                      ),
-                                  ],
-                                  onSelected: (t) => setState(() {
-                                    r.type.text = t;
-                                    if (!isSizedType(t) && !isScaledType(t)) r.size.clear();
-                                  }),
-                                ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          flex: 3,
+                          child: ComboField(
+                            controller: r.type,
+                            small: true,
+                            hint: 'tipo',
+                            options: () => types,
+                            // A type without size picked from the menu drops the size; typing
+                            // (and its inline completion) leaves it alone.
+                            onSelected: (t) {
+                              if (!isSizedType(t) && !isScaledType(t)) setState(r.size.clear);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SizedBox(width: 78, child: MacTextField(controller: r.size, small: true, tabular: true)),
+                        check(r.nullable && !r.pk, (v) => r.nullable = v, enabled: !r.pk, label: 'Null'),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          flex: 2,
+                          child: MacTextField(controller: r.def, enabled: !r.auto, small: true, mono: true),
+                        ),
+                        check(r.pk, (v) => r.pk = v, label: 'Chiave primaria'),
+                        check(r.auto, (v) => r.auto = v, label: 'Auto-incremento'),
+                        SizedBox(
+                          width: 60,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              ToolButton(
+                                icon: AppIcons.arrowUp,
+                                extent: 18,
+                                tooltip: 'Sposta su',
+                                onPressed: i == 0 ? null : () => setState(() => _rows.insert(i - 1, _rows.removeAt(i))),
                               ),
-                            ),
+                              ToolButton(
+                                icon: AppIcons.arrowDown,
+                                extent: 18,
+                                tooltip: 'Sposta giù',
+                                onPressed: i == _rows.length - 1
+                                    ? null
+                                    : () => setState(() => _rows.insert(i + 1, _rows.removeAt(i))),
+                              ),
+                              ToolButton(
+                                icon: AppIcons.removeCircle,
+                                extent: 18,
+                                color: c.danger,
+                                tooltip: 'Elimina colonna',
+                                onPressed: () => setState(() => _removed.add(_rows.removeAt(i))),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 6),
-                          SizedBox(
-                            width: 78,
-                            child: TextField(controller: r.size, style: fieldStyle, decoration: deco()),
-                          ),
-                          check(r.nullable && !r.pk, (v) => r.nullable = v, enabled: !r.pk),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            flex: 2,
-                            child: TextField(
-                              controller: r.def,
-                              enabled: !r.auto,
-                              style: monoStyle(context, size: 12.5),
-                              decoration: deco(),
-                            ),
-                          ),
-                          check(r.pk, (v) => r.pk = v),
-                          check(r.auto, (v) => r.auto = v),
-                          SizedBox(
-                            width: 90,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                ToolButton(
-                                  icon: Icons.arrow_upward_rounded,
-                                  size: 14,
-                                  tooltip: 'Sposta su',
-                                  onPressed: i == 0
-                                      ? null
-                                      : () => setState(() => _rows.insert(i - 1, _rows.removeAt(i))),
-                                ),
-                                ToolButton(
-                                  icon: Icons.arrow_downward_rounded,
-                                  size: 14,
-                                  tooltip: 'Sposta giù',
-                                  onPressed: i == _rows.length - 1
-                                      ? null
-                                      : () => setState(() => _rows.insert(i + 1, _rows.removeAt(i))),
-                                ),
-                                ToolButton(
-                                  icon: Icons.remove_circle_outline_rounded,
-                                  size: 14,
-                                  color: c.danger,
-                                  tooltip: 'Elimina colonna',
-                                  onPressed: () => setState(() => _removed.add(_rows.removeAt(i))),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
-            const SizedBox(height: Gap.sm),
-            Row(
-              children: [
-                ToolButton(
-                  icon: Icons.add_rounded,
-                  label: 'Aggiungi colonna',
-                  tooltip: 'Aggiungi una colonna',
-                  onPressed: () => setState(() => _rows.add(_ColRow(type: types.first))),
-                ),
-                const SizedBox(width: Gap.md),
-                if (_error != null)
-                  Expanded(
-                    child: Text(
-                      _error!,
-                      style: TextStyle(fontSize: TypeSize.small, color: c.danger),
-                    ),
-                  ),
-              ],
+          ),
+          const SizedBox(height: Gap.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ToolButton(
+              icon: AppIcons.add,
+              label: 'Aggiungi colonna',
+              tooltip: 'Aggiungi una colonna',
+              onPressed: () => setState(() => _rows.add(_ColRow(type: types.first))),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+      leading: [if (_error != null) Flexible(child: StatusLine(_error!, kind: StatusKind.danger))],
       actions: [
-        OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-        FilledButton(onPressed: _save, child: Text(widget.initial == null ? 'Crea' : 'Applica')),
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(label: widget.initial == null ? 'Crea' : 'Applica', onPressed: _save),
       ],
     );
   }
@@ -441,8 +394,8 @@ Future<ForeignKeyDef?> showRelationDialog(
   required TableDef parent,
   required String parentColumn,
   Set<String> takenNames = const {},
-}) => showDialog<ForeignKeyDef>(
-  context: context,
+}) => showSheet<ForeignKeyDef>(
+  context,
   builder: (_) => _RelationDialog(
     child: child,
     childColumn: childColumn,
@@ -514,90 +467,69 @@ class _RelationDialogState extends State<_RelationDialog> {
     return w;
   }
 
+  void _create() {
+    final n = _name.text.trim();
+    Navigator.pop(
+      context,
+      ForeignKeyDef(
+        name: n.isEmpty ? null : n,
+        columns: [widget.childColumn],
+        refCatalog: widget.parent.catalog,
+        refSchema: widget.parent.schema,
+        refTable: widget.parent.name,
+        refColumns: [widget.parentColumn],
+        onDelete: _onDelete,
+        onUpdate: _onUpdate,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    DropdownButton<FkRule> rule(FkRule v, ValueChanged<FkRule> on) => DropdownButton<FkRule>(
+    Widget rule(FkRule v, ValueChanged<FkRule> on) => PopUpButton<FkRule>(
       value: v,
-      isDense: true,
-      underline: const SizedBox(),
-      style: TextStyle(fontSize: TypeSize.body, color: c.text),
-      items: [for (final r in FkRule.values) DropdownMenuItem(value: r, child: Text(r.sql))],
-      onChanged: (x) => setState(() => on(x ?? v)),
+      items: [for (final r in FkRule.values) (r, r.sql, null)],
+      onChanged: (x) => setState(() => on(x)),
     );
-    return AlertDialog(
-      title: const Text('Nuova relazione'),
-      content: SizedBox(
-        width: 460,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '${widget.child.name}.${widget.childColumn}  →  ${widget.parent.name}.${widget.parentColumn}',
-              style: monoStyle(context, size: 12.5),
-            ),
-            const SizedBox(height: Gap.md),
-            FormGroup(
-              children: [
-                FormRow(
-                  label: 'Nome',
-                  child: TextField(
-                    controller: _name,
-                    style: const TextStyle(fontSize: TypeSize.body),
-                  ),
-                ),
-                FormRow(
-                  label: 'In eliminazione',
-                  child: Align(alignment: Alignment.centerLeft, child: rule(_onDelete, (r) => _onDelete = r)),
-                ),
-                FormRow(
-                  label: 'In aggiornamento',
-                  child: Align(alignment: Alignment.centerLeft, child: rule(_onUpdate, (r) => _onUpdate = r)),
-                ),
-              ],
-            ),
-            for (final w in _warnings)
-              Padding(
-                padding: const EdgeInsets.only(bottom: Gap.xs),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.warning_amber_rounded, size: 15, color: c.warning),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        w,
-                        style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-                      ),
-                    ),
-                  ],
-                ),
+    return SheetScaffold(
+      title: 'Nuova relazione',
+      onSubmit: _create,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '${widget.child.name}.${widget.childColumn}  →  ${widget.parent.name}.${widget.parentColumn}',
+            style: monoStyle(context, size: TypeSize.mono, color: c.textSecondary),
+          ),
+          const SizedBox(height: Gap.md),
+          FormGroup(
+            children: [
+              FormRow(
+                label: 'Nome',
+                child: MacTextField(controller: _name),
               ),
-          ],
-        ),
+              FormRow(
+                label: 'In eliminazione',
+                child: Align(alignment: Alignment.centerLeft, child: rule(_onDelete, (r) => _onDelete = r)),
+              ),
+              FormRow(
+                label: 'In aggiornamento',
+                child: Align(alignment: Alignment.centerLeft, child: rule(_onUpdate, (r) => _onUpdate = r)),
+              ),
+            ],
+          ),
+          for (final w in _warnings)
+            Padding(
+              padding: const EdgeInsets.only(bottom: Gap.sm),
+              child: Notice(message: w),
+            ),
+        ],
       ),
       actions: [
-        OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-        FilledButton(
-          onPressed: () {
-            final n = _name.text.trim();
-            Navigator.pop(
-              context,
-              ForeignKeyDef(
-                name: n.isEmpty ? null : n,
-                columns: [widget.childColumn],
-                refCatalog: widget.parent.catalog,
-                refSchema: widget.parent.schema,
-                refTable: widget.parent.name,
-                refColumns: [widget.parentColumn],
-                onDelete: _onDelete,
-                onUpdate: _onUpdate,
-              ),
-            );
-          },
-          child: const Text('Crea'),
-        ),
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(label: 'Crea', onPressed: _create),
       ],
     );
   }

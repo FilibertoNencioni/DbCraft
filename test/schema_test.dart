@@ -910,16 +910,15 @@ void main() {
     expect(script, contains('CREATE TABLE app.orders'));
     expect(script, isNot(contains('DROP COLUMN legacy')));
     // Dangerous drops only on request.
-    await tester.tap(find.byType(DbSwitch).last);
+    await tester.tap(find.text('Elimina oggetti in più'));
     await tester.pumpAndSettle();
     script = tester.widget<SelectableText>(find.byType(SelectableText).last).data!;
     expect(script, contains('ALTER TABLE app.customers DROP COLUMN legacy;'));
     // Excluding the new table removes it from the script.
     await tester.tap(find.text('orders'));
     await tester.pumpAndSettle();
+    // The checkbox label in the detail pane toggles the change.
     await tester.tap(find.text('Crea la tabella orders'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(Checkbox).last);
     await tester.pumpAndSettle();
     script = tester.widget<SelectableText>(find.byType(SelectableText).last).data!;
     expect(script, isNot(contains('CREATE TABLE app.orders')));

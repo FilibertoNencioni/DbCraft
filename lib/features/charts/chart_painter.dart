@@ -114,8 +114,7 @@ class ChartPainter extends CustomPainter {
   static const double _gap = 2;
   static const double _radius = 4;
 
-  TextStyle get _tickStyle =>
-      TextStyle(fontSize: TypeSize.caption, color: colors.textSecondary, fontFeatures: kTabular);
+  TextStyle get _tickStyle => uiText(TypeSize.caption, color: colors.textSecondary, features: kTabular);
 
   TextPainter _text(String s, {TextStyle? style, double maxWidth = 200}) {
     final tp = TextPainter(
@@ -203,7 +202,7 @@ class ChartPainter extends CustomPainter {
   }
 
   void _titles(Canvas canvas, Size size, Rect plot, {required String x, required String y}) {
-    final style = TextStyle(fontSize: TypeSize.caption, fontWeight: FontWeight.w600, color: colors.textSecondary);
+    final style = uiText(TypeSize.caption, weight: FontWeight.w600, color: colors.textSecondary);
     if (y.isNotEmpty) _text(y, style: style, maxWidth: size.width - 16).paint(canvas, const Offset(4, 0));
     if (x.isNotEmpty) {
       final t = _text(x, style: style, maxWidth: plot.width);
@@ -646,10 +645,10 @@ class ChartPainter extends CustomPainter {
         final mid = a0 + sweep / 2;
         final lr = inner > 0 ? (inner + r) / 2 : r * 0.62;
         final pos = center + Offset(math.cos(mid), math.sin(mid)) * lr;
-        final ink = color.computeLuminance() > 0.45 ? const Color(0xFF1D1D1F) : Colors.white;
+        final ink = palette.inkOn(color);
         final tp = _text(
           '${formatNumber(pct * 100, maxDecimals: pct < 0.1 ? 1 : 0)}%',
-          style: TextStyle(fontSize: TypeSize.caption, fontWeight: FontWeight.w600, color: ink, fontFeatures: kTabular),
+          style: uiText(TypeSize.caption, weight: FontWeight.w600, color: ink, features: kTabular),
         );
         if (tp.width < r - inner) tp.paint(canvas, pos - Offset(tp.width / 2, tp.height / 2));
       }
@@ -658,12 +657,7 @@ class ChartPainter extends CustomPainter {
     if (inner > 0) {
       final t1 = _text(
         formatNumber(total),
-        style: TextStyle(
-          fontSize: TypeSize.title,
-          fontWeight: FontWeight.w600,
-          color: colors.text,
-          fontFeatures: kTabular,
-        ),
+        style: uiText(TypeSize.title, weight: FontWeight.w600, color: colors.text, features: kTabular),
         maxWidth: inner * 1.6,
       );
       final t2 = _text('totale', maxWidth: inner * 1.6);

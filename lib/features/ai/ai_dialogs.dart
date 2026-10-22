@@ -42,8 +42,9 @@ Future<void> showAiExplainQuery(BuildContext context, DbConnection? dc, String s
   if (!await ensureAiReady(context) || !context.mounted) return;
   final app = AppScope.read(context);
   final rows = AiPrefs.of(app).sampleRows;
-  await showDialog<void>(
-    context: context,
+  await showSheet<void>(
+    context,
+    size: SheetSize.large,
     builder: (_) => _ExplainDialog(
       title: 'Spiegazione della query',
       subtitle: _subtitle(app, dc),
@@ -74,13 +75,13 @@ Future<void> showAiExplainObject(BuildContext context, DbConnection dc, DbTable 
   if (!await ensureAiReady(context) || !context.mounted) return;
   if (!await ensureConnected(context, dc) || !context.mounted) return;
   final app = AppScope.read(context);
-  await showDialog<void>(
-    context: context,
+  await showSheet<void>(
+    context,
+    size: SheetSize.large,
     builder: (_) => _ExplainDialog(
       title: 'Spiegazione di ${table.name}',
       subtitle: _subtitle(app, dc),
       connection: dc,
-      icon: table.isView ? Icons.view_quilt_outlined : Icons.table_chart_outlined,
       build: (_) async {
         final md = dc.metadata;
         if (md == null) throw AiException('La connessione non è attiva.');
@@ -115,13 +116,13 @@ Future<void> showAiExplainProcedure(BuildContext context, DbConnection dc, DbPro
   if (!await ensureAiReady(context) || !context.mounted) return;
   if (!await ensureConnected(context, dc) || !context.mounted) return;
   final app = AppScope.read(context);
-  await showDialog<void>(
-    context: context,
+  await showSheet<void>(
+    context,
+    size: SheetSize.large,
     builder: (_) => _ExplainDialog(
       title: 'Spiegazione di ${proc.cleanName}',
       subtitle: _subtitle(app, dc),
       connection: dc,
-      icon: Icons.functions,
       preview: source,
       build: (_) async {
         final md = dc.metadata;
@@ -160,7 +161,6 @@ class _ExplainDialog extends StatefulWidget {
     required this.build,
     this.preview,
     this.sampleLabel,
-    this.icon = Icons.auto_awesome_outlined,
   });
 
   final String title;
@@ -168,7 +168,6 @@ class _ExplainDialog extends StatefulWidget {
   final DbConnection? connection;
   final String? preview;
   final String? sampleLabel;
-  final IconData icon;
   final _Build build;
 
   @override
@@ -221,15 +220,16 @@ class _ExplainDialogState extends State<_ExplainDialog> {
   Widget build(BuildContext context) {
     final r = _run.response;
     final done = _run.state == AiRunState.done && r != null && !r.refused;
-    return AiSheet(
+    return SheetScaffold(
       title: widget.title,
       subtitle: widget.subtitle,
-      icon: widget.icon,
+      padding: EdgeInsets.zero,
+      onSubmit: () => Navigator.pop(context),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.xl, Gap.xl),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         children: [
           if (widget.preview != null && widget.preview!.trim().isNotEmpty) ...[
-            AiCodePreview(widget.preview!, maxLines: 6),
+            CodeBox(widget.preview!.trim(), maxLines: 6, color: DbColors.of(context).textSecondary),
             const SizedBox(height: Gap.lg),
           ],
           AiAnswerView(
@@ -241,27 +241,25 @@ class _ExplainDialogState extends State<_ExplainDialog> {
       ),
       leading: [
         if (widget.sampleLabel != null) ...[
-          Checkbox(
+          CheckboxRow(
             value: _includeSample,
-            visualDensity: VisualDensity.compact,
-            onChanged: _run.busy ? null : (v) => setState(() => _includeSample = v ?? false),
+            label: widget.sampleLabel!,
+            onChanged: _run.busy ? null : (v) => setState(() => _includeSample = v),
           ),
-          Text(widget.sampleLabel!, style: const TextStyle(fontSize: TypeSize.small + 0.5)),
-          const SizedBox(width: Gap.sm),
           ToolButton(
-            icon: Icons.refresh_rounded,
+            icon: AppIcons.refresh,
             tooltip: 'Rigenera la spiegazione',
             onPressed: _run.busy ? null : _start,
           ),
         ],
       ],
       actions: [
-        OutlinedButton(
+        PushButton(
+          label: 'Copia',
           onPressed: done ? () => Clipboard.setData(ClipboardData(text: _run.text)) : null,
-          child: const Text('Copia'),
         ),
-        OutlinedButton(onPressed: done ? _continueInChat : null, child: const Text('Continua in chat')),
-        PrimaryButton(label: 'Chiudi', onPressed: () => Navigator.pop(context)),
+        PushButton(label: 'Continua in chat', onPressed: done ? _continueInChat : null),
+        PushButton.primary(label: 'Chiudi', onPressed: () => Navigator.pop(context)),
       ],
     );
   }
@@ -276,8 +274,9 @@ class _ExplainDialogState extends State<_ExplainDialog> {
 Future<String?> showAiFixQuery(BuildContext context, DbConnection? dc, String sql, String errorMessage) async {
   if (sql.trim().isEmpty) return null;
   if (!await ensureAiReady(context) || !context.mounted) return null;
-  return showDialog<String>(
-    context: context,
+  return showSheet<String>(
+    context,
+    size: SheetSize.large,
     builder: (_) => _FixDialog(connection: dc, sql: sql, error: errorMessage),
   );
 }
@@ -329,117 +328,60 @@ class _FixDialogState extends State<_FixDialog> {
     return pickQuery(r.text, preferred: _fence);
   }
 
-  Widget _diff(String fixed) {
-    final c = DbColors.of(context);
-    final lines = diffLines(widget.sql.trim(), fixed.trim());
-    final style = monoStyle(context, size: 12.5);
-    return Container(
-      decoration: BoxDecoration(
-        color: c.codeBackground,
-        borderRadius: BorderRadius.circular(Radii.panel),
-        border: Border.all(color: c.separator),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: IntrinsicWidth(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final l in lines)
-                Container(
-                  color: switch (l.kind) {
-                    DiffKind.added => c.success.withValues(alpha: 0.12),
-                    DiffKind.removed => c.danger.withValues(alpha: 0.10),
-                    DiffKind.same => null,
-                  },
-                  padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: 1),
-                  child: Text(
-                    '${switch (l.kind) {
-                      DiffKind.added => '+',
-                      DiffKind.removed => '−',
-                      DiffKind.same => ' ',
-                    }} ${l.text}',
-                    style: style.copyWith(
-                      color: switch (l.kind) {
-                        DiffKind.added => c.success,
-                        DiffKind.removed => c.danger,
-                        DiffKind.same => c.text,
-                      },
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final fixed = _fixed;
     final done = _run.state == AiRunState.done;
     final unchanged = fixed != null && fixed.trim() == widget.sql.trim();
-    final mod = Platform.isMacOS ? '⌘' : 'Ctrl+';
-    return CallbackShortcuts(
-      bindings: {
-        SingleActivator(LogicalKeyboardKey.enter, meta: Platform.isMacOS, control: !Platform.isMacOS): () {
-          if (fixed != null && !unchanged) Navigator.pop(context, fixed);
-        },
-      },
-      child: Focus(
-        autofocus: true,
-        child: AiSheet(
-          title: 'Correggi con AI',
-          subtitle: _subtitle(app, widget.connection),
-          icon: Icons.healing_outlined,
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.xl, Gap.xl),
-            children: [
-              AiNotice(widget.error.trim()),
-              const SizedBox(height: Gap.lg),
-              if (!done || fixed == null) ...[
-                AiCodePreview(widget.sql, label: 'Istruzione originale', maxLines: 6),
-                const SizedBox(height: Gap.lg),
-              ],
-              AiAnswerView(
-                run: _run,
-                onRetry: _start,
-                markdown: done && fixed != null ? stripCodeBlocks(_run.text) : null,
-              ),
-              if (fixed != null) ...[
-                const SizedBox(height: Gap.lg),
-                SectionLabel(
-                  unchanged ? 'Nessuna modifica proposta' : 'Modifiche proposte',
-                  padding: const EdgeInsets.only(bottom: Gap.xs),
-                ),
-                _diff(fixed),
-              ] else if (done && _run.response != null && !_run.response!.refused && !_run.response!.truncated) ...[
-                const SizedBox(height: Gap.md),
-                Text(
-                  'La risposta non contiene un\'istruzione corretta da applicare.',
-                  style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary),
-                ),
-              ],
-            ],
+    final apply = fixed == null || unchanged ? null : () => Navigator.pop(context, fixed);
+    return SheetScaffold(
+      title: 'Correggi con AI',
+      subtitle: _subtitle(app, widget.connection),
+      padding: EdgeInsets.zero,
+      onSubmit: apply,
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        children: [
+          aiNotice(widget.error.trim()),
+          const SizedBox(height: Gap.lg),
+          if (!done || fixed == null) ...[
+            CodeBox(widget.sql.trim(), label: 'Istruzione originale', maxLines: 6, color: c.textSecondary),
+            const SizedBox(height: Gap.lg),
+          ],
+          AiAnswerView(
+            run: _run,
+            onRetry: _start,
+            markdown: done && fixed != null ? stripCodeBlocks(_run.text) : null,
           ),
-          actions: [
-            OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-            OutlinedButton(
-              onPressed: fixed == null ? null : () => Clipboard.setData(ClipboardData(text: fixed)),
-              child: const Text('Copia'),
+          if (fixed != null) ...[
+            const SizedBox(height: Gap.lg),
+            SectionLabel(
+              unchanged ? 'Nessuna modifica proposta' : 'Modifiche proposte',
+              padding: const EdgeInsets.only(bottom: Gap.xs),
             ),
-            PrimaryButton(
-              label: 'Sostituisci nell\'editor',
-              icon: Icons.check_rounded,
-              tooltip: 'Sostituisce l\'istruzione nell\'editor (${mod}Invio)',
-              onPressed: fixed == null || unchanged ? null : () => Navigator.pop(context, fixed),
+            DiffView(lines: diffLines(widget.sql.trim(), fixed.trim()), shrinkWrap: true),
+          ] else if (done && _run.response != null && !_run.response!.refused && !_run.response!.truncated) ...[
+            const SizedBox(height: Gap.md),
+            Text(
+              'La risposta non contiene un\'istruzione corretta da applicare.',
+              style: uiText(TypeSize.body, color: c.textSecondary),
             ),
           ],
-        ),
+        ],
       ),
+      actions: [
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton(
+          label: 'Copia',
+          onPressed: fixed == null ? null : () => Clipboard.setData(ClipboardData(text: fixed)),
+        ),
+        PushButton.primary(
+          label: 'Sostituisci nell\'editor',
+          tooltip: 'Sostituisce l\'istruzione nell\'editor (Invio)',
+          onPressed: apply,
+        ),
+      ],
     );
   }
 }
@@ -452,8 +394,9 @@ class _FixDialogState extends State<_FixDialog> {
 /// Redis commands or CQL for those stores). Returns the code to insert.
 Future<String?> showAiGenerateSql(BuildContext context, DbConnection? dc, {String? currentSql}) async {
   if (!await ensureAiReady(context) || !context.mounted) return null;
-  return showDialog<String>(
-    context: context,
+  return showSheet<String>(
+    context,
+    size: SheetSize.large,
     builder: (_) => _GenerateDialog(connection: dc, currentSql: currentSql),
   );
 }
@@ -510,75 +453,62 @@ class _GenerateDialogState extends State<_GenerateDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final c = DbColors.of(context);
     final code = _code;
     final mac = Platform.isMacOS;
     final family = dialectOf(widget.connection).family;
     final target = queryLanguage(family).$1.replaceAll(' commands', '').replaceAll(', one per line', '');
-    return AiSheet(
+    return SheetScaffold(
       title: 'Genera query',
       subtitle: _subtitle(app, widget.connection),
-      icon: Icons.auto_awesome_outlined,
+      padding: EdgeInsets.zero,
+      onSubmit: code == null ? _generate : () => Navigator.pop(context, code),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.xl, Gap.xl),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         children: [
           CallbackShortcuts(
             bindings: {SingleActivator(LogicalKeyboardKey.enter, meta: mac, control: !mac): _generate},
-            child: TextField(
+            child: MacTextField(
               controller: _prompt,
               focusNode: _focus,
               autofocus: true,
               minLines: 3,
               maxLines: 8,
-              decoration: const InputDecoration(
-                hintText:
-                    'Descrivi i dati che vuoi ottenere, ad esempio: i 10 clienti con il fatturato più alto '
-                    'nel 2025, con il numero di ordini',
-              ),
+              hint:
+                  'Descrivi i dati che vuoi ottenere, ad esempio: i 10 clienti con il fatturato più alto '
+                  'nel 2025, con il numero di ordini',
               onChanged: (_) => setState(() {}),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(top: Gap.xs),
-            child: Text(
-              'Linguaggio: $target${widget.connection == null ? '' : ' · ${widget.connection!.config.name}'} · '
-              '${mac ? '⌘' : 'Ctrl+'}Invio per generare',
-              style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
-            ),
+          FieldMessage(
+            'Linguaggio: $target${widget.connection == null ? '' : ' · ${widget.connection!.config.name}'} · '
+            '${shortcutLabel(SingleActivator(LogicalKeyboardKey.enter, meta: mac, control: !mac))} per generare',
           ),
           const SizedBox(height: Gap.lg),
           if (_run.state != AiRunState.idle) AiAnswerView(run: _run, onRetry: _generate),
         ],
       ),
       leading: [
-        if ((widget.currentSql ?? '').trim().isNotEmpty) ...[
-          Checkbox(
+        if ((widget.currentSql ?? '').trim().isNotEmpty)
+          CheckboxRow(
             value: _useCurrent,
-            visualDensity: VisualDensity.compact,
-            onChanged: (v) => setState(() => _useCurrent = v ?? false),
+            label: 'Usa la query dell\'editor come contesto',
+            onChanged: (v) => setState(() => _useCurrent = v),
           ),
-          const Text('Usa la query dell\'editor come contesto', style: TextStyle(fontSize: TypeSize.small + 0.5)),
-        ],
       ],
       actions: [
-        OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
         if (code == null)
-          PrimaryButton(
+          PushButton.primary(
             label: _run.busy ? 'Generazione…' : 'Genera',
-            icon: Icons.auto_awesome_outlined,
             onPressed: _run.busy || _prompt.text.trim().isEmpty ? null : _generate,
           )
         else ...[
-          OutlinedButton(onPressed: _generate, child: const Text('Rigenera')),
-          OutlinedButton(
+          PushButton(label: 'Rigenera', onPressed: _generate),
+          PushButton(
+            label: 'Copia',
             onPressed: () => Clipboard.setData(ClipboardData(text: code)),
-            child: const Text('Copia'),
           ),
-          PrimaryButton(
-            label: 'Inserisci nell\'editor',
-            icon: Icons.input_rounded,
-            onPressed: () => Navigator.pop(context, code),
-          ),
+          PushButton.primary(label: 'Inserisci nell\'editor', onPressed: () => Navigator.pop(context, code)),
         ],
       ],
     );

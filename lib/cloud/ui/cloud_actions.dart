@@ -153,10 +153,7 @@ Future<void> cloudCopyUri(BuildContext context, CloudStorage s, String bucket, S
 
 /// Asks the expiry, creates a temporary link and copies it.
 Future<void> cloudShareLink(BuildContext context, CloudStorage s, CloudObject o) async {
-  final expiry = await showDialog<Duration>(
-    context: context,
-    builder: (ctx) => _ExpiryDialog(name: o.name),
-  );
+  final expiry = await showSheet<Duration>(context, size: SheetSize.small, builder: (_) => _ExpiryDialog(name: o.name));
   if (expiry == null || !context.mounted) return;
   await guarded(context, () async {
     final url = await s.shareLink(o.bucket, o.key, expiry);
@@ -182,36 +179,34 @@ class _ExpiryDialogState extends State<_ExpiryDialog> {
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    return AlertDialog(
-      title: const Text('Link di condivisione'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Chiunque abbia il link potrà scaricare "${widget.name}" fino alla scadenza.',
-              style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary),
-            ),
-            const SizedBox(height: Gap.lg),
-            Segmented<Duration>(
-              value: _d,
-              items: const [
-                (Duration(minutes: 15), '15 minuti', null),
-                (Duration(hours: 1), '1 ora', null),
-                (Duration(days: 1), '1 giorno', null),
-                (Duration(days: 7), '7 giorni', null),
-              ],
-              onChanged: (v) => setState(() => _d = v),
-            ),
-          ],
-        ),
-      ),
+    return SheetScaffold(
+      title: 'Link di condivisione',
+      onSubmit: () => Navigator.pop(context, _d),
       actions: [
-        OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
-        FilledButton(onPressed: () => Navigator.pop(context, _d), child: const Text('Copia link')),
+        PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context)),
+        PushButton.primary(label: 'Copia link', onPressed: () => Navigator.pop(context, _d)),
       ],
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Chiunque abbia il link potrà scaricare "${widget.name}" fino alla scadenza.',
+            textAlign: TextAlign.center,
+            style: uiText(TypeSize.small, color: c.textSecondary),
+          ),
+          const SizedBox(height: Gap.lg),
+          Segmented<Duration>(
+            value: _d,
+            items: const [
+              (Duration(minutes: 15), '15 minuti', null),
+              (Duration(hours: 1), '1 ora', null),
+              (Duration(days: 1), '1 giorno', null),
+              (Duration(days: 7), '7 giorni', null),
+            ],
+            onChanged: (v) => setState(() => _d = v),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -231,32 +226,27 @@ Future<void> cloudProperties(BuildContext context, CloudStorage s, CloudObject o
     return '${two(l.day)}/${two(l.month)}/${l.year} ${two(l.hour)}:${two(l.minute)}:${two(l.second)}';
   }
 
-  await showDialog<void>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(i.name.isEmpty ? i.bucket : i.name),
-      content: SizedBox(
-        width: 520,
-        child: SingleChildScrollView(
-          child: PropertyTable(
-            labelWidth: 150,
-            entries: [
-              (s.provider.bucketTerm, i.bucket),
-              ('Chiave', i.key),
-              ('URI', s.uri(i.bucket, i.key)),
-              if (!i.isFolder) ...[
-                ('Dimensione', i.size < 0 ? '' : '${formatBytes(i.size)} (${i.size} byte)'),
-                ('Ultima modifica', date(i.modified)),
-                ('Tipo di contenuto', i.contentType ?? ''),
-                ('ETag', i.etag ?? ''),
-                ('Classe di archiviazione', i.storageClass ?? ''),
-              ],
-              for (final e in i.metadata.entries) (e.key, e.value),
-            ],
-          ),
-        ),
+  await showSheet<void>(
+    context,
+    builder: (ctx) => SheetScaffold(
+      title: i.name.isEmpty ? i.bucket : i.name,
+      onSubmit: () => Navigator.pop(ctx),
+      actions: [PushButton.primary(label: 'Fine', onPressed: () => Navigator.pop(ctx))],
+      body: PropertyTable(
+        entries: [
+          (s.provider.bucketTerm, i.bucket),
+          ('Chiave', i.key),
+          ('URI', s.uri(i.bucket, i.key)),
+          if (!i.isFolder) ...[
+            ('Dimensione', i.size < 0 ? '' : '${formatBytes(i.size)} (${i.size} byte)'),
+            ('Ultima modifica', date(i.modified)),
+            ('Tipo di contenuto', i.contentType ?? ''),
+            ('ETag', i.etag ?? ''),
+            ('Classe di archiviazione', i.storageClass ?? ''),
+          ],
+          for (final e in i.metadata.entries) (e.key, e.value),
+        ],
       ),
-      actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Chiudi'))],
     ),
   );
 }
@@ -340,124 +330,33 @@ Future<DbConnection?> _pickConnection(BuildContext context, AppState app) async 
     return null;
   }
   if (app.connections.length == 1) return app.connections.first;
-  return showDialog<DbConnection>(
-    context: context,
-    builder: (ctx) {
-      final c = DbColors.of(ctx);
-      return AlertDialog(
-        title: const Text('Connessione di destinazione'),
-        content: SizedBox(
-          width: 420,
-          height: 320,
-          child: ListView(
-            children: [
-              for (final dc in app.connections)
-                ListTile(
-                  dense: true,
-                  leading: Icon(dc.config.icon, size: 16, color: dc.config.color),
-                  title: Text(dc.config.name),
-                  subtitle: Text(
-                    dc.config.subtitle,
-                    style: TextStyle(fontSize: TypeSize.caption, color: c.textTertiary),
-                  ),
-                  onTap: () => Navigator.pop(ctx, dc),
-                ),
-            ],
-          ),
-        ),
-        actions: [OutlinedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annulla'))],
-      );
-    },
+  return showListPicker<DbConnection>(
+    context,
+    title: 'Connessione di destinazione',
+    items: app.connections,
+    label: (dc) => dc.config.name,
+    detail: (dc) => dc.config.subtitle,
+    icon: (dc) => dc.config.icon,
+    iconColor: (dc) => dc.config.color,
   );
 }
 
-Future<DbTable?> _pickTable(BuildContext context, DbConnection dc) => showDialog<DbTable>(
-  context: context,
-  builder: (_) => _TablePicker(dc: dc),
-);
-
-class _TablePicker extends StatefulWidget {
-  const _TablePicker({required this.dc});
-  final DbConnection dc;
-  @override
-  State<_TablePicker> createState() => _TablePickerState();
-}
-
-class _TablePickerState extends State<_TablePicker> {
-  final _filter = TextEditingController();
-  late final Future<List<DbTable>> _tables = () async {
-    final m = widget.dc.metadata!;
-    final all = await m.tables(m.currentCatalog, null);
-    return all.where((t) => !t.isView).toList();
-  }();
-
-  @override
-  void dispose() {
-    _filter.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return AlertDialog(
-      title: Text('Importa in una tabella di ${widget.dc.config.name}'),
-      content: SizedBox(
-        width: 480,
-        height: 400,
-        child: Column(
-          children: [
-            SearchField(controller: _filter, hint: 'Filtra tabelle', onChanged: (_) => setState(() {})),
-            const SizedBox(height: Gap.sm),
-            Expanded(
-              child: FutureBuilder<List<DbTable>>(
-                future: _tables,
-                builder: (context, snap) {
-                  if (snap.hasError) {
-                    return EmptyState(
-                      icon: Icons.error_outline_rounded,
-                      title: 'Tabelle non disponibili',
-                      message: '${snap.error}',
-                    );
-                  }
-                  if (!snap.hasData) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-                  final f = _filter.text.trim().toLowerCase();
-                  final list = snap.data!.where((t) => f.isEmpty || t.displayPath.toLowerCase().contains(f)).toList();
-                  if (list.isEmpty) {
-                    return const EmptyState(
-                      icon: Icons.table_chart_outlined,
-                      title: 'Nessuna tabella',
-                      message: 'Modifica il filtro.',
-                    );
-                  }
-                  return ListView.builder(
-                    itemCount: list.length,
-                    itemExtent: 28,
-                    itemBuilder: (context, i) => InkWell(
-                      onTap: () => Navigator.pop(context, list[i]),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: Gap.sm),
-                          Icon(Icons.table_chart_outlined, size: 15, color: c.accent),
-                          const SizedBox(width: Gap.sm),
-                          Expanded(
-                            child: Text(
-                              list[i].displayPath,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: TypeSize.body),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla'))],
-    );
-  }
+/// Asks one of the tables (not views) of the current catalog, listed while
+/// the picker is open.
+Future<DbTable?> _pickTable(BuildContext context, DbConnection dc) {
+  final accent = DbColors.of(context).accent;
+  return showListPicker<DbTable>(
+    context,
+    title: 'Importa in una tabella di ${dc.config.name}',
+    load: () async {
+      final m = dc.metadata!;
+      return (await m.tables(m.currentCatalog, null)).where((t) => !t.isView).toList();
+    },
+    label: (t) => t.displayPath,
+    icon: (_) => AppIcons.table,
+    iconColor: (_) => accent,
+    searchHint: 'Filtra tabelle',
+    empty: 'Nessuna tabella in ${dc.config.name}',
+    loadError: 'Tabelle non disponibili',
+  );
 }

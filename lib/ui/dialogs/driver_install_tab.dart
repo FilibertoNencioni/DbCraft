@@ -3,7 +3,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../model/connection_config.dart';
 import '../../odbc/driver_installer.dart';
@@ -38,7 +37,6 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
   late final Future<DriverInstaller?> _installer = widget.findInstaller();
   late Future<Map<String, DriverStatus>> _statuses = _loadStatuses();
   final _log = <String>[];
-  final _logScroll = ScrollController();
   DriverInstaller? _active;
   DriverPackage? _running;
   (bool ok, String message)? _result;
@@ -59,7 +57,6 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
   void dispose() {
     // Closing the Driver Manager stops a running install.
     _active?.cancel();
-    _logScroll.dispose();
     super.dispose();
   }
 
@@ -68,9 +65,6 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
     setState(() {
       _log.add(line);
       if (_log.length > _maxLogLines) _log.removeRange(0, _log.length - _maxLogLines);
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_logScroll.hasClients) _logScroll.jumpTo(_logScroll.position.maxScrollExtent);
     });
   }
 
@@ -118,65 +112,46 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
 
   Future<bool> _confirmEula(DriverPackage pkg) async {
     var accepted = false;
-    final ok = await showDialog<bool>(
-      context: context,
+    final ok = await showSheet<bool>(
+      context,
+      size: SheetSize.small,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
+        builder: (context, setSheetState) {
           final c = DbColors.of(context);
-          void toggle() => setDialogState(() => accepted = !accepted);
-          return AlertDialog(
-            title: const Text('Licenza Microsoft'),
-            content: SizedBox(
-              width: 420,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${pkg.driverName} è distribuito da Microsoft con una propria licenza: per installarlo '
-                    'devi accettarne i termini.',
-                    style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary, height: 1.4),
-                  ),
-                  const SizedBox(height: Gap.md),
-                  FormGroup(
-                    children: [
-                      MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: toggle,
-                          child: Row(
-                            children: [
-                              Checkbox(value: accepted, onChanged: (_) => toggle()),
-                              const SizedBox(width: Gap.xs),
-                              Expanded(
-                                child: Text(
-                                  'Ho letto e accetto i termini di licenza',
-                                  style: TextStyle(fontSize: TypeSize.body, color: c.text),
-                                ),
-                              ),
-                              ToolButton(
-                                icon: Icons.open_in_new_rounded,
-                                label: 'Leggi',
-                                tooltip: pkg.eulaUrl!,
-                                size: 14,
-                                onPressed: () => Process.run('open', [pkg.eulaUrl!]),
-                              ),
-                            ],
-                          ),
-                        ),
+          void accept() => Navigator.pop(context, true);
+          return SheetScaffold(
+            title: 'Licenza Microsoft',
+            onSubmit: accepted ? accept : null,
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${pkg.driverName} è distribuito da Microsoft con una propria licenza: per installarlo '
+                  'devi accettarne i termini.',
+                  style: uiText(TypeSize.body, color: c.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: Gap.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: CheckboxRow(
+                        label: 'Ho letto e accetto i termini di licenza',
+                        value: accepted,
+                        onChanged: (v) => setSheetState(() => accepted = v),
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                    LinkButton(
+                      label: 'Leggi la licenza',
+                      tooltip: pkg.eulaUrl!,
+                      onPressed: () => Process.run('open', [pkg.eulaUrl!]),
+                    ),
+                  ],
+                ),
+              ],
             ),
             actions: [
-              OutlinedButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
-              FilledButton(
-                onPressed: accepted ? () => Navigator.pop(context, true) : null,
-                child: const Text('Accetta e installa'),
-              ),
+              PushButton(label: 'Annulla', onPressed: () => Navigator.pop(context, false)),
+              PushButton.primary(label: 'Accetta e installa', onPressed: accepted ? accept : null),
             ],
           );
         },
@@ -190,7 +165,7 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
     return FutureBuilder(
       future: _installer,
       builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+        if (snap.connectionState != ConnectionState.done) return const Center(child: Spinner(size: Spinner.large));
         final installer = snap.data;
         if (installer == null) return _noHomebrew();
         return Column(
@@ -201,9 +176,9 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
                 future: _statuses,
                 builder: (context, snap) {
                   final statuses = snap.data;
-                  if (statuses == null) return const Center(child: CircularProgressIndicator());
+                  if (statuses == null) return const Center(child: Spinner(size: Spinner.large));
                   return ListView(
-                    padding: const EdgeInsets.fromLTRB(Gap.xl, Gap.lg, Gap.xl, Gap.xl),
+                    padding: const EdgeInsets.symmetric(vertical: Gap.lg),
                     children: [
                       FormGroup(
                         footer:
@@ -216,7 +191,7 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
                 },
               ),
             ),
-            if (_log.isNotEmpty || _result != null) _logPanel(),
+            if (_log.isNotEmpty || _result != null) ...[const SizedBox(height: Gap.sm), _logPanel()],
           ],
         );
       },
@@ -230,173 +205,89 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
     void run() => _install(installer, pkg, status);
     final Widget trailing;
     if (_running == pkg) {
-      trailing = const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.5));
+      trailing = const Spinner(size: Spinner.small);
     } else {
       trailing = switch (status) {
-        DriverStatus.ready => Row(
+        DriverStatus.ready => const StatusLine('Installato', kind: StatusKind.success),
+        DriverStatus.unregistered => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.check_rounded, size: 15, color: c.success),
-            const SizedBox(width: 4),
-            Text(
-              'Installato',
-              style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
+            Tag('Non registrato', color: c.warning),
+            const SizedBox(width: Gap.sm),
+            PushButton(
+              label: 'Registra',
+              size: ControlScale.small,
+              tooltip: 'Aggiunge ${pkg.driverName} a odbcinst.ini',
+              onPressed: busy ? null : run,
             ),
           ],
         ),
-        DriverStatus.unregistered => Tooltip(
-          message: 'Aggiunge ${pkg.driverName} a odbcinst.ini',
-          child: OutlinedButton(onPressed: busy ? null : run, child: const Text('Registra')),
-        ),
-        DriverStatus.missing => OutlinedButton(onPressed: busy ? null : run, child: const Text('Installa')),
+        DriverStatus.missing => PushButton(label: 'Installa', size: ControlScale.small, onPressed: busy ? null : run),
       };
     }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Icon(template.icon, size: 16, color: template.color),
-          ),
-          const SizedBox(width: Gap.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      pkg.label,
-                      style: TextStyle(fontSize: TypeSize.body, fontWeight: FontWeight.w500, color: c.text),
-                    ),
-                    if (status == DriverStatus.unregistered) ...[
-                      const SizedBox(width: Gap.sm),
-                      Badge2('Non registrato', color: c.warning),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  pkg.description,
-                  style: TextStyle(fontSize: TypeSize.small, color: c.textSecondary),
-                ),
-                const SizedBox(height: 2),
-                SelectableText(
-                  'brew install ${pkg.formulae.join(' ')}',
-                  style: monoStyle(context, size: 11, color: c.textTertiary),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: Gap.md),
-          SizedBox(height: 28, child: Center(child: trailing)),
-        ],
-      ),
+    return ListRow(
+      title: pkg.label,
+      subtitle: pkg.description,
+      icon: template.icon,
+      iconColor: template.color,
+      tooltip: 'brew install ${pkg.formulae.join(' ')}',
+      trailing: trailing,
     );
   }
 
   Widget _logPanel() {
-    final c = DbColors.of(context);
     final result = _result;
     final running = _running != null;
-    return Container(
+    return SizedBox(
       height: 210,
-      decoration: BoxDecoration(
-        color: c.content,
-        border: Border(top: BorderSide(color: c.separator)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 34,
-            padding: const EdgeInsets.only(left: Gap.lg, right: Gap.sm),
-            color: c.chrome,
-            child: Row(
-              children: [
-                if (running)
-                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5))
-                else if (result != null)
-                  Icon(
-                    result.$1 ? Icons.check_circle_rounded : Icons.error_rounded,
-                    size: 15,
-                    color: result.$1 ? c.success : c.danger,
-                  ),
-                const SizedBox(width: Gap.sm),
-                Expanded(
-                  child: Text(
-                    running ? 'Installazione di ${_running!.label}…' : result?.$2 ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: TypeSize.small,
-                      fontWeight: FontWeight.w500,
-                      color: result != null && !result.$1 ? c.danger : c.text,
-                    ),
-                  ),
-                ),
-                ToolButton(
-                  icon: Icons.content_copy_rounded,
-                  tooltip: 'Copia log',
-                  size: 14,
-                  onPressed: () => Clipboard.setData(ClipboardData(text: _log.join('\n'))),
-                ),
-                if (running)
-                  ToolButton(
-                    icon: Icons.stop_rounded,
-                    label: 'Interrompi',
-                    tooltip: 'Interrompi l\'installazione',
-                    color: c.danger,
-                    onPressed: () => _active?.cancel(),
-                  )
-                else
-                  ToolButton(
-                    icon: Icons.close_rounded,
-                    tooltip: 'Chiudi log',
-                    size: 14,
-                    onPressed: () => setState(() {
-                      _log.clear();
-                      _result = null;
-                    }),
-                  ),
-              ],
+      child: CodeBox.lines(
+        _log,
+        label: 'Output di Homebrew',
+        emphasize: (line) => line.startsWith(r'$ '),
+        actions: [
+          if (!running)
+            ToolButton(
+              icon: AppIcons.close,
+              tooltip: 'Chiudi log',
+              extent: 18,
+              onPressed: () => setState(() {
+                _log.clear();
+                _result = null;
+              }),
             ),
-          ),
-          Divider(height: 1, color: c.separator),
-          Expanded(
-            child: SelectionArea(
-              child: ListView.builder(
-                controller: _logScroll,
-                padding: const EdgeInsets.symmetric(horizontal: Gap.lg, vertical: Gap.sm),
-                itemCount: _log.length,
-                itemBuilder: (context, i) {
-                  final command = _log[i].startsWith(r'$ ');
-                  return Text(
-                    _log[i],
-                    style: monoStyle(
-                      context,
-                      size: 11.5,
-                      color: command ? c.text : c.textSecondary,
-                    ).copyWith(fontWeight: command ? FontWeight.w600 : null, height: 1.45),
-                  );
-                },
-              ),
-            ),
-          ),
         ],
+        status: Row(
+          children: [
+            Expanded(
+              child: running
+                  ? StatusLine.busy('Installazione di ${_running!.label}…')
+                  : StatusLine(
+                      result?.$2 ?? '',
+                      kind: result == null ? StatusKind.info : (result.$1 ? StatusKind.success : StatusKind.danger),
+                      selectable: result != null && !result.$1,
+                    ),
+            ),
+            if (running)
+              PushButton(
+                label: 'Interrompi',
+                kind: PushButtonKind.destructive,
+                size: ControlScale.small,
+                tooltip: 'Interrompi l\'installazione',
+                onPressed: () => _active?.cancel(),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _noHomebrew() => EmptyState(
-    icon: Icons.download_rounded,
+    icon: AppIcons.download,
     title: 'Serve Homebrew',
     message: 'I driver si installano con Homebrew. Installalo seguendo le istruzioni su brew.sh, poi riapri questa finestra.',
-    action: PrimaryButton(
+    action: PushButton.primary(
       label: 'Apri brew.sh',
-      icon: Icons.open_in_new_rounded,
+      icon: AppIcons.openExternal,
       onPressed: () => Process.run('open', ['https://brew.sh']),
     ),
   );
