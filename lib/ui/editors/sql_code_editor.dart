@@ -397,6 +397,52 @@ class SqlFindBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
+/// Editor style shared by every SQL surface (editor and read-only views),
+/// so highlighting and colors stay identical everywhere.
+CodeEditorStyle sqlCodeEditorStyle(BuildContext context, double fontSize) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  final c = DbColors.of(context);
+  return CodeEditorStyle(
+    fontSize: fontSize,
+    fontFamily: kMono,
+    fontFamilyFallback: kMonoFallback,
+    backgroundColor: c.codeBackground,
+    cursorLineColor: c.codeCurrentLine,
+    selectionColor: c.accent.withValues(alpha: Tint.strong),
+    codeTheme: CodeHighlightTheme(
+      languages: {'sql': CodeHighlightThemeMode(mode: langSql)},
+      theme: dark ? githubDarkDimmedTheme : xcodeTheme,
+    ),
+  );
+}
+
+/// Line-number gutter shared by the SQL editor and read-only views.
+CodeIndicatorBuilder sqlLineNumbers(double fontSize) =>
+    (context, editingController, chunkController, notifier) {
+      final c = DbColors.of(context);
+      return Row(
+        children: [
+          DefaultCodeLineNumber(
+            controller: editingController,
+            notifier: notifier,
+            textStyle: TextStyle(
+              fontSize: fontSize - 1,
+              color: c.textTertiary,
+              fontFamily: kMono,
+              fontFamilyFallback: kMonoFallback,
+            ),
+            focusedTextStyle: TextStyle(
+              fontSize: fontSize - 1,
+              color: c.text,
+              fontFamily: kMono,
+              fontFamilyFallback: kMonoFallback,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+      );
+    };
+
 /// The SQL source editor (highlighting, line numbers, autocompletion).
 class SqlCodeEditor extends StatelessWidget {
   const SqlCodeEditor({
@@ -416,7 +462,6 @@ class SqlCodeEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final c = DbColors.of(context);
     return CodeAutocomplete(
       viewBuilder: (context, notifier, onSelected) =>
@@ -435,41 +480,53 @@ class SqlCodeEditor extends StatelessWidget {
           multiLineSuffix: '*/',
         ),
         findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
-        style: CodeEditorStyle(
-          fontSize: fontSize,
-          fontFamily: kMono,
-          fontFamilyFallback: kMonoFallback,
-          backgroundColor: c.codeBackground,
-          cursorLineColor: c.codeCurrentLine,
-          selectionColor: c.accent.withValues(alpha: Tint.strong),
-          codeTheme: CodeHighlightTheme(
-            languages: {'sql': CodeHighlightThemeMode(mode: langSql)},
-            theme: dark ? githubDarkDimmedTheme : xcodeTheme,
-          ),
-        ),
-        indicatorBuilder: (context, editingController, chunkController, notifier) => Row(
-          children: [
-            DefaultCodeLineNumber(
-              controller: editingController,
-              notifier: notifier,
-              textStyle: TextStyle(
-                fontSize: fontSize - 1,
-                color: c.textTertiary,
-                fontFamily: kMono,
-                fontFamilyFallback: kMonoFallback,
-              ),
-              focusedTextStyle: TextStyle(
-                fontSize: fontSize - 1,
-                color: c.text,
-                fontFamily: kMono,
-                fontFamilyFallback: kMonoFallback,
-              ),
-            ),
-            const SizedBox(width: 6),
-          ],
-        ),
+        style: sqlCodeEditorStyle(context, fontSize),
+        indicatorBuilder: sqlLineNumbers(fontSize),
         leadingDivider: Container(width: 0.5, color: c.separator),
       ),
+    );
+  }
+}
+
+/// Read-only SQL viewer (DDL, generated scripts): same highlighting and
+/// gutter as [SqlCodeEditor], with selection and find but no editing.
+class SqlCodeView extends StatefulWidget {
+  const SqlCodeView({super.key, required this.text, required this.fontSize});
+
+  final String text;
+  final double fontSize;
+
+  @override
+  State<SqlCodeView> createState() => _SqlCodeViewState();
+}
+
+class _SqlCodeViewState extends State<SqlCodeView> {
+  late final _controller = CodeLineEditingController.fromText(widget.text);
+
+  @override
+  void didUpdateWidget(SqlCodeView old) {
+    super.didUpdateWidget(old);
+    if (old.text != widget.text) _controller.text = widget.text;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    return CodeEditor(
+      controller: _controller,
+      readOnly: true,
+      showCursorWhenReadOnly: false,
+      wordWrap: false,
+      findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
+      style: sqlCodeEditorStyle(context, widget.fontSize),
+      indicatorBuilder: sqlLineNumbers(widget.fontSize),
+      leadingDivider: Container(width: 0.5, color: c.separator),
     );
   }
 }

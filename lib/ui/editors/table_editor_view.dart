@@ -14,6 +14,7 @@ import '../dialogs/import_dialog.dart';
 import '../results/results_viewer.dart';
 import '../widgets/common.dart';
 import 'er_diagram_view.dart';
+import 'sql_code_editor.dart';
 
 /// Data-tab UI state kept per editor tab (survives switching tabs).
 class _DataUi {
@@ -619,10 +620,7 @@ class _TableEditorViewState extends State<TableEditorView> {
           ],
         ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(Gap.md),
-            child: SelectableText(ddl, style: monoStyle(context, size: TypeSize.mono)),
-          ),
+          child: SqlCodeView(text: ddl, fontSize: AppScope.of(context).settings.editorFontSize),
         ),
       ],
     );
