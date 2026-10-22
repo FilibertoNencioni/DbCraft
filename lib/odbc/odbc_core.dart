@@ -223,6 +223,7 @@ class OdbcConnectionCore {
   }
 
   void setAutoCommit(bool value) {
+    _closeCursorsForTransaction();
     final rc = api.SQLSetConnectAttr(
       _dbc,
       SQL_ATTR_AUTOCOMMIT,
@@ -234,6 +235,7 @@ class OdbcConnectionCore {
   }
 
   void endTransaction(bool commit) {
+    _closeCursorsForTransaction();
     final rc = api.SQLEndTran(SQL_HANDLE_DBC, _dbc, commit ? SQL_COMMIT : SQL_ROLLBACK);
     _check(rc, commit ? 'COMMIT' : 'ROLLBACK', SQL_HANDLE_DBC, _dbc);
   }
@@ -361,6 +363,14 @@ class OdbcConnectionCore {
       _closeAllCursors();
       return run();
     }
+  }
+
+  /// Transaction boundaries are refused while a result set is still pending
+  /// (SQL Server with MARS: "New transaction is not allowed because there are
+  /// other threads running in the session"), and most drivers close cursors
+  /// on commit anyway. The grids keep the rows already fetched.
+  void _closeCursorsForTransaction() {
+    if (_cursors.isNotEmpty) _closeAllCursors();
   }
 
   void _closeAllCursors() {
