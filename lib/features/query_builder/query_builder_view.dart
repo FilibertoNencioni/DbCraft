@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 
 import '../../model/db_objects.dart';
 import '../../odbc/odbc_types.dart';
-import '../../services/storage.dart';
 import '../../state/app_state.dart';
 import '../../state/result_set_model.dart';
 import '../../ui/actions.dart';
@@ -241,7 +240,6 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       tab.message = null;
       tab.pane = QueryBuilderPane.results;
     });
-    final sw = Stopwatch()..start();
     try {
       await tab.result?.close();
       tab.result = null;
@@ -253,28 +251,8 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       } else {
         tab.message = 'Istruzione eseguita';
       }
-      app.addHistory(
-        HistoryEntry(
-          sql: sql,
-          connectionId: c.config.id,
-          connectionName: c.config.name,
-          time: DateTime.now(),
-          durationMs: sw.elapsedMilliseconds,
-          rows: page.isResultSet ? page.rows.length : page.rowsAffected,
-        ),
-      );
     } catch (e) {
       tab.error = e is OdbcException ? e.message : e.toString();
-      app.addHistory(
-        HistoryEntry(
-          sql: sql,
-          connectionId: c.config.id,
-          connectionName: c.config.name,
-          time: DateTime.now(),
-          durationMs: sw.elapsedMilliseconds,
-          error: tab.error,
-        ),
-      );
     } finally {
       tab.running = false;
       _changed();

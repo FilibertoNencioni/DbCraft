@@ -141,6 +141,30 @@ class SqlDialect {
         : stringLiteral(s);
   }
 
+  /// Replaces the positional `?` markers of [sql] with the literals of
+  /// [params] (markers inside quoted strings or identifiers are kept).
+  String inlineParams(String sql, List<Object?> params) {
+    if (params.isEmpty) return sql;
+    final sb = StringBuffer();
+    var next = 0;
+    String? close;
+    for (var i = 0; i < sql.length; i++) {
+      final ch = sql[i];
+      if (close != null) {
+        if (ch == close) close = null;
+      } else if (ch == "'" || ch == '"' || ch == '`') {
+        close = ch;
+      } else if (ch == '[') {
+        close = ']';
+      } else if (ch == '?' && next < params.length) {
+        sb.write(literal(params[next++]));
+        continue;
+      }
+      sb.write(ch);
+    }
+    return sb.toString();
+  }
+
   /// Wraps [sql] to return at most [n] rows.
   String limit(String sql, int n) {
     switch (family) {

@@ -86,13 +86,7 @@ class _ResultsViewerState extends State<ResultsViewer> {
   void _showChangesSql() {
     final sql = m
         .buildChanges()
-        .map((e) {
-          var s = e.$1;
-          for (final p in e.$2) {
-            s = s.replaceFirst('?', m.connection.dialect.literal(p));
-          }
-          return '$s;';
-        })
+        .map((e) => '${m.connection.dialect.inlineParams(e.$1, e.$2)};')
         .join('\n');
     showSheet<void>(
       context,

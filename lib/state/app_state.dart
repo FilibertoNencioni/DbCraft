@@ -15,7 +15,7 @@ class AppState extends ChangeNotifier {
   AppState(this.workspace, this.vault, this.settings, List<ConnectionConfig> configs, this.history) {
     for (final c in configs) {
       _injectSecrets(c);
-      connections.add(DbConnection(c)..addListener(notifyListeners));
+      connections.add(_newConnection(c));
     }
   }
 
@@ -125,7 +125,7 @@ class AppState extends ChangeNotifier {
         if (existing != null) {
           existing.config = c;
         } else {
-          connections.add(DbConnection(c)..addListener(notifyListeners));
+          connections.add(_newConnection(c));
         }
       }
       connections.sort((a, b) => configs.indexWhere((c) => c.id == a.config.id).compareTo(
@@ -162,7 +162,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<DbConnection> addConnection(ConnectionConfig c) async {
-    final dc = DbConnection(c)..addListener(notifyListeners);
+    final dc = _newConnection(c);
     connections.add(dc);
     selectedConnection = dc;
     await _saveConnections();
@@ -219,6 +219,10 @@ class AppState extends ChangeNotifier {
     await workspace.saveSettings(settings);
     notifyListeners();
   }
+
+  DbConnection _newConnection(ConnectionConfig c) => DbConnection(c)
+    ..onHistory = addHistory
+    ..addListener(notifyListeners);
 
   void addHistory(HistoryEntry e) {
     history.insert(0, e);
@@ -293,7 +297,6 @@ class AppState extends ChangeNotifier {
       catalog: catalog,
       file: f,
       initialText: text,
-      onHistory: addHistory,
     );
     _open(tab);
     return tab;

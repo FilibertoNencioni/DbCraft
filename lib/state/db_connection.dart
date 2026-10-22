@@ -2,10 +2,13 @@ import 'package:flutter/foundation.dart';
 
 import '../model/connection_config.dart';
 import '../drivers/db_session.dart';
+import '../drivers/recording_session.dart';
 import '../drivers/session_factory.dart';
+import '../odbc/odbc_types.dart';
 import '../services/metadata_service.dart';
 import '../services/sql_dialect.dart';
 import '../services/sql_splitter.dart';
+import '../services/storage.dart';
 
 enum ConnectionStatus { disconnected, connecting, connected, error }
 
@@ -37,6 +40,9 @@ class DbConnection extends ChangeNotifier {
 
   /// Statements executed in manual commit mode since the last commit.
   int pendingStatements = 0;
+
+  /// Receives every statement run on the [main] session (query history).
+  void Function(HistoryEntry e)? onHistory;
 
   String? _sessionPassword;
   String? _libPath;
@@ -72,7 +78,10 @@ class DbConnection extends ChangeNotifier {
       // Open the metadata session first: it validates the parameters
       // without opening two failing logins.
       md = await openDbSession(config, libPath: libPath, password: _password);
-      m = await openDbSession(config, libPath: libPath, password: _password, readOnly: config.readOnly);
+      m = RecordingSession(
+        await openDbSession(config, libPath: libPath, password: _password, readOnly: config.readOnly),
+        _recordStatement,
+      );
       final inf = await md.info();
       if (config.defaultCatalog.isNotEmpty) {
         await m.setCurrentCatalog(config.defaultCatalog);
@@ -171,6 +180,20 @@ class DbConnection extends ChangeNotifier {
       pendingStatements++;
       notifyListeners();
     }
+  }
+
+  void _recordStatement(String sql, List<Object?> params, ResultPage? page, Object? error, int durationMs) {
+    onHistory?.call(
+      HistoryEntry(
+        sql: dialect.inlineParams(sql, params),
+        connectionId: config.id,
+        connectionName: config.name,
+        time: DateTime.now(),
+        durationMs: durationMs,
+        rows: page == null ? -1 : (page.isResultSet ? page.rows.length : page.rowsAffected),
+        error: error == null ? null : (error is OdbcException ? error.message : error.toString()),
+      ),
+    );
   }
 
   void refreshMetadata() {

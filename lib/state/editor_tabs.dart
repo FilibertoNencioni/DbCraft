@@ -80,7 +80,6 @@ class SqlEditorTab extends EditorTab {
     String? catalog,
     this.file,
     String initialText = '',
-    this.onHistory,
   }) : _connection = connection, // ignore: prefer_initializing_formals
        _catalog = catalog, // ignore: prefer_initializing_formals
        controller = CodeLineEditingController.fromText(initialText) {
@@ -93,7 +92,6 @@ class SqlEditorTab extends EditorTab {
   String? _catalog;
   File? file;
   final CodeLineEditingController controller;
-  final void Function(HistoryEntry e)? onHistory;
   String _savedText = '';
   bool _dirty = false;
   Timer? _autosave;
@@ -421,16 +419,6 @@ class SqlEditorTab extends EditorTab {
               selectedResult = results.length - 1;
             }
           }
-          onHistory?.call(
-            HistoryEntry(
-              sql: sql,
-              connectionId: c.config.id,
-              connectionName: c.config.name,
-              time: DateTime.now(),
-              durationMs: dur,
-              rows: page.isResultSet ? page.rows.length : page.rowsAffected,
-            ),
-          );
         } catch (e) {
           errors++;
           final dur = sw.elapsedMilliseconds - t0;
@@ -438,16 +426,6 @@ class SqlEditorTab extends EditorTab {
           addLog(LogLevel.error, msg, sql: sql, durationMs: dur);
           results.add(ResultTab(title: 'Errore', error: msg, sql: sql));
           selectedResult = results.length - 1;
-          onHistory?.call(
-            HistoryEntry(
-              sql: sql,
-              connectionId: c.config.id,
-              connectionName: c.config.name,
-              time: DateTime.now(),
-              durationMs: dur,
-              error: msg,
-            ),
-          );
           if (script && i < statements.length - 1) {
             final cont = await ui.confirm(
               'Errore nello script',
