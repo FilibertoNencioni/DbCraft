@@ -379,3 +379,35 @@ List<NavNode> buildRoots(List<DbConnection> conns, Map<String, NavNode> cache) {
   folderNodes.sort((a, b) => a.label.compareTo(b.label));
   return [...folderNodes, ...roots];
 }
+
+/// Loaded nodes under the connection node [root] to reload after the schema
+/// changes [scopes]: the connection itself, the catalogs whose schemas
+/// changed, the object folders whose objects changed.
+List<NavNode> nodesForSchemaChanges(NavNode root, List<SchemaScope> scopes) {
+  if (scopes.isEmpty) return const [];
+  if (scopes.any((s) => s.level == SchemaLevel.connection)) return [root];
+  final catalogs = scopes.where((s) => s.level == SchemaLevel.catalog).toList();
+  final objects = scopes.where((s) => s.level.index >= SchemaLevel.schema.index).toList();
+  final out = <NavNode>[];
+  var catalogNodes = false;
+  void walk(NavNode n) {
+    for (final ch in n.children ?? const <NavNode>[]) {
+      final hit = switch (ch) {
+        CatalogNode c => catalogs.any((s) => s.covers(c.catalog, null)),
+        ObjectFolderNode f => objects.any((s) => s.covers(f.catalog, f.schema)),
+        _ => false,
+      };
+      if (ch is CatalogNode) catalogNodes = true;
+      if (hit && ch.children != null) {
+        out.add(ch);
+      } else {
+        walk(ch);
+      }
+    }
+  }
+
+  walk(root);
+  // Schemas listed right under the connection (no catalogs).
+  if (catalogs.isNotEmpty && !catalogNodes) return [root];
+  return out;
+}

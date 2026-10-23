@@ -57,6 +57,11 @@ class MetadataService {
     }
   }
 
+  /// Caches the result of [load] under [key] until [clearCache]. The design
+  /// tools use it for their DBMS specific catalog queries (keys prefixed
+  /// `design:`).
+  Future<T> cached<T extends Object>(String key, Future<T> Function() load) => _cached(key, load);
+
   Future<T> _cached<T extends Object>(String key, Future<T> Function() load) async {
     final hit = _cache[key];
     if (hit != null) return hit as T;

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../features/query_builder/query_model.dart';
 import '../../features/query_builder/visual_filter.dart';
+import '../../features/schema/ddl_builder.dart';
 import '../../model/db_objects.dart';
 import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
@@ -42,6 +43,7 @@ class _TableEditorViewState extends State<TableEditorView> {
   Object? _dataError;
   int? _rowCount;
   int _lastInitialPage = -1;
+  late int _schemaGeneration = tab.connection.schemaGeneration;
 
   TableEditorTab get tab => widget.tab;
   DbTable get table => tab.table;
@@ -67,6 +69,7 @@ class _TableEditorViewState extends State<TableEditorView> {
     super.initState();
     _lastInitialPage = tab.initialPage;
     tab.addListener(_onTab);
+    tab.connection.addListener(_onConnection);
     _init();
   }
 
@@ -83,6 +86,17 @@ class _TableEditorViewState extends State<TableEditorView> {
     }
   }
 
+  /// Reloads the structure after DDL touching this table.
+  void _onConnection() {
+    final c = tab.connection;
+    if (c.schemaGeneration == _schemaGeneration) return;
+    final changes = c.schemaChangesSince(_schemaGeneration);
+    _schemaGeneration = c.schemaGeneration;
+    if (!c.isConnected || c.metadata == null || _details == null) return;
+    if (!changes.any((s) => s.coversObject(table.catalog, table.schema, table.name))) return;
+    setState(() => _details = c.metadata!.tableDetails(table));
+  }
+
   Future<void> _init() async {
     if (!await ensureConnected(context, tab.connection)) return;
     setState(() {
@@ -97,6 +111,7 @@ class _TableEditorViewState extends State<TableEditorView> {
   @override
   void dispose() {
     tab.removeListener(_onTab);
+    tab.connection.removeListener(_onConnection);
     _where.dispose();
     _order.dispose();
     super.dispose();
@@ -598,7 +613,7 @@ class _TableEditorViewState extends State<TableEditorView> {
   );
 
   Widget _ddl(TableDetails d) {
-    final ddl = tab.connection.dialect.ddl(d);
+    final ddl = DdlBuilder(tab.connection.dialect).tableScript(d);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

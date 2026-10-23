@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../model/db_objects.dart';
+import 'server_version.dart';
 import 'sql_keywords.dart';
 
 enum DbFamily {
@@ -26,10 +27,23 @@ class SqlDialect {
     this.quote = '"',
     this.catalogSeparator = '.',
     this.extraKeywords = const {},
-  }) : family = _detect(dbmsName);
+    this.dbmsVersion = '',
+  }) : family = _detect(dbmsName),
+       version = ServerVersion.tryParse(dbmsVersion),
+       isMariaDb = '$dbmsName $dbmsVersion'.toLowerCase().contains('maria');
 
   final String dbmsName;
   final DbFamily family;
+
+  /// Version string reported by the server (`SQL_DBMS_VER`).
+  final String dbmsVersion;
+
+  /// Parsed [dbmsVersion]; null when unknown (capabilities then assume a
+  /// current server).
+  final ServerVersion? version;
+
+  /// MariaDB shares [DbFamily.mysql] but differs in features and versions.
+  final bool isMariaDb;
 
   /// Identifier quote character (empty when quoting is not supported).
   final String quote;
@@ -50,6 +64,7 @@ class SqlDialect {
       quote: q,
       catalogSeparator: sep.isEmpty ? '.' : sep,
       extraKeywords: kw,
+      dbmsVersion: (info['dbmsVersion'] as String?) ?? '',
     );
   }
 
@@ -227,70 +242,6 @@ class SqlDialect {
     final k = keys.isEmpty ? cols.take(1).map((e) => e.name).toList() : keys;
     return 'DELETE FROM ${tableName(t)}\n'
         'WHERE ${k.map((e) => '${quoteIdent(e)} = ?').join(' AND ')}';
-  }
-
-  /// Reconstructs a CREATE TABLE statement from ODBC metadata.
-  String ddl(TableDetails d) {
-    final t = d.table;
-    final sb = StringBuffer();
-    if (t.isView) {
-      sb.writeln('-- Vista ${tableName(t)}: la definizione non è esposta via ODBC.');
-      sb.writeln('-- Colonne:');
-      for (final c in d.columns) {
-        sb.writeln('--   ${c.name} ${c.fullType}');
-      }
-      return sb.toString();
-    }
-    sb.writeln('CREATE TABLE ${tableName(t)} (');
-    final lines = <String>[];
-    for (final c in d.columns) {
-      final l = StringBuffer('\t${quoteIdent(c.name)} ${c.fullType}');
-      final def = c.defaultValue?.trim();
-      if (def != null && def.isNotEmpty && def.toUpperCase() != 'NULL') {
-        l.write(' DEFAULT $def');
-      }
-      if (!c.nullable) l.write(' NOT NULL');
-      lines.add(l.toString());
-    }
-    final pk = d.primaryKey;
-    if (pk != null && pk.columns.isNotEmpty) {
-      final name = pk.name != null && pk.name!.isNotEmpty ? 'CONSTRAINT ${quoteIdent(pk.name!)} ' : '';
-      lines.add('\t${name}PRIMARY KEY (${pk.columns.map(quoteIdent).join(', ')})');
-    }
-    for (final fk in d.foreignKeys) {
-      final name = fk.name != null && fk.name!.isNotEmpty ? 'CONSTRAINT ${quoteIdent(fk.name!)} ' : '';
-      final buf = StringBuffer(
-        '\t${name}FOREIGN KEY (${fk.columns.map(quoteIdent).join(', ')}) '
-        'REFERENCES ${qualified(fk.pkCatalog, fk.pkSchema, fk.pkTable)} '
-        '(${fk.refColumns.map(quoteIdent).join(', ')})',
-      );
-      final del = DbForeignKey.ruleName(fk.deleteRule);
-      final upd = DbForeignKey.ruleName(fk.updateRule);
-      if (del.isNotEmpty && del != 'NO ACTION' && del != 'RESTRICT') {
-        buf.write(' ON DELETE $del');
-      }
-      if (upd.isNotEmpty && upd != 'NO ACTION' && upd != 'RESTRICT') {
-        buf.write(' ON UPDATE $upd');
-      }
-      lines.add(buf.toString());
-    }
-    sb.writeln(lines.join(',\n'));
-    sb.writeln(');');
-    final pkCols = pk?.columns.join(',');
-    for (final ix in d.indexes) {
-      if (ix.columns.join(',') == pkCols && ix.unique) continue;
-      if (ix.name.toLowerCase().startsWith('sqlite_autoindex')) continue;
-      sb.writeln();
-      sb.write(
-        'CREATE ${ix.unique ? 'UNIQUE ' : ''}INDEX ${quoteIdent(ix.name)} '
-        'ON ${tableName(t)} (${ix.columns.map(quoteIdent).join(', ')});',
-      );
-    }
-    if (t.remarks != null && t.remarks!.isNotEmpty) {
-      sb.writeln();
-      sb.writeln('-- ${t.remarks}');
-    }
-    return sb.toString().trimRight();
   }
 
   String dropSql(DbTable t) => 'DROP ${t.isView ? 'VIEW' : 'TABLE'} ${tableName(t)}';

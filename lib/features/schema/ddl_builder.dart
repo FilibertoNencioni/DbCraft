@@ -6,6 +6,7 @@
 // made only of `--` lines are comments: they are rendered in scripts and
 // skipped on execution. [DdlBuilder.render] joins the statements into a script.
 
+import '../../model/db_objects.dart';
 import '../../services/sql_dialect.dart';
 import 'schema_model.dart';
 
@@ -149,6 +150,22 @@ class DdlBuilder {
       }
     }
     return out;
+  }
+
+  /// Script that recreates the table described by the ODBC metadata [d]
+  /// (DDL page, "Genera DDL"): CREATE TABLE with keys, then indexes and
+  /// comments. ODBC does not expose view definitions, so for views only the
+  /// columns are listed.
+  String tableScript(TableDetails d) {
+    final t = d.table;
+    if (t.isView) {
+      return [
+        '-- Vista ${dialect.tableName(t)}: la definizione non è esposta via ODBC.',
+        '-- Colonne:',
+        for (final c in d.columns) '--   ${c.name} ${c.fullType}',
+      ].join('\n');
+    }
+    return render(createTable(TableDef.fromDetails(d), withForeignKeys: true));
   }
 
   List<String> dropTable(TableDef t) => [

@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../../features/design/ddl_script.dart';
 import '../../features/schema/ddl_execution.dart';
 import '../../features/schema/erd_dialogs.dart';
 import '../../features/schema/schema_diff.dart';
@@ -665,7 +666,7 @@ class _ErDiagramViewState extends State<ErDiagramView> {
     final ok = await showDdlScriptDialog(
       context,
       dc: widget.connection,
-      statements: e.statements,
+      script: DdlScript(e.statements, scope: SchemaScope.schema(widget.catalog, widget.schema)),
       title: 'Modifiche allo schema',
     );
     if (!ok || !mounted) return;

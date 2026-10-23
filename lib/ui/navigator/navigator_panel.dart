@@ -6,6 +6,9 @@ import 'package:flutter/services.dart';
 import '../../features/ai/ai.dart';
 import '../../features/data_compare/data_compare_tab.dart';
 import '../../features/debugger/pg_debugger_tab.dart';
+import '../../features/design/ddl_script.dart';
+import '../../features/schema/ddl_builder.dart';
+import '../../features/schema/ddl_execution.dart';
 import '../../features/schema/schema_compare_view.dart';
 import '../../features/mock_data/mock_data_dialog.dart';
 import '../../features/performance/perf_dashboard.dart';
@@ -47,6 +50,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   final _scroll = ScrollController();
   NavNode? _selected;
   final Map<DbConnection, ConnectionStatus> _lastStatus = {};
+  final Map<DbConnection, int> _lastGeneration = {};
   bool _collapsed = false;
 
   @override
@@ -71,6 +75,25 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           _expand(node);
         }
       }
+    }
+  }
+
+  /// Reloads the loaded parts of the tree touched by the DDL run since the
+  /// last build (see [DbConnection.schemaChanged]).
+  void _syncSchemaChanges(AppState app) {
+    for (final c in app.connections) {
+      final seen = _lastGeneration[c];
+      _lastGeneration[c] = c.schemaGeneration;
+      if (seen == null || seen == c.schemaGeneration) continue;
+      final root = _cache['conn:${c.config.id}'];
+      if (root == null || root.children == null) continue;
+      final targets = nodesForSchemaChanges(root, c.schemaChangesSince(seen));
+      if (targets.isEmpty) continue;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        for (final t in targets) {
+          if (mounted) await _reload(t);
+        }
+      });
     }
   }
 
@@ -115,25 +138,65 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     if (n.connection != null) AppScope.read(context).select(n.connection);
   }
 
+  /// F5: re-reads the metadata of the connection and reloads [n].
   Future<void> _refresh(NavNode n) async {
     if (_busy(n)) return;
-    final c = n.connection;
-    if (c != null && c.metadata != null) {
-      // Coarse but safe: drop all cached metadata of the connection.
-      c.metadata!.clearCache();
-    }
-    void resetTree(NavNode x) {
+    // Coarse but safe: drop all cached metadata of the connection.
+    n.connection?.metadata?.clearCache();
+    await _reload(n);
+  }
+
+  /// Reloads the children of [n], re-expanding the nodes that were open and
+  /// keeping the selection when the selected node still exists.
+  Future<void> _reload(NavNode n) async {
+    if (_busy(n)) return;
+    final open = <String>{};
+    void reset(NavNode x) {
       for (final ch in x.children ?? const <NavNode>[]) {
-        resetTree(ch);
+        if (ch.expanded) open.add(ch.key);
+        reset(ch);
       }
       x.children = null;
     }
 
+    final selected = _selected?.key;
     final wasExpanded = n.expanded;
-    resetTree(n);
+    reset(n);
     n.expanded = false;
-    if (wasExpanded) await _expand(n);
-    setState(() {});
+    if (wasExpanded) {
+      await _expand(n);
+      Future<void> reopen(NavNode x) async {
+        for (final ch in List.of(x.children ?? const <NavNode>[])) {
+          if (!open.contains(ch.key)) continue;
+          await _expand(ch);
+          await reopen(ch);
+        }
+      }
+
+      await reopen(n);
+    }
+    if (!mounted) return;
+    setState(() {
+      if (selected != null && _selected != null && !_contains(n, _selected!)) {
+        _selected = _find(n, selected) ?? (n.key == selected ? n : _selected);
+      }
+    });
+  }
+
+  static bool _contains(NavNode root, NavNode n) {
+    for (final ch in root.children ?? const <NavNode>[]) {
+      if (identical(ch, n) || _contains(ch, n)) return true;
+    }
+    return false;
+  }
+
+  static NavNode? _find(NavNode root, String key) {
+    for (final ch in root.children ?? const <NavNode>[]) {
+      if (ch.key == key) return ch;
+      final f = _find(ch, key);
+      if (f != null) return f;
+    }
+    return null;
   }
 
   List<_VisibleNode> _flatten(List<NavNode> roots) {
@@ -177,6 +240,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     _syncConnectionStates(app);
+    _syncSchemaChanges(app);
     final roots = buildRoots(app.connections, _cache);
     final visible = _flatten(roots);
 
@@ -430,7 +494,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               'Genera DELETE',
               () => gen((x) => '${d.deleteSql(tb, x.columns, x.primaryKey?.columns ?? [])};'),
             ),
-            _item('Genera DDL', () => gen(d.ddl)),
+            _item('Genera DDL', () => gen(DdlBuilder(d).tableScript)),
           ],
           const MenuEntry.divider(),
           _item('Esporta dati…', () => showTableExportDialog(context, dc, tb)),
@@ -466,11 +530,20 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           if (!tb.isView)
             _item(
               'Svuota (TRUNCATE)…',
-              dc.config.readOnly ? null : () => _dangerous(dc, d.truncateSql(tb), n),
+              dc.config.readOnly
+                  ? null
+                  : () => _dangerous(
+                      dc,
+                      d.truncateSql(tb),
+                      'Svuota ${tb.name}',
+                      SchemaScope.object(tb.catalog, tb.schema, tb.name),
+                    ),
             ),
           _item(
             'Elimina (DROP)…',
-            dc.config.readOnly ? null : () => _dangerous(dc, d.dropSql(tb), n),
+            dc.config.readOnly
+                ? null
+                : () => _dangerous(dc, d.dropSql(tb), 'Elimina ${tb.name}', SchemaScope.schema(tb.catalog, tb.schema)),
           ),
           _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
         ]);
@@ -509,28 +582,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     });
   }
 
-  Future<void> _dangerous(DbConnection dc, String sql, NavNode node) async {
-    final ok = await confirmDialog(
-      context,
-      'Conferma',
-      'Eseguire la seguente istruzione?\n\n$sql',
-      ok: 'Esegui',
-      destructive: true,
-    );
-    if (!ok || !mounted) return;
-    await guarded(context, () async {
-      await dc.main!.execute(sql);
-      dc.statementExecuted();
-      if (!mounted) return;
-      showToast(context, 'Eseguito: $sql');
-      // Refresh the parent folder.
-      for (final n in _cache.values) {
-        if (n.children?.contains(node) ?? false) {
-          await _refresh(n);
-          break;
-        }
-      }
-      setState(() {});
-    });
-  }
+  /// Destructive single statement: script preview, confirmation, refresh.
+  Future<void> _dangerous(DbConnection dc, String sql, String title, SchemaScope scope) =>
+      showDdlScriptDialog(context, dc: dc, script: DdlScript([sql], scope: scope), title: title);
 }
