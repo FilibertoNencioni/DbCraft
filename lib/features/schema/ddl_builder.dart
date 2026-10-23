@@ -851,8 +851,9 @@ class DdlBuilder {
   /// notes. [online] builds it without locking writes (PostgreSQL
   /// CONCURRENTLY, which cannot run in a transaction).
   List<String> createIndex(TableDef t, IndexDef ix, {bool online = false}) {
-    if (!caps.has(DesignFeature.indexes))
+    if (!caps.has(DesignFeature.indexes)) {
       return [_comment2('Indice ${ix.name}: ${caps.reason(DesignFeature.indexes)}')];
+    }
     final notes = <String>[];
     void unsupported(String what, DesignFeature f) => notes.add(
       _comment('Indice ${ix.name}: $what ignorato, ${caps.reason(f) ?? 'non supportato'} (non supportato)'),
@@ -860,8 +861,9 @@ class DdlBuilder {
 
     final expressions = ix.columns.any(IndexDef.isExpression);
     final desc = ix.descending.isNotEmpty;
-    if (desc && !caps.has(DesignFeature.indexDescending))
+    if (desc && !caps.has(DesignFeature.indexDescending)) {
       unsupported('ordinamento DESC', DesignFeature.indexDescending);
+    }
     var include = ix.include;
     if (include.isNotEmpty && (!caps.has(DesignFeature.indexInclude) || (family == DbFamily.db2 && !ix.unique))) {
       unsupported('INCLUDE', DesignFeature.indexInclude);
