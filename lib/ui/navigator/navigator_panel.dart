@@ -420,6 +420,14 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               () => app.openFeatureTab<PerformanceDashboardTab>(PerformanceDashboardTab(d), match: (t) => t.dc == d),
             ),
           _item('Informazioni connessione', d.isConnected ? () => app.openConnectionInfo(d) : null),
+          if (designAvailable(d) && !simple) ...[
+            const MenuEntry.divider(),
+            ...connectionDesignMenu(
+              context,
+              d,
+              schemasAtRoot: c.children?.any((x) => x is SchemaNode) ?? false,
+            ),
+          ],
           const MenuEntry.divider(),
           _item('Modifica connessione…', () => editConnection(context, d), shortcut: _editKey),
           _item('Duplica', () => duplicateConnection(context, d)),
@@ -459,6 +467,8 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               'Confronta schema…',
               () => app.openFeatureTab(SchemaCompareTab(source: dc, sourceCatalog: c.catalog)),
             ),
+          if (designAvailable(dc) && !simple) ...[const MenuEntry.divider(), ...databaseMenu(context, dc, c.catalog)],
+          const MenuEntry.divider(),
           _item('Copia nome', () => Clipboard.setData(ClipboardData(text: c.catalog))),
           _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
         ]);
@@ -481,6 +491,11 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               'Confronta schema…',
               () => app.openFeatureTab(SchemaCompareTab(source: dc, sourceCatalog: s.catalog, sourceSchema: s.schema)),
             ),
+          if (designAvailable(dc) && !simple) ...[
+            const MenuEntry.divider(),
+            ...schemaMenu(context, dc, s.catalog, s.schema),
+          ],
+          const MenuEntry.divider(),
           _item('Copia nome', () => Clipboard.setData(ClipboardData(text: s.schema))),
           _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
         ]);

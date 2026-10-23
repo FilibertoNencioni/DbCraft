@@ -32,6 +32,7 @@ class DdlScript {
     this.autocommitOnly = false,
     this.transactional = false,
     this.scope = SchemaScope.connection,
+    this.catalog,
   });
 
   /// Text shown in place of a secret.
@@ -56,6 +57,10 @@ class DdlScript {
 
   /// What the script changes: the navigator and the open editors refresh it.
   final SchemaScope scope;
+
+  /// Database to run the script in (SQL Server CREATE SCHEMA cannot be
+  /// qualified); null: the current one of the session.
+  final String? catalog;
 
   bool get isEmpty => executable.isEmpty;
 

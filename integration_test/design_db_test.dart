@@ -18,6 +18,8 @@ import 'dart:io';
 
 import 'package:dbcraft/features/design/capabilities.dart';
 import 'package:dbcraft/features/design/catalog/design_catalog.dart';
+import 'package:dbcraft/features/design/ddl/object_ddl.dart';
+import 'package:dbcraft/features/design/model/object_defs.dart';
 import 'package:dbcraft/features/schema/ddl_builder.dart';
 import 'package:dbcraft/features/schema/schema_diff.dart';
 import 'package:dbcraft/features/schema/schema_migration.dart';
@@ -26,6 +28,7 @@ import 'package:dbcraft/features/schema/schema_snapshot.dart';
 import 'package:dbcraft/model/connection_config.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
 import 'package:dbcraft/state/db_connection.dart';
+import 'package:dbcraft/ui/navigator/nav_nodes.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -208,6 +211,47 @@ void main() {
           await run(dc, b.dropTable(table));
         }
         expect(await dc.metadata!.findTable(null, null, table.name), isNull);
+      });
+
+      test('database round trip', () async {
+        final caps = DesignCapabilities.of(dc.dialect);
+        if (!caps.has(DesignFeature.createDatabase) || dc.dialect.family == DbFamily.sqlite) return;
+        final ddl = ObjectDdl(dc.dialect);
+        final db = DatabaseDef(
+          name: 'dbc_rt_db_$suffix',
+          recoveryModel: dc.dialect.family == DbFamily.sqlServer ? 'SIMPLE' : null,
+        );
+        final cat = DesignCatalog.of(dc)!;
+        await run(dc, ddl.createDatabase(db));
+        try {
+          final read = await cat.database(db.name);
+          expect(read, isNotNull);
+          if (db.recoveryModel != null) expect(read!.recoveryModel, 'SIMPLE');
+          final changed = read!.copyWith(recoveryModel: db.recoveryModel == null ? null : 'FULL');
+          await run(dc, ddl.alterDatabase(read, changed));
+          if (db.recoveryModel != null) expect((await cat.database(db.name))!.recoveryModel, 'FULL');
+        } finally {
+          await run(dc, ddl.dropDatabase(db.name, force: true));
+        }
+        expect(await cat.database(db.name), isNull);
+      });
+
+      test('schema round trip', () async {
+        final caps = DesignCapabilities.of(dc.dialect);
+        if (!caps.has(DesignFeature.schemas)) return;
+        final ddl = ObjectDdl(dc.dialect);
+        final catalog = dc.mainCatalog;
+        final s = SchemaDef(name: 'dbc_rt_sch_$suffix', catalog: catalog);
+        final cat = DesignCatalog.of(dc)!;
+        await run(dc, ddl.createSchema(s));
+        try {
+          expect(await cat.schemaDef(catalog, s.name), isNotNull);
+          // The navigator lists it even when empty.
+          expect(await listSchemas(dc, catalog), contains(s.name));
+        } finally {
+          await run(dc, ddl.dropSchema(s));
+        }
+        expect(await cat.schemaDef(catalog, s.name), isNull);
       });
 
       test('constraints and indexes round trip', () async {

@@ -10,6 +10,8 @@ import '../cloud/ui/cloud_account_dialog.dart';
 import '../cloud/ui/cloud_explorer_panel.dart';
 import '../features/ai/ai.dart';
 import '../features/data_compare/data_compare_tab.dart';
+import '../features/design/capabilities.dart';
+import '../features/design/ui/object_actions.dart' as objects;
 import '../features/design/ui/table_designer.dart';
 import '../features/git/git.dart';
 import '../features/performance/perf_dashboard.dart';
@@ -219,6 +221,17 @@ class _HomePageState extends State<HomePage> {
           showCloudAccountDialog(context);
         }, null),
         const _MenuDivider(),
+        _MenuAction(
+          'Nuovo database…',
+          !connected ||
+                  !dc!.dialect.isSql ||
+                  dc.config.readOnly ||
+                  app.settings.simpleMode ||
+                  !DesignCapabilities.of(dc.dialect).has(DesignFeature.createDatabase)
+              ? null
+              : () => objects.createDatabase(context, dc),
+          null,
+        ),
         _MenuAction(
           'Nuova tabella…',
           !connected || !dc!.dialect.isSql || dc.config.readOnly || app.settings.simpleMode

@@ -155,7 +155,7 @@ void main() {
         ),
       )
       ..on(
-        'FROM sys.indexes',
+        r'FROM \[db\]\.sys\.indexes',
         Rows(
           [
             'name',
@@ -186,7 +186,8 @@ void main() {
         ),
       );
     final t = await read(s, 'Microsoft SQL Server', version: '16.00.4135');
-    expect(s.executed.first, contains("OBJECT_ID(N'[app].[orders]')"));
+    expect(s.executed.first, contains("OBJECT_ID(N'[db].[app].[orders]')"));
+    expect(s.executed.first, contains('FROM [db].sys.key_constraints'));
     expect(t.primaryKey!.name, 'PK_orders');
     expect(t.primaryKey!.clustered, isFalse);
     expect(t.uniques.single.columns, ['code']);

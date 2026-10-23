@@ -14,6 +14,8 @@ import '../../../services/metadata_service.dart';
 import '../../../services/sql_dialect.dart';
 import '../../../state/db_connection.dart';
 import '../../schema/schema_model.dart';
+import '../model/object_defs.dart';
+import 'databases.dart';
 import 'db2.dart';
 import 'firebird.dart';
 import 'mssql.dart';
@@ -153,6 +155,33 @@ class DesignCatalog {
       return base;
     }
   }
+
+  /// Databases with their properties (DBMS where databases are managed).
+  Future<List<DatabaseDef>> databases() => metadata.cached('design:databases', () => readDatabases(queries, dialect));
+
+  Future<DatabaseDef?> database(String name) async {
+    for (final d in await databases()) {
+      if (d.name.toLowerCase() == name.toLowerCase()) return d;
+    }
+    return null;
+  }
+
+  /// Schemas of [catalog] with owner and comment.
+  Future<List<SchemaDef>> schemaDefs(String? catalog) =>
+      metadata.cached('design:schemas:${catalog ?? ''}', () => readSchemas(queries, dialect, catalog));
+
+  Future<SchemaDef?> schemaDef(String? catalog, String name) async {
+    for (final s in await schemaDefs(catalog)) {
+      if (s.name.toLowerCase() == name.toLowerCase()) return s;
+    }
+    return null;
+  }
+
+  Future<DatabaseChoices> databaseChoices() =>
+      metadata.cached('design:dbchoices', () => readDatabaseChoices(queries, dialect));
+
+  Future<List<String>> schemaOwners(String? catalog) =>
+      metadata.cached('design:schemaowners:${catalog ?? ''}', () => readSchemaOwners(queries, dialect, catalog));
 
   /// Cached rows of the first working alternative.
   Future<List<CatalogRow>> cachedRows(String key, List<String> alternatives, {List<Object?> params = const []}) =>

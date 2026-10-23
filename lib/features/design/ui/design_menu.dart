@@ -14,6 +14,7 @@ import '../../schema/ddl_builder.dart';
 import '../../schema/schema_model.dart';
 import '../capabilities.dart';
 import 'design_actions.dart' as actions;
+import 'object_actions.dart' as objects;
 
 MenuEntry<void> _item(String label, VoidCallback? action, {bool destructive = false}) =>
     MenuEntry(label, onSelected: action, enabled: action != null, destructive: destructive);
@@ -105,5 +106,49 @@ List<MenuEntry<void>> constraintMenu(BuildContext context, ConstraintNode n, {re
     const MenuEntry.divider(),
     _item('Elimina…', act(() => actions.dropConstraint(context, dc, n.table, def)), destructive: true),
     _item('Aggiorna', refresh),
+  ];
+}
+
+/// "Nuovo database…" (and, where schemas sit right under the connection,
+/// "Nuovo schema…") on a connection node.
+List<MenuEntry<void>> connectionDesignMenu(BuildContext context, DbConnection dc, {required bool schemasAtRoot}) {
+  final caps = DesignCapabilities.of(dc.dialect);
+  final ro = dc.config.readOnly;
+  return [
+    if (caps.has(DesignFeature.createDatabase))
+      _item('Nuovo database…', ro ? null : () => objects.createDatabase(context, dc)),
+    if (schemasAtRoot && caps.has(DesignFeature.schemas))
+      _item('Nuovo schema…', ro ? null : () => objects.createSchema(context, dc, null)),
+  ];
+}
+
+/// Actions on a database (catalog node).
+List<MenuEntry<void>> databaseMenu(BuildContext context, DbConnection dc, String catalog) {
+  final caps = DesignCapabilities.of(dc.dialect);
+  final ro = dc.config.readOnly;
+  VoidCallback? act(Future<bool> Function() f) => ro ? null : () => f();
+  // SQLite databases are files: created from the connection, not altered.
+  final managed = caps.has(DesignFeature.createDatabase) && dc.dialect.family != DbFamily.sqlite;
+  return [
+    if (caps.has(DesignFeature.schemas)) _item('Nuovo schema…', act(() => objects.createSchema(context, dc, catalog))),
+    if (managed) _item('Proprietà del database…', act(() => objects.editDatabase(context, dc, catalog))),
+    if (caps.has(DesignFeature.renameDatabase))
+      _item('Rinomina database…', act(() => objects.renameDatabase(context, dc, catalog))),
+    if (managed) _item('Elimina database…', act(() => objects.dropDatabase(context, dc, catalog)), destructive: true),
+  ];
+}
+
+/// Actions on a schema node.
+List<MenuEntry<void>> schemaMenu(BuildContext context, DbConnection dc, String? catalog, String schema) {
+  final caps = DesignCapabilities.of(dc.dialect);
+  if (!caps.has(DesignFeature.schemas)) return const [];
+  final ro = dc.config.readOnly;
+  VoidCallback? act(Future<bool> Function() f) => ro ? null : () => f();
+  final family = dc.dialect.family;
+  return [
+    _item('Proprietà dello schema…', act(() => objects.editSchema(context, dc, catalog, schema))),
+    if (family == DbFamily.postgres || family == DbFamily.snowflake)
+      _item('Rinomina schema…', act(() => objects.renameSchema(context, dc, catalog, schema))),
+    _item('Elimina schema…', act(() => objects.dropSchema(context, dc, catalog, schema)), destructive: true),
   ];
 }

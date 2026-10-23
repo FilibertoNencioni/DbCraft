@@ -95,10 +95,12 @@ Future<DdlResult> runDdlScript(
   try {
     if (script.autocommitOnly && !dc.autoCommit) {
       own = await dc.openSession();
-      final cat = dc.mainCatalog;
+      final cat = script.catalog ?? dc.mainCatalog;
       if (cat != null && cat.isNotEmpty) await own.setCurrentCatalog(cat);
       session = dc.withHistory(own);
       plain = own;
+    } else if (script.catalog != null) {
+      await dc.useCatalog(script.catalog);
     }
     if (tx) await session.setAutoCommit(false);
     for (var i = 0; i < exec.length; i++) {

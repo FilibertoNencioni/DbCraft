@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/design/capabilities.dart';
 import '../../features/design/catalog/design_catalog.dart';
 import '../../features/schema/schema_model.dart';
 import '../../model/db_objects.dart';
@@ -73,7 +74,7 @@ class ConnectionNode extends NavNode {
       }
     }
     if (md.supportsSchemas) {
-      final schemas = await md.schemas(null);
+      final schemas = await listSchemas(dc, null);
       if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(dc, null, s)];
     }
     return objectFolders(dc, null, null);
@@ -86,6 +87,25 @@ List<NavNode> objectFolders(DbConnection dc, String? catalog, String? schema) =>
   ObjectFolderNode(dc, catalog, schema, ObjectKind.system),
   if (dc.metadata?.supportsProcedures ?? true) ObjectFolderNode(dc, catalog, schema, ObjectKind.procedures),
 ];
+
+/// Schemas of [catalog]: the ODBC list plus, where the design catalog
+/// reads them, the empty ones ODBC leaves out (SQL Server lists only the
+/// schemas that contain objects).
+Future<List<String>> listSchemas(DbConnection dc, String? catalog) async {
+  final odbc = await dc.metadata!.schemas(catalog);
+  final cat = DesignCatalog.of(dc);
+  if (cat == null || !DesignCapabilities.of(dc.dialect).has(DesignFeature.schemas)) return odbc;
+  try {
+    final extra = [
+      for (final s in await cat.schemaDefs(catalog))
+        if (!odbc.any((o) => o.toLowerCase() == s.name.toLowerCase())) s.name,
+    ];
+    if (extra.isEmpty) return odbc;
+    return [...odbc, ...extra]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  } catch (_) {
+    return odbc;
+  }
+}
 
 class CatalogNode extends NavNode {
   CatalogNode(DbConnection super.connection, this.catalog, {this.current = false});
@@ -105,7 +125,7 @@ class CatalogNode extends NavNode {
   Future<List<NavNode>> load() async {
     final md = connection!.metadata!;
     if (md.supportsSchemas) {
-      final schemas = await md.schemas(catalog);
+      final schemas = await listSchemas(connection!, catalog);
       if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(connection!, catalog, s)];
     }
     return objectFolders(connection!, catalog, null);
