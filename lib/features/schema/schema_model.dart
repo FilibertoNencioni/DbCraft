@@ -30,6 +30,70 @@ enum FkRule {
   bool get isDefault => this == noAction || this == restrict;
 }
 
+/// MATCH option of a foreign key (PostgreSQL; the others always match
+/// SIMPLE).
+enum FkMatch {
+  simple('SIMPLE'),
+  full('FULL');
+
+  const FkMatch(this.sql);
+  final String sql;
+}
+
+/// Kind of a table constraint.
+enum ConstraintKind {
+  primaryKey('chiave primaria'),
+  unique('vincolo UNIQUE'),
+  check('vincolo CHECK'),
+  foreignKey('chiave esterna');
+
+  const ConstraintKind(this.label);
+  final String label;
+}
+
+/// State of a constraint besides its definition.
+class ConstraintState {
+  const ConstraintState({
+    this.enabled = true,
+    this.validated = true,
+    this.deferrable = false,
+    this.initiallyDeferred = false,
+  });
+
+  /// Checked on new rows (SQL Server NOCHECK, Oracle DISABLE, Db2 NOT
+  /// ENFORCED turn it off).
+  final bool enabled;
+
+  /// The existing rows were checked (PostgreSQL NOT VALID, SQL Server
+  /// "not trusted", Oracle NOVALIDATE turn it off).
+  final bool validated;
+  final bool deferrable;
+  final bool initiallyDeferred;
+
+  static const standard = ConstraintState();
+
+  bool get isStandard => this == standard;
+
+  ConstraintState copyWith({bool? enabled, bool? validated, bool? deferrable, bool? initiallyDeferred}) =>
+      ConstraintState(
+        enabled: enabled ?? this.enabled,
+        validated: validated ?? this.validated,
+        deferrable: deferrable ?? this.deferrable,
+        initiallyDeferred: initiallyDeferred ?? this.initiallyDeferred,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is ConstraintState &&
+      other.enabled == enabled &&
+      other.validated == validated &&
+      other.deferrable == deferrable &&
+      other.initiallyDeferred == initiallyDeferred;
+
+  @override
+  int get hashCode => Object.hash(enabled, validated, deferrable, initiallyDeferred);
+}
+
 /// Types whose declaration carries a length.
 const _sizedTypes = {'varchar', 'nvarchar', 'char', 'nchar', 'varbinary', 'binary'};
 
@@ -174,6 +238,12 @@ class ColumnDef {
     this.autoIncrement = false,
     this.comment,
     this.originalName,
+    this.collation,
+    this.computed,
+    this.computedStored = true,
+    this.identitySeed,
+    this.identityIncrement,
+    this.defaultName,
   });
 
   final String name;
@@ -190,6 +260,25 @@ class ColumnDef {
   final bool autoIncrement;
   final String? comment;
   final String? originalName;
+
+  /// Explicit collation (null: the default of the table or database).
+  final String? collation;
+
+  /// Expression of a computed (generated) column.
+  final String? computed;
+
+  /// The computed value is stored (STORED / PERSISTED) rather than
+  /// calculated on read (VIRTUAL).
+  final bool computedStored;
+
+  /// First value and step of an identity column (null: 1).
+  final int? identitySeed;
+  final int? identityIncrement;
+
+  /// Name of the default constraint (SQL Server), read from the catalog.
+  final String? defaultName;
+
+  bool get isComputed => computed != null && computed!.trim().isNotEmpty;
 
   factory ColumnDef.fromDbColumn(DbColumn c) {
     var type = c.typeName.trim();
@@ -254,6 +343,12 @@ class ColumnDef {
     bool? autoIncrement,
     Object? comment = _unset,
     Object? originalName = _unset,
+    Object? collation = _unset,
+    Object? computed = _unset,
+    bool? computedStored,
+    Object? identitySeed = _unset,
+    Object? identityIncrement = _unset,
+    Object? defaultName = _unset,
   }) => ColumnDef(
     name: name ?? this.name,
     type: type ?? this.type,
@@ -264,6 +359,12 @@ class ColumnDef {
     autoIncrement: autoIncrement ?? this.autoIncrement,
     comment: comment == _unset ? this.comment : comment as String?,
     originalName: originalName == _unset ? this.originalName : originalName as String?,
+    collation: collation == _unset ? this.collation : collation as String?,
+    computed: computed == _unset ? this.computed : computed as String?,
+    computedStored: computedStored ?? this.computedStored,
+    identitySeed: identitySeed == _unset ? this.identitySeed : identitySeed as int?,
+    identityIncrement: identityIncrement == _unset ? this.identityIncrement : identityIncrement as int?,
+    defaultName: defaultName == _unset ? this.defaultName : defaultName as String?,
   );
 
   /// Display model used by the ER diagram.
@@ -282,12 +383,122 @@ class ColumnDef {
 }
 
 class PrimaryKeyDef {
-  const PrimaryKeyDef({this.name, required this.columns});
+  const PrimaryKeyDef({this.name, required this.columns, this.clustered, this.state = ConstraintState.standard});
   final String? name;
   final List<String> columns;
 
-  PrimaryKeyDef copyWith({Object? name = _unset, List<String>? columns}) =>
-      PrimaryKeyDef(name: name == _unset ? this.name : name as String?, columns: columns ?? this.columns);
+  /// SQL Server CLUSTERED / NONCLUSTERED (null: the server default).
+  final bool? clustered;
+  final ConstraintState state;
+
+  PrimaryKeyDef copyWith({
+    Object? name = _unset,
+    List<String>? columns,
+    Object? clustered = _unset,
+    ConstraintState? state,
+  }) => PrimaryKeyDef(
+    name: name == _unset ? this.name : name as String?,
+    columns: columns ?? this.columns,
+    clustered: clustered == _unset ? this.clustered : clustered as bool?,
+    state: state ?? this.state,
+  );
+}
+
+/// UNIQUE constraint (an index created with CREATE UNIQUE INDEX is an
+/// [IndexDef] instead).
+class UniqueDef {
+  const UniqueDef({this.name, required this.columns, this.state = ConstraintState.standard});
+  final String? name;
+  final List<String> columns;
+  final ConstraintState state;
+
+  String signature({bool ignoreCase = true}) {
+    final s = columns.join(',');
+    return ignoreCase ? s.toLowerCase() : s;
+  }
+
+  UniqueDef copyWith({Object? name = _unset, List<String>? columns, ConstraintState? state}) => UniqueDef(
+    name: name == _unset ? this.name : name as String?,
+    columns: columns ?? this.columns,
+    state: state ?? this.state,
+  );
+}
+
+/// CHECK constraint (column checks are kept as table checks).
+class CheckDef {
+  const CheckDef({this.name, required this.expression, this.state = ConstraintState.standard});
+  final String? name;
+
+  /// Boolean expression, without the surrounding CHECK ( ).
+  final String expression;
+  final ConstraintState state;
+
+  /// Expression normalized for comparisons: DBMS add parentheses, casts and
+  /// change spacing and keyword case.
+  String get normalized => normalizeExpression(expression);
+
+  CheckDef copyWith({Object? name = _unset, String? expression, ConstraintState? state}) => CheckDef(
+    name: name == _unset ? this.name : name as String?,
+    expression: expression ?? this.expression,
+    state: state ?? this.state,
+  );
+}
+
+/// Normalizes an SQL expression for comparisons: outer parentheses,
+/// PostgreSQL casts, quotes around identifiers, blanks and case outside
+/// string literals.
+String normalizeExpression(String expr) {
+  // Code and string literal segments: only the code is normalized.
+  final parts = <(bool, String)>[];
+  final cur = StringBuffer();
+  var inString = false;
+  for (var i = 0; i < expr.length; i++) {
+    final ch = expr[i];
+    if (ch == "'") {
+      if (inString) {
+        cur.write(ch);
+        // '' inside a literal
+        if (i + 1 < expr.length && expr[i + 1] == "'") {
+          cur.write("'");
+          i++;
+          continue;
+        }
+        parts.add((true, cur.toString()));
+        cur.clear();
+        inString = false;
+        continue;
+      }
+      parts.add((false, cur.toString()));
+      cur.clear();
+      inString = true;
+    }
+    cur.write(ch);
+  }
+  parts.add((inString, cur.toString()));
+  String code(String c) {
+    var s = c.toLowerCase().replaceAll(RegExp(r'["`\[\]]'), '');
+    s = s.replaceAll(
+      RegExp(r'::[a-z_]+( varying| precision| without time zone| with time zone)?(\[\])?(\(\d+(,\d+)?\))?'),
+      '',
+    );
+    s = s.replaceAll(RegExp(r'\s+'), ' ');
+    return s.replaceAllMapped(RegExp(r'\s*([(),=<>+\-*/])\s*'), (m) => m[1]!);
+  }
+
+  var s = parts.map((p) => p.$1 ? p.$2 : code(p.$2)).join().trim();
+  // Casts after a literal ('a'::text) are in the code segment that follows.
+  s = s.replaceAll(RegExp(r"(?<=')::[a-z_]+( varying)?"), '');
+  // Redundant parentheses around the whole expression and around single
+  // terms (not function calls: `lower(x)` keeps them).
+  for (var i = 0; i < 10; i++) {
+    final before = s;
+    if (s.startsWith('(') && s.endsWith(')') && _balanced(s.substring(1, s.length - 1))) {
+      s = s.substring(1, s.length - 1).trim();
+    }
+    s = s.replaceAllMapped(RegExp(r"(?<![a-z0-9_$])\(([a-z_][a-z0-9_.]*|'[^']*'|-?\d+(\.\d+)?)\)"), (m) => m[1]!);
+    if (s == before) break;
+  }
+  return s;
 }
 
 class ForeignKeyDef {
@@ -300,6 +511,8 @@ class ForeignKeyDef {
     required this.refColumns,
     this.onDelete = FkRule.noAction,
     this.onUpdate = FkRule.noAction,
+    this.match = FkMatch.simple,
+    this.state = ConstraintState.standard,
   });
 
   final String? name;
@@ -310,6 +523,8 @@ class ForeignKeyDef {
   final List<String> refColumns;
   final FkRule onDelete;
   final FkRule onUpdate;
+  final FkMatch match;
+  final ConstraintState state;
 
   factory ForeignKeyDef.fromDb(DbForeignKey f) => ForeignKeyDef(
     name: f.name,
@@ -337,6 +552,8 @@ class ForeignKeyDef {
     List<String>? refColumns,
     FkRule? onDelete,
     FkRule? onUpdate,
+    FkMatch? match,
+    ConstraintState? state,
   }) => ForeignKeyDef(
     name: name == _unset ? this.name : name as String?,
     columns: columns ?? this.columns,
@@ -346,24 +563,90 @@ class ForeignKeyDef {
     refColumns: refColumns ?? this.refColumns,
     onDelete: onDelete ?? this.onDelete,
     onUpdate: onUpdate ?? this.onUpdate,
+    match: match ?? this.match,
+    state: state ?? this.state,
   );
 }
 
 class IndexDef {
-  const IndexDef({required this.name, required this.columns, this.unique = false});
+  const IndexDef({
+    required this.name,
+    required this.columns,
+    this.unique = false,
+    this.descending = const {},
+    this.include = const [],
+    this.where,
+    this.method,
+    this.clustered = false,
+    this.enabled = true,
+  });
   final String name;
+
+  /// Indexed columns, in order. An entry in parentheses is an expression:
+  /// `(lower(email))`.
   final List<String> columns;
   final bool unique;
 
+  /// Columns (of [columns]) sorted in descending order.
+  final Set<String> descending;
+
+  /// Non-key columns stored in the index (INCLUDE).
+  final List<String> include;
+
+  /// Filter of a partial index (without WHERE).
+  final String? where;
+
+  /// Access method (btree, hash, gin, gist, brin, bitmap…); null: default.
+  final String? method;
+
+  /// SQL Server clustered index.
+  final bool clustered;
+
+  /// False when disabled (SQL Server DISABLE, Oracle UNUSABLE, MySQL
+  /// INVISIBLE, MariaDB IGNORED, Firebird INACTIVE).
+  final bool enabled;
+
+  static bool isExpression(String column) => column.trimLeft().startsWith('(');
+
   factory IndexDef.fromDb(DbIndex i) => IndexDef(name: i.name, columns: List.of(i.columns), unique: i.unique);
 
+  bool isDescending(String column) => descending.contains(column);
+
+  /// Structure for comparisons (the name is not part of it).
   String signature({bool ignoreCase = true}) {
-    final s = '${unique ? 'u' : ''}(${columns.join(',')})';
+    String c(String col) => isExpression(col) ? normalizeExpression(col) : col;
+    final m = method?.toLowerCase();
+    final s = [
+      '${unique ? 'u' : ''}(${columns.map((x) => '${c(x)}${isDescending(x) ? ' desc' : ''}').join(',')})',
+      if (include.isNotEmpty) 'include(${include.join(',')})',
+      if (where != null && where!.trim().isNotEmpty) 'where ${normalizeExpression(where!)}',
+      if (m != null && m.isNotEmpty && m != 'btree') 'using $m',
+      if (clustered) 'clustered',
+    ].join(' ');
     return ignoreCase ? s.toLowerCase() : s;
   }
 
-  IndexDef copyWith({String? name, List<String>? columns, bool? unique}) =>
-      IndexDef(name: name ?? this.name, columns: columns ?? this.columns, unique: unique ?? this.unique);
+  IndexDef copyWith({
+    String? name,
+    List<String>? columns,
+    bool? unique,
+    Set<String>? descending,
+    List<String>? include,
+    Object? where = _unset,
+    Object? method = _unset,
+    bool? clustered,
+    bool? enabled,
+  }) => IndexDef(
+    name: name ?? this.name,
+    columns: columns ?? this.columns,
+    unique: unique ?? this.unique,
+    descending: descending ?? this.descending,
+    include: include ?? this.include,
+    where: where == _unset ? this.where : where as String?,
+    method: method == _unset ? this.method : method as String?,
+    clustered: clustered ?? this.clustered,
+    enabled: enabled ?? this.enabled,
+  );
 }
 
 /// A table definition. [originalName] is the name of the table in the
@@ -377,8 +660,11 @@ class TableDef {
     this.primaryKey,
     this.foreignKeys = const [],
     this.indexes = const [],
+    this.uniques = const [],
+    this.checks = const [],
     this.comment,
     this.originalName,
+    this.options = const {},
   });
 
   final String? catalog;
@@ -388,8 +674,14 @@ class TableDef {
   final PrimaryKeyDef? primaryKey;
   final List<ForeignKeyDef> foreignKeys;
   final List<IndexDef> indexes;
+  final List<UniqueDef> uniques;
+  final List<CheckDef> checks;
   final String? comment;
   final String? originalName;
+
+  /// Storage options by dialect: `engine`, `charset`, `collation` (MySQL),
+  /// `unlogged`, `tablespace` (PostgreSQL, Oracle), `filegroup` (SQL Server).
+  final Map<String, String> options;
 
   /// Builds the definition from metadata. The index backing the primary key
   /// and SQLite automatic indexes are left out.
@@ -452,8 +744,11 @@ class TableDef {
     Object? primaryKey = _unset,
     List<ForeignKeyDef>? foreignKeys,
     List<IndexDef>? indexes,
+    List<UniqueDef>? uniques,
+    List<CheckDef>? checks,
     Object? comment = _unset,
     Object? originalName = _unset,
+    Map<String, String>? options,
   }) => TableDef(
     catalog: catalog == _unset ? this.catalog : catalog as String?,
     schema: schema == _unset ? this.schema : schema as String?,
@@ -462,8 +757,11 @@ class TableDef {
     primaryKey: primaryKey == _unset ? this.primaryKey : primaryKey as PrimaryKeyDef?,
     foreignKeys: foreignKeys ?? this.foreignKeys,
     indexes: indexes ?? this.indexes,
+    uniques: uniques ?? this.uniques,
+    checks: checks ?? this.checks,
     comment: comment == _unset ? this.comment : comment as String?,
     originalName: originalName == _unset ? this.originalName : originalName as String?,
+    options: options ?? this.options,
   );
 }
 

@@ -17,8 +17,10 @@
 import 'dart:io';
 
 import 'package:dbcraft/features/design/capabilities.dart';
+import 'package:dbcraft/features/design/catalog/design_catalog.dart';
 import 'package:dbcraft/features/schema/ddl_builder.dart';
 import 'package:dbcraft/features/schema/schema_diff.dart';
+import 'package:dbcraft/features/schema/schema_migration.dart';
 import 'package:dbcraft/features/schema/schema_model.dart';
 import 'package:dbcraft/features/schema/schema_snapshot.dart';
 import 'package:dbcraft/model/connection_config.dart';
@@ -131,21 +133,35 @@ Future<void> run(DbConnection dc, List<String> statements) async {
   dc.schemaChanged();
 }
 
-/// [expected] as read back from the database.
+/// [expected] as read back from the database (ODBC metadata plus the DBMS
+/// catalog).
 Future<TableDef> readBack(DbConnection dc, TableDef expected) async {
   final t = await dc.metadata!.findTable(expected.catalog, expected.schema, expected.name);
   expect(t, isNotNull, reason: 'Tabella ${expected.name} non trovata');
-  return TableDef.fromDetails(await dc.metadata!.tableDetails(t!));
+  return DesignCatalog.of(dc)!.loadTable(t!);
+}
+
+SchemaDiff compare(DbConnection dc, TableDef wanted, TableDef actual) {
+  final family = dc.dialect.family;
+  return SchemaDiff.compare(
+    SchemaSnapshot(tables: [wanted.copyWith(catalog: null, schema: null)], family: family),
+    SchemaSnapshot(tables: [actual.copyWith(catalog: null, schema: null)], family: family),
+  );
 }
 
 /// Changes still needed to turn [actual] into [expected] (empty = faithful).
-List<String> differences(DbConnection dc, TableDef expected, TableDef actual) {
-  final family = dc.dialect.family;
-  final diff = SchemaDiff.compare(
-    SchemaSnapshot(tables: [expected.copyWith(catalog: null, schema: null)], family: family),
-    SchemaSnapshot(tables: [actual.copyWith(catalog: null, schema: null)], family: family),
+List<String> differences(DbConnection dc, TableDef expected, TableDef actual) => [
+  for (final c in compare(dc, expected, actual).changes) c.label,
+];
+
+/// Runs the migration from what is in the database to [wanted].
+Future<void> migrateTo(DbConnection dc, TableDef wanted) async {
+  final actual = await readBack(dc, wanted);
+  final diff = compare(dc, wanted, actual.copyWith(catalog: wanted.catalog, schema: wanted.schema));
+  await run(
+    dc,
+    SchemaMigration(dc.dialect).generate(diff, options: const MigrationOptions(relocate: false, dropExtra: true)),
   );
-  return [for (final c in diff.changes) c.label];
 }
 
 void main() {
@@ -192,6 +208,74 @@ void main() {
           await run(dc, b.dropTable(table));
         }
         expect(await dc.metadata!.findTable(null, null, table.name), isNull);
+      });
+
+      test('constraints and indexes round trip', () async {
+        final b = DdlBuilder(dc.dialect);
+        final caps = DesignCapabilities.of(dc.dialect);
+        final parent = TableDef(
+          name: 'dbc_rp_$suffix',
+          columns: const [ColumnDef(name: 'id', type: 'integer', nullable: false)],
+          primaryKey: PrimaryKeyDef(name: 'pk_dbc_rp_$suffix', columns: const ['id']),
+        );
+        final child = TableDef(
+          name: 'dbc_rc_$suffix',
+          columns: const [
+            ColumnDef(name: 'id', type: 'integer', nullable: false),
+            ColumnDef(name: 'code', type: 'varchar', size: 20, nullable: false),
+            ColumnDef(name: 'qty', type: 'integer'),
+            ColumnDef(name: 'parent_id', type: 'integer'),
+          ],
+          primaryKey: PrimaryKeyDef(name: 'pk_dbc_rc_$suffix', columns: const ['id']),
+          uniques: [
+            UniqueDef(name: 'uq_dbc_rc_$suffix', columns: const ['code']),
+          ],
+          checks: [
+            if (caps.has(DesignFeature.checkConstraints)) CheckDef(name: 'ck_dbc_rc_$suffix', expression: 'qty > 0'),
+          ],
+          foreignKeys: [
+            ForeignKeyDef(
+              name: 'fk_dbc_rc_$suffix',
+              columns: const ['parent_id'],
+              refTable: parent.name,
+              refColumns: const ['id'],
+              onDelete: FkRule.cascade,
+            ),
+          ],
+          indexes: [
+            if (caps.has(DesignFeature.indexes))
+              IndexDef(
+                name: 'ix_dbc_rc_$suffix',
+                columns: const ['qty', 'parent_id'],
+                descending: caps.has(DesignFeature.indexDescending) && dc.dialect.family != DbFamily.firebird
+                    ? const {'qty'}
+                    : const {},
+              ),
+          ],
+        );
+        await run(dc, [
+          ...b.createTable(parent),
+          ...b.createSchema([child]),
+        ]);
+        try {
+          expect(differences(dc, child, await readBack(dc, child)), isEmpty);
+
+          // Alter through the migration: another check, a second unique, no index.
+          final changed = child.copyWith(
+            checks: [
+              if (caps.has(DesignFeature.checkConstraints)) CheckDef(name: 'ck_dbc_rc_$suffix', expression: 'qty >= 0'),
+            ],
+            uniques: [
+              ...child.uniques,
+              UniqueDef(name: 'uq_dbc_rc2_$suffix', columns: const ['code', 'qty']),
+            ],
+            indexes: const [],
+          );
+          await migrateTo(dc, changed);
+          expect(differences(dc, changed, await readBack(dc, changed)), isEmpty);
+        } finally {
+          await run(dc, b.dropSchema([child, parent]));
+        }
       });
     });
   }

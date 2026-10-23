@@ -212,6 +212,8 @@ class DesignCapabilities {
         no([
           DesignFeature.disableConstraints,
           DesignFeature.addNotValidated,
+        ], '$name non applica i vincoli: non serve disabilitarli né validarli');
+        no([
           DesignFeature.indexes,
           DesignFeature.indexDescending,
           DesignFeature.indexInclude,

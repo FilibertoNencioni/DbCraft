@@ -8,10 +8,21 @@
 // ALL_* → USER_*).
 
 import '../../../drivers/db_session.dart';
+import '../../../model/db_objects.dart';
 import '../../../odbc/odbc_types.dart';
 import '../../../services/metadata_service.dart';
 import '../../../services/sql_dialect.dart';
 import '../../../state/db_connection.dart';
+import '../../schema/schema_model.dart';
+import 'db2.dart';
+import 'firebird.dart';
+import 'mssql.dart';
+import 'mysql.dart';
+import 'oracle.dart';
+import 'pg.dart';
+import 'snowflake.dart';
+import 'sqlite.dart';
+import 'table_extras.dart';
 
 /// A catalog row keyed by lower-case column name.
 typedef CatalogRow = Map<String, Object?>;
@@ -113,6 +124,34 @@ class DesignCatalog {
     final md = dc.metadata;
     if (md == null) return null;
     return DesignCatalog(md);
+  }
+
+  /// Extras of table [t] (empty for DBMS without a reader). Cached until the
+  /// next schema change.
+  Future<TableExtras> tableExtras(DbTable t) => metadata.cached('design:table:${t.key}', () async {
+    return switch (dialect.family) {
+      DbFamily.postgres => readPostgresTable(queries, t),
+      DbFamily.sqlServer => readSqlServerTable(queries, t),
+      DbFamily.mysql => readMySqlTable(queries, dialect, t),
+      DbFamily.oracle => readOracleTable(queries, t),
+      DbFamily.db2 => readDb2Table(queries, t),
+      DbFamily.sqlite => readSqliteTable(queries, t),
+      DbFamily.firebird => readFirebirdTable(queries, t),
+      DbFamily.snowflake => readSnowflakeTable(queries, dialect, t),
+      _ => TableExtras.none,
+    };
+  });
+
+  /// Complete definition of table [t]: the ODBC metadata plus the
+  /// [tableExtras]. When the extras cannot be read (missing privileges, old
+  /// server) the ODBC definition is returned.
+  Future<TableDef> loadTable(DbTable t) async {
+    final base = TableDef.fromDetails(await metadata.tableDetails(t));
+    try {
+      return applyTableExtras(base, await tableExtras(t));
+    } catch (_) {
+      return base;
+    }
   }
 
   /// Cached rows of the first working alternative.

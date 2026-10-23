@@ -3,6 +3,8 @@ import 'dart:async';
 import '../../model/db_objects.dart';
 import '../../services/metadata_service.dart';
 import '../../services/sql_dialect.dart';
+import '../design/catalog/design_catalog.dart';
+import '../design/catalog/table_extras.dart';
 import 'schema_model.dart';
 
 /// Thrown by [SchemaSnapshot.load] when the operation is cancelled.
@@ -49,6 +51,8 @@ class SchemaSnapshot {
   /// queued on the metadata session anyway, this keeps the pipe full without
   /// flooding it). [filter] selects the tables to include; views and system
   /// tables are always skipped. [onProgress] reports (done, total, table).
+  /// [withExtras] also reads what ODBC does not expose (UNIQUE and CHECK
+  /// constraints, index attributes, collations…) from the DBMS catalog.
   static Future<SchemaSnapshot> load(
     MetadataService md, {
     String? catalog,
@@ -58,6 +62,7 @@ class SchemaSnapshot {
     void Function(int done, int total, String table)? onProgress,
     CancelToken? cancel,
     String label = '',
+    bool withExtras = false,
   }) async {
     final all = await md.tables(catalog, schema);
     cancel?.check();
@@ -78,13 +83,22 @@ class SchemaSnapshot {
         final t = tables[i];
         final parts = await Future.wait<Object?>([md.columns(t), md.primaryKey(t), md.foreignKeys(t), md.indexes(t)]);
         cancel?.check();
-        result[i] = TableDef.fromMetadata(
+        var def = TableDef.fromMetadata(
           t,
           parts[0] as List<DbColumn>,
           primaryKey: parts[1] as DbPrimaryKey?,
           foreignKeys: parts[2] as List<DbForeignKey>,
           indexes: parts[3] as List<DbIndex>,
         );
+        if (withExtras) {
+          try {
+            def = applyTableExtras(def, await DesignCatalog(md).tableExtras(t));
+          } catch (_) {
+            // Catalog not readable: the ODBC definition is kept.
+          }
+          cancel?.check();
+        }
+        result[i] = def;
         done++;
         onProgress?.call(done, tables.length, t.name);
       }
