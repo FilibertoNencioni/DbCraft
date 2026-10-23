@@ -7,6 +7,8 @@ import '../../features/ai/ai.dart';
 import '../../features/data_compare/data_compare_tab.dart';
 import '../../features/debugger/pg_debugger_tab.dart';
 import '../../features/design/ddl_script.dart';
+import '../../features/design/table_design.dart';
+import '../../features/design/ui/constraint_dialogs.dart';
 import '../../features/design/ui/design_actions.dart' as design;
 import '../../features/design/ui/design_menu.dart';
 import '../../features/schema/ddl_builder.dart';
@@ -441,8 +443,13 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               if (mounted) showToast(this.context, 'Catalogo attivo: ${c.catalog}');
             });
           }),
-          _item('Diagramma ER', () => app.openErDiagram(dc!, c.catalog, null)),
-          if (dc!.dialect.isSql)
+          if (designAvailable(dc!) && !simple)
+            _item(
+              'Nuova tabella…',
+              dc.config.readOnly ? null : () => app.openNewTable(dc, catalog: c.catalog),
+            ),
+          _item('Diagramma ER', () => app.openErDiagram(dc, c.catalog, null)),
+          if (dc.dialect.isSql)
             _item(
               'Query builder…',
               () => app.openFeatureTab(QueryBuilderTab(dc, catalog: c.catalog)),
@@ -458,8 +465,13 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       case SchemaNode s:
         items.addAll([
           _item('Nuovo editor SQL', () => app.openSqlEditor(dc, catalog: s.catalog)),
-          _item('Diagramma ER', () => app.openErDiagram(dc!, s.catalog, s.schema)),
-          if (dc!.dialect.isSql)
+          if (designAvailable(dc!) && !simple)
+            _item(
+              'Nuova tabella…',
+              dc.config.readOnly ? null : () => app.openNewTable(dc, catalog: s.catalog, schema: s.schema),
+            ),
+          _item('Diagramma ER', () => app.openErDiagram(dc, s.catalog, s.schema)),
+          if (dc.dialect.isSql)
             _item(
               'Query builder…',
               () => app.openFeatureTab(QueryBuilderTab(dc, catalog: s.catalog, schema: s.schema)),
@@ -507,7 +519,9 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           ],
           if (!tb.isView && d.isSql && !simple) ...[
             const MenuEntry.divider(),
+            _item('Modifica struttura', dc.config.readOnly ? null : () => app.openTable(dc, tb, page: 2)),
             createConstraintMenu(context, dc, tb),
+            _item('Duplica struttura…', dc.config.readOnly ? null : () => _duplicate(dc, tb)),
           ],
           const MenuEntry.divider(),
           _item('Esporta dati…', () => showTableExportDialog(context, dc, tb)),
@@ -586,7 +600,16 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         } else {
           items.addAll(constraintMenu(context, k, refresh: () => _refreshParent(k)));
         }
-      case ObjectFolderNode _:
+      case ObjectFolderNode f:
+        if (f.kind == ObjectKind.tables && designAvailable(dc!) && !simple) {
+          items.addAll([
+            _item(
+              'Nuova tabella…',
+              dc.config.readOnly ? null : () => app.openNewTable(dc, catalog: f.catalog, schema: f.schema),
+            ),
+            const MenuEntry.divider(),
+          ]);
+        }
         items.add(_item('Aggiorna', () => _refresh(n), shortcut: _refreshKey));
       case LeafNode l:
         items.add(_item('Copia nome', () => Clipboard.setData(ClipboardData(text: l.name))));
@@ -603,6 +626,20 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       if (!mounted) return;
       showToast(context, '${t.name}: ${r.rows.first.first} righe');
     });
+  }
+
+  /// New table with the structure of [t].
+  Future<void> _duplicate(DbConnection dc, DbTable t) async {
+    final name = await promptText(context, 'Duplica struttura di ${t.name}', label: 'Nome della nuova tabella', initial: '${t.name}_copia');
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    final def = await loadDesignTable(dc, t);
+    if (def == null || !mounted) return;
+    AppScope.read(context).openNewTable(
+      dc,
+      catalog: t.catalog,
+      schema: t.schema,
+      template: TableDesign.copyOf(dc.dialect, def, name.trim()),
+    );
   }
 
   /// Refreshes the node listing [n].

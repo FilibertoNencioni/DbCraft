@@ -10,6 +10,8 @@ import '../../../ui/widgets/common.dart';
 import '../../schema/schema_model.dart';
 import '../capabilities.dart';
 import '../catalog/design_catalog.dart';
+import '../table_design.dart';
+import 'constraint_dialogs.dart';
 import 'design_actions.dart' as actions;
 import 'design_menu.dart';
 
@@ -17,6 +19,9 @@ import 'design_menu.dart';
 abstract class _TablePageState<W extends StatefulWidget> extends State<W> {
   DbConnection get dc;
   DbTable get table;
+
+  /// Table designer session: the page edits it instead of the database.
+  TableDesign? get design;
 
   Future<(TableDef, List<DbForeignKey>)>? _future;
   int _generation = 0;
@@ -44,6 +49,14 @@ abstract class _TablePageState<W extends StatefulWidget> extends State<W> {
 
   Future<(TableDef, List<DbForeignKey>)>? _read() {
     final cat = DesignCatalog.of(dc);
+    final d = design;
+    if (d != null) {
+      // Only the references come from the database; the design is live.
+      return () async {
+        final refs = d.isNew || dc.metadata == null ? const <DbForeignKey>[] : await dc.metadata!.referencedBy(table);
+        return (d.working, refs);
+      }();
+    }
     if (cat == null) return null;
     return () async {
       final t = await cat.loadTable(table);
@@ -66,6 +79,14 @@ abstract class _TablePageState<W extends StatefulWidget> extends State<W> {
   Widget buildWith(Widget Function(TableDef t, List<DbForeignKey> refs) builder) {
     final f = _future;
     if (f == null) return const Center(child: Spinner(size: Spinner.large));
+    final d = design;
+    if (d != null) {
+      return FutureBuilder(
+        future: f,
+        builder: (context, snap) =>
+            ListenableBuilder(listenable: d, builder: (context, _) => builder(d.working, snap.data?.$2 ?? const [])),
+      );
+    }
     return FutureBuilder(
       future: f,
       builder: (context, snap) {
@@ -77,6 +98,44 @@ abstract class _TablePageState<W extends StatefulWidget> extends State<W> {
     );
   }
 }
+
+/// Opens the sheet of [kind] (null: an index) on the design and applies the
+/// result to its working definition; [old] is the edited item.
+Future<void> designEdit(BuildContext context, DbConnection dc, TableDesign d, Object? old, Object kind) async {
+  final t = d.working;
+  final ctx = ConstraintContext(dialect: dc.dialect, table: t, connection: d.isNew ? null : dc, isNew: d.isNew);
+  Object? now;
+  switch (kind) {
+    case ConstraintKind.primaryKey:
+      now = (await showPrimaryKeyDialog(context, ctx, initial: old as PrimaryKeyDef? ?? t.primaryKey))?.value;
+    case ConstraintKind.unique:
+      now = (await showUniqueDialog(context, ctx, initial: old as UniqueDef?))?.value;
+    case ConstraintKind.check:
+      now = (await showCheckDialog(context, ctx, initial: old as CheckDef?))?.value;
+    case ConstraintKind.foreignKey:
+      final tables = await referenceCandidates(dc, t);
+      if (!context.mounted) return;
+      now = (await showForeignKeyDialog(
+        context,
+        ctx,
+        initial: old as ForeignKeyDef?,
+        tables: tables,
+        loadTable: (x) => x.name == t.name && x.schema == t.schema ? Future.value(t) : loadDesignTable(dc, x),
+      ))?.value;
+    default:
+      now = (await showIndexDialog(context, ctx, initial: old as IndexDef?))?.value;
+  }
+  if (now == null) return;
+  d.replace(kind == ConstraintKind.primaryKey ? t.primaryKey : old, now);
+}
+
+ConstraintKind? _kindOf(Object c) => switch (c) {
+  PrimaryKeyDef _ => ConstraintKind.primaryKey,
+  UniqueDef _ => ConstraintKind.unique,
+  CheckDef _ => ConstraintKind.check,
+  ForeignKeyDef _ => ConstraintKind.foreignKey,
+  _ => null,
+};
 
 /// Section with a title, an "add" button and its rows.
 class _Section extends StatelessWidget {
@@ -138,10 +197,16 @@ Widget _row(
   required bool editable,
   required VoidCallback refresh,
   bool referencing = false,
+  TableDesign? design,
 }) {
   final c = DbColors.of(context);
   final node = ConstraintNode(dc, table, def, referencing: referencing);
-  final ro = dc.config.readOnly || !editable;
+  final ro = (dc.config.readOnly && design == null) || !editable;
+  final mark = design == null || referencing ? ColumnMark.none : design.constraintMark(def);
+  void edit() => design != null
+      ? designEdit(context, dc, design, def, _kindOf(def) ?? 'index')
+      : actions.editConstraint(context, dc, table, def);
+  void drop() => design != null ? design.replace(def, null) : actions.dropConstraint(context, dc, table, def);
   return ListRow(
     index: index,
     zebra: true,
@@ -154,10 +219,18 @@ Widget _row(
         ? c.foreignKeyIcon
         : c.textSecondary,
     title: node.label,
-    subtitle: node.detail,
-    titleColor: node.enabled ? null : c.textTertiary,
-    onDoubleTap: ro || referencing ? null : () => actions.editConstraint(context, dc, table, def),
-    onMenu: !editable
+    subtitle: switch (mark) {
+      ColumnMark.added => '${node.detail} · nuovo',
+      ColumnMark.changed => '${node.detail} · modificato',
+      ColumnMark.none => node.detail,
+    },
+    titleColor: switch (mark) {
+      ColumnMark.added => c.diffAdded,
+      ColumnMark.changed => c.diffChanged,
+      ColumnMark.none => node.enabled ? null : c.textTertiary,
+    },
+    onDoubleTap: ro || referencing ? null : edit,
+    onMenu: !editable || design != null
         ? null
         : (pos) => showMacMenu<void>(
             context,
@@ -169,28 +242,18 @@ Widget _row(
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ToolButton(
-                icon: AppIcons.edit,
-                extent: 18,
-                tooltip: 'Modifica',
-                onPressed: () => actions.editConstraint(context, dc, table, def),
-              ),
-              ToolButton(
-                icon: AppIcons.delete,
-                extent: 18,
-                color: c.danger,
-                tooltip: 'Elimina',
-                onPressed: () => actions.dropConstraint(context, dc, table, def),
-              ),
+              ToolButton(icon: AppIcons.edit, extent: 18, tooltip: 'Modifica', onPressed: edit),
+              ToolButton(icon: AppIcons.delete, extent: 18, color: c.danger, tooltip: 'Elimina', onPressed: drop),
             ],
           ),
   );
 }
 
 class ConstraintsPage extends StatefulWidget {
-  const ConstraintsPage({super.key, required this.connection, required this.table, this.editable = true});
+  const ConstraintsPage({super.key, required this.connection, required this.table, this.editable = true, this.design});
   final DbConnection connection;
   final DbTable table;
+  final TableDesign? design;
 
   /// False in the simplified analyst view.
   final bool editable;
@@ -204,15 +267,31 @@ class _ConstraintsPageState extends _TablePageState<ConstraintsPage> {
   DbConnection get dc => widget.connection;
   @override
   DbTable get table => widget.table;
+  @override
+  TableDesign? get design => widget.design;
 
   @override
   Widget build(BuildContext context) => buildWith((t, refs) {
     final caps = DesignCapabilities.of(dc.dialect);
     final editable = widget.editable && dc.dialect.isSql;
-    final ro = dc.config.readOnly || !editable;
-    VoidCallback? add(ConstraintKind k) => ro ? null : () => actions.createConstraint(context, dc, table, k);
-    Widget row(Object def, int i, {bool referencing = false, DbTable? on}) =>
-        _row(context, dc, on ?? table, def, i, editable: editable, refresh: reload, referencing: referencing);
+    final d = design;
+    final ro = (dc.config.readOnly && d == null) || !editable;
+    VoidCallback? add(ConstraintKind k) => ro
+        ? null
+        : d != null
+        ? () => designEdit(context, dc, d, null, k)
+        : () => actions.createConstraint(context, dc, table, k);
+    Widget row(Object def, int i, {bool referencing = false, DbTable? on}) => _row(
+      context,
+      dc,
+      on ?? table,
+      def,
+      i,
+      editable: editable,
+      refresh: reload,
+      referencing: referencing,
+      design: referencing ? null : d,
+    );
     return ListView(
       padding: const EdgeInsets.all(Gap.lg),
       children: [
@@ -269,9 +348,10 @@ class _ConstraintsPageState extends _TablePageState<ConstraintsPage> {
 }
 
 class IndexesPage extends StatefulWidget {
-  const IndexesPage({super.key, required this.connection, required this.table, this.editable = true});
+  const IndexesPage({super.key, required this.connection, required this.table, this.editable = true, this.design});
   final DbConnection connection;
   final DbTable table;
+  final TableDesign? design;
   final bool editable;
 
   @override
@@ -283,6 +363,8 @@ class _IndexesPageState extends _TablePageState<IndexesPage> {
   DbConnection get dc => widget.connection;
   @override
   DbTable get table => widget.table;
+  @override
+  TableDesign? get design => widget.design;
 
   @override
   Widget build(BuildContext context) => buildWith((t, _) {
@@ -291,7 +373,8 @@ class _IndexesPageState extends _TablePageState<IndexesPage> {
       return EmptyState(icon: AppIcons.sort, title: 'Nessun indice', message: caps.reason(DesignFeature.indexes)!);
     }
     final editable = widget.editable && dc.dialect.isSql;
-    final ro = dc.config.readOnly || !editable;
+    final d = design;
+    final ro = (dc.config.readOnly && d == null) || !editable;
     String details(IndexDef i) => [
       if (i.include.isNotEmpty) 'INCLUDE (${i.include.join(', ')})',
       if (i.where != null) 'WHERE ${i.where}',
@@ -304,13 +387,17 @@ class _IndexesPageState extends _TablePageState<IndexesPage> {
         _Section(
           title: 'Indici',
           addTooltip: editable ? 'Nuovo indice' : null,
-          onAdd: ro ? null : () => actions.createConstraint(context, dc, table, null),
+          onAdd: ro
+              ? null
+              : d != null
+              ? () => designEdit(context, dc, d, null, 'index')
+              : () => actions.createConstraint(context, dc, table, null),
           empty: 'Nessun indice oltre a quelli delle chiavi',
           rows: [
             for (final (i, ix) in t.indexes.indexed)
               Tooltip(
                 message: details(ix),
-                child: _row(context, dc, table, ix, i, editable: editable, refresh: reload),
+                child: _row(context, dc, table, ix, i, editable: editable, refresh: reload, design: d),
               ),
           ],
         ),

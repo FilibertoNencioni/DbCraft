@@ -18,7 +18,10 @@ import '../../schema/schema_model.dart';
 import '../../schema/schema_snapshot.dart';
 import '../catalog/design_catalog.dart';
 import '../ddl_script.dart';
+import '../table_design.dart';
 import 'constraint_dialogs.dart';
+
+export '../table_design.dart' show replaceConstraint, constraintName;
 
 /// Human name of a constraint or index.
 String constraintLabel(Object c) => switch (c) {
@@ -29,47 +32,6 @@ String constraintLabel(Object c) => switch (c) {
   IndexDef i => 'l\'indice ${i.name}',
   _ => 'l\'oggetto',
 };
-
-String? _nameOf(Object c) => switch (c) {
-  PrimaryKeyDef p => p.name,
-  UniqueDef u => u.name,
-  CheckDef k => k.name,
-  ForeignKeyDef f => f.name,
-  IndexDef i => i.name,
-  _ => null,
-};
-
-bool _same(Object a, Object b) {
-  if (a.runtimeType != b.runtimeType) return false;
-  final na = _nameOf(a), nb = _nameOf(b);
-  if (na != null && nb != null) return na.toLowerCase() == nb.toLowerCase();
-  return switch ((a, b)) {
-    (UniqueDef x, UniqueDef y) => x.signature() == y.signature(),
-    (CheckDef x, CheckDef y) => x.normalized == y.normalized,
-    (ForeignKeyDef x, ForeignKeyDef y) => x.signature() == y.signature(),
-    (PrimaryKeyDef _, PrimaryKeyDef _) => true,
-    _ => false,
-  };
-}
-
-/// [t] with [old] replaced by [now] (added when [old] is null, removed when
-/// [now] is null).
-TableDef replaceConstraint(TableDef t, Object? old, Object? now) {
-  List<T> swap<T extends Object>(List<T> items) => [
-    for (final x in items)
-      if (old == null || !_same(x, old)) x else if (now != null) now as T,
-    if (old == null && now is T) now,
-  ];
-  final kind = now ?? old!;
-  return switch (kind) {
-    PrimaryKeyDef _ => t.copyWith(primaryKey: now as PrimaryKeyDef?),
-    UniqueDef _ => t.copyWith(uniques: swap(t.uniques)),
-    CheckDef _ => t.copyWith(checks: swap(t.checks)),
-    ForeignKeyDef _ => t.copyWith(foreignKeys: swap(t.foreignKeys)),
-    IndexDef _ => t.copyWith(indexes: swap(t.indexes)),
-    _ => t,
-  };
-}
 
 /// Foreign keys of other tables referencing [t].
 Future<List<IncomingForeignKey>> incomingForeignKeys(DbConnection dc, TableDef t) async {
@@ -236,10 +198,10 @@ Future<bool> editConstraint(BuildContext context, DbConnection dc, DbTable table
 /// The definition in [t] of [c] (as read now from the database).
 Object? _find(TableDef t, Object c) => switch (c) {
   PrimaryKeyDef _ => t.primaryKey,
-  UniqueDef _ => t.uniques.where((x) => _same(x, c)).firstOrNull,
-  CheckDef _ => t.checks.where((x) => _same(x, c)).firstOrNull,
-  ForeignKeyDef _ => t.foreignKeys.where((x) => _same(x, c)).firstOrNull,
-  IndexDef _ => t.indexes.where((x) => _same(x, c)).firstOrNull,
+  UniqueDef _ => t.uniques.where((x) => sameConstraint(x, c)).firstOrNull,
+  CheckDef _ => t.checks.where((x) => sameConstraint(x, c)).firstOrNull,
+  ForeignKeyDef _ => t.foreignKeys.where((x) => sameConstraint(x, c)).firstOrNull,
+  IndexDef _ => t.indexes.where((x) => sameConstraint(x, c)).firstOrNull,
   _ => null,
 };
 
@@ -257,7 +219,7 @@ Future<bool> dropConstraint(BuildContext context, DbConnection dc, DbTable table
 }
 
 Future<bool> renameConstraint(BuildContext context, DbConnection dc, DbTable table, Object c) async {
-  final name = _nameOf(c);
+  final name = constraintName(c);
   final to = await promptText(context, 'Rinomina ${constraintLabel(c)}', label: 'Nuovo nome', initial: name ?? '');
   if (to == null || to.trim().isEmpty || to.trim() == name || !context.mounted) return false;
   final t = await _load(context, dc, table);

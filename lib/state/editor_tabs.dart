@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:re_editor/re_editor.dart';
 
+import '../features/design/table_design.dart';
 import '../model/db_objects.dart';
 import '../odbc/odbc_types.dart';
 import '../services/sql_splitter.dart';
@@ -502,9 +503,25 @@ class SqlEditorTab extends EditorTab {
 
 class TableEditorTab extends EditorTab {
   TableEditorTab(this._connection, this.table, {this.initialPage = 0});
+
+  /// Designer of a new table in [catalog].[schema] ([design] starts from
+  /// [template] when given: "Duplica struttura").
+  TableEditorTab.create(this._connection, {String? catalog, String? schema, TableDesign? template})
+    : table = DbTable(catalog: catalog, schema: schema, name: '', type: 'TABLE'),
+      initialPage = 0,
+      design = template ?? TableDesign.create(_connection.dialect, catalog: catalog, schema: schema);
+
   final DbConnection _connection;
-  final DbTable table;
+
+  /// The table; it changes when the designer renames or creates it.
+  DbTable table;
   int initialPage;
+
+  /// Table designer session (structure changes not yet applied).
+  TableDesign? design;
+
+  /// The table does not exist yet in the database.
+  bool get isNew => design?.isNew ?? false;
 
   /// Data tab state survives switching editor tabs.
   ResultSetModel? data;
@@ -514,17 +531,30 @@ class TableEditorTab extends EditorTab {
   @override
   DbConnection get connection => _connection;
   @override
-  String get title => table.name;
+  String get title {
+    if (!isNew) return table.name;
+    final n = design!.working.name;
+    return n.isEmpty ? 'Nuova tabella' : n;
+  }
+
   @override
-  String get tooltip => '${_connection.config.name}: ${table.displayPath}';
+  String get tooltip => isNew ? '${_connection.config.name}: $title (non salvata)' : '${_connection.config.name}: ${table.displayPath}';
   @override
   IconData get icon => table.isView ? AppIcons.erDiagram : AppIcons.table;
+
+  /// Unsaved data edits.
+  bool get dataDirty => data?.isDirty ?? false;
+
+  /// Unsaved structure edits (or a table not created yet).
+  bool get designDirty => design?.isDirty ?? false;
+
   @override
-  bool get isDirty => data?.isDirty ?? false;
+  bool get isDirty => dataDirty || designDirty;
 
   @override
   void dispose() {
     data?.close();
+    design?.dispose();
     super.dispose();
   }
 }

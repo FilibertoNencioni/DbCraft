@@ -3,7 +3,12 @@ import 'package:flutter/services.dart';
 
 import '../../features/query_builder/query_model.dart';
 import '../../features/query_builder/visual_filter.dart';
+import '../../features/design/capabilities.dart';
+import '../../features/design/catalog/design_catalog.dart';
+import '../../features/design/table_design.dart';
 import '../../features/design/ui/constraints_page.dart';
+import '../../features/design/ui/design_actions.dart';
+import '../../features/design/ui/table_designer.dart';
 import '../../features/schema/ddl_builder.dart';
 import '../../model/db_objects.dart';
 import '../../odbc/odbc_types.dart';
@@ -45,12 +50,29 @@ class _TableEditorViewState extends State<TableEditorView> {
   int? _rowCount;
   int _lastInitialPage = -1;
   int _schemaGeneration = 0;
+  String _tableKey = '';
+  TableDesign? _attached;
 
   TableEditorTab get tab => widget.tab;
   DbTable get table => tab.table;
+  TableDesign? get _design => tab.design;
 
   static const _pageData = 1;
-  static const _pageNames = ['Proprietà', 'Dati', 'Colonne', 'Vincoli', 'Indici', 'DDL', 'Diagramma'];
+  static const _pageChanges = 7;
+  static const _pageNames = ['Proprietà', 'Dati', 'Colonne', 'Vincoli', 'Indici', 'DDL', 'Diagramma', 'Modifiche'];
+
+  /// Pages of a table that does not exist yet.
+  static const _newPages = [0, 2, 3, 4, 7];
+
+  /// The structure can be edited here (the designer).
+  bool get _designable {
+    final c = tab.connection;
+    return !table.isView &&
+        c.dialect.isSql &&
+        !c.config.readOnly &&
+        !_simple &&
+        DesignCapabilities.of(c.dialect).has(DesignFeature.createTable);
+  }
 
   /// Columns of the table once the metadata is loaded (visual filter).
   List<DbColumn>? _columnsMeta;
@@ -71,8 +93,49 @@ class _TableEditorViewState extends State<TableEditorView> {
     _lastInitialPage = tab.initialPage;
     tab.addListener(_onTab);
     _schemaGeneration = tab.connection.schemaGeneration;
+    _tableKey = table.key;
     tab.connection.addListener(_onConnection);
+    _attachDesign();
     _init();
+  }
+
+  /// Follows the design: tab title and dirty mark, toolbar, pages.
+  void _attachDesign() {
+    final d = _design;
+    if (identical(d, _attached)) return;
+    _attached?.removeListener(_onDesign);
+    _attached = d;
+    d?.addListener(_onDesign);
+  }
+
+  void _onDesign() {
+    tab.refresh();
+    if (mounted) setState(() {});
+  }
+
+  /// Reads the complete definition for the designer (or refreshes a design
+  /// without pending changes).
+  Future<void> _loadDesign() async {
+    if (!_designable) return;
+    final cat = DesignCatalog.of(tab.connection);
+    if (cat == null) return;
+    try {
+      final def = await cat.loadTable(table);
+      if (!mounted) return;
+      final d = tab.design;
+      if (d == null) {
+        tab.design = TableDesign.existing(tab.connection.dialect, def);
+        _attachDesign();
+      } else if (!d.isDirty) {
+        d.saved(def);
+      }
+      final incoming = await incomingForeignKeys(tab.connection, def);
+      tab.design?.incoming = incoming;
+      tab.design?.refresh();
+    } catch (_) {
+      // The pages stay read-only.
+    }
+    if (mounted) setState(() {});
   }
 
   void _setPage(int page) {
@@ -82,6 +145,16 @@ class _TableEditorViewState extends State<TableEditorView> {
   }
 
   void _onTab() {
+    _attachDesign();
+    // Created or renamed by the designer.
+    if (table.key != _tableKey) {
+      _tableKey = table.key;
+      if (!tab.isNew) {
+        setState(() {
+          _details = tab.connection.metadata?.tableDetails(table);
+        });
+      }
+    }
     if (tab.initialPage != _lastInitialPage) {
       _lastInitialPage = tab.initialPage;
       _setPage(_effectivePage(tab.initialPage));
@@ -99,9 +172,14 @@ class _TableEditorViewState extends State<TableEditorView> {
     setState(() {
       _details = c.metadata!.tableDetails(table);
     });
+    if (_design != null && !_design!.isDirty) _loadDesign();
   }
 
   Future<void> _init() async {
+    if (tab.isNew) {
+      if (_page != 0 && !_newPages.contains(_page)) _page = 0;
+      return;
+    }
     if (!await ensureConnected(context, tab.connection)) return;
     setState(() {
       _details = tab.connection.metadata!.tableDetails(table);
@@ -110,10 +188,12 @@ class _TableEditorViewState extends State<TableEditorView> {
       if (mounted) setState(() => _columnsMeta = d.columns);
     }, onError: (_) {});
     if (_page == _pageData) _loadData();
+    if (_design == null) _loadDesign();
   }
 
   @override
   void dispose() {
+    _attached?.removeListener(_onDesign);
     tab.removeListener(_onTab);
     tab.connection.removeListener(_onConnection);
     _where.dispose();
@@ -195,6 +275,29 @@ class _TableEditorViewState extends State<TableEditorView> {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
+    final d = _design;
+    if (tab.isNew && d != null) {
+      return Column(
+        children: [
+          _header(app),
+          Expanded(
+            child: IndexedStack(
+              index: _page,
+              children: [
+                DesignPropertiesPage(design: d, connection: tab.connection),
+                const SizedBox(),
+                DesignColumnsPage(design: d, connection: tab.connection),
+                ConstraintsPage(connection: tab.connection, table: table, design: d),
+                IndexesPage(connection: tab.connection, table: table, design: d),
+                const SizedBox(),
+                const SizedBox(),
+                DesignChangesPage(design: d, connection: tab.connection),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     return Column(
       children: [
         _header(app),
@@ -207,21 +310,46 @@ class _TableEditorViewState extends State<TableEditorView> {
                     if (snap.hasError) {
                       return EmptyState.error(snap.error!, title: 'Impossibile leggere la struttura della tabella');
                     }
-                    final d = snap.data;
+                    final det = snap.data;
+                    final design = _designable ? _design : null;
                     return IndexedStack(
                       index: _page,
                       children: [
-                        d == null ? const Center(child: Spinner(size: Spinner.large)) : _properties(d),
+                        det == null
+                            ? const Center(child: Spinner(size: Spinner.large))
+                            : design != null
+                            ? DesignPropertiesPage(
+                                design: design,
+                                connection: tab.connection,
+                                footer: _propertiesContent(det),
+                              )
+                            : _properties(det),
                         _dataPage(),
-                        d == null ? const SizedBox() : _columns(d),
-                        d == null || table.isView
+                        det == null
                             ? const SizedBox()
-                            : ConstraintsPage(connection: tab.connection, table: table, editable: !_simple),
-                        d == null || table.isView
+                            : design != null
+                            ? DesignColumnsPage(design: design, connection: tab.connection)
+                            : _columns(det),
+                        det == null || table.isView
                             ? const SizedBox()
-                            : IndexesPage(connection: tab.connection, table: table, editable: !_simple),
-                        d == null ? const SizedBox() : _ddl(d),
-                        d == null || _page != 6
+                            : ConstraintsPage(
+                                key: ValueKey(design),
+                                connection: tab.connection,
+                                table: table,
+                                editable: !_simple,
+                                design: design,
+                              ),
+                        det == null || table.isView
+                            ? const SizedBox()
+                            : IndexesPage(
+                                key: ValueKey(design),
+                                connection: tab.connection,
+                                table: table,
+                                editable: !_simple,
+                                design: design,
+                              ),
+                        det == null ? const SizedBox() : _ddl(det),
+                        det == null || _page != 6
                             ? const SizedBox()
                             : ErDiagramView(
                                 connection: tab.connection,
@@ -230,6 +358,9 @@ class _TableEditorViewState extends State<TableEditorView> {
                                 focus: table,
                                 positions: {},
                               ),
+                        design == null
+                            ? const SizedBox()
+                            : DesignChangesPage(design: design, connection: tab.connection),
                       ],
                     );
                   },
@@ -268,13 +399,14 @@ class _TableEditorViewState extends State<TableEditorView> {
                         children: [
                           Flexible(
                             child: Text(
-                              table.name,
+                              tab.title,
                               overflow: TextOverflow.ellipsis,
                               style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text),
                             ),
                           ),
                           const SizedBox(width: Gap.sm),
-                          Tag(table.isView ? 'vista' : table.type.toLowerCase()),
+                          Tag(tab.isNew ? 'nuova' : (table.isView ? 'vista' : table.type.toLowerCase())),
+                          if (_design?.isDirty ?? false) ...[const SizedBox(width: Gap.xs), const DirtyDot()],
                         ],
                       ),
                       PathBar(
@@ -282,25 +414,28 @@ class _TableEditorViewState extends State<TableEditorView> {
                           PathSegment(tab.connection.config.name, icon: AppIcons.server),
                           if (table.catalog != null) PathSegment(table.catalog!, icon: AppIcons.database),
                           if (table.schema != null) PathSegment(table.schema!, icon: AppIcons.schema),
-                          PathSegment(table.name, icon: tab.icon),
+                          PathSegment(tab.title, icon: tab.icon),
                         ],
                       ),
                     ],
                   ),
                 ),
-                if (!app.settings.simpleMode)
+                // Only on the structure pages: the data page has its own "Salva".
+                if (_design != null && _designable && _newPages.contains(_page)) ..._designTools(),
+                if (!app.settings.simpleMode && !tab.isNew)
                   ToolButton(
                     icon: AppIcons.script,
                     tooltip: 'Apri in un editor SQL',
                     onPressed: () =>
                         app.sqlEditorWith(tab.connection, 'SELECT * FROM ${tab.connection.dialect.tableName(table)}'),
                   ),
-                ToolButton(
-                  icon: AppIcons.share,
-                  tooltip: 'Esporta dati…',
-                  onPressed: () => showTableExportDialog(context, tab.connection, table),
-                ),
-                if (!table.isView)
+                if (!tab.isNew)
+                  ToolButton(
+                    icon: AppIcons.share,
+                    tooltip: 'Esporta dati…',
+                    onPressed: () => showTableExportDialog(context, tab.connection, table),
+                  ),
+                if (!table.isView && !tab.isNew)
                   ToolButton(
                     icon: AppIcons.download,
                     tooltip: 'Importa dati da CSV…',
@@ -308,6 +443,7 @@ class _TableEditorViewState extends State<TableEditorView> {
                         ? null
                         : () => showImportDialog(context, tab.connection, table),
                   ),
+                if (!tab.isNew)
                 ToolButton(
                   icon: AppIcons.refresh,
                   tooltip: 'Ricarica metadati',
@@ -325,12 +461,54 @@ class _TableEditorViewState extends State<TableEditorView> {
               ? _simplePages()
               : PageSwitcher<int>(
                   value: _page,
-                  items: [for (final (i, n) in _pageNames.indexed) (i, n, null)],
+                  items: [
+                    for (final (i, n) in _pageNames.indexed)
+                      if (tab.isNew ? _newPages.contains(i) : (i != _pageChanges || (_design != null && _designable)))
+                        (i, i == _pageChanges && (_design?.changes.isNotEmpty ?? false) ? '$n (${_design!.changes.length})' : n, null),
+                  ],
                   onChanged: _setPage,
                 ),
         ],
       ),
     );
+  }
+
+  /// Undo, redo, discard and save of the designer.
+  List<Widget> _designTools() {
+    final d = _design!;
+    final mac = Theme.of(context).platform == TargetPlatform.macOS;
+    final save = SingleActivator(LogicalKeyboardKey.keyS, meta: mac, control: !mac);
+    return [
+      ToolButton(icon: AppIcons.undo, tooltip: 'Annulla l\'ultima modifica alla struttura', onPressed: d.canUndo ? d.undo : null),
+      ToolButton(icon: AppIcons.redo, tooltip: 'Ripeti', onPressed: d.canRedo ? d.redo : null),
+      if (!d.isNew)
+        ToolButton(
+          icon: AppIcons.replay,
+          tooltip: 'Scarta le modifiche alla struttura',
+          onPressed: d.isDirty
+              ? () async {
+                  final ok = await confirmDialog(
+                    context,
+                    'Scartare le modifiche?',
+                    'Le ${d.changes.length} modifiche alla struttura di ${table.name} non ancora salvate andranno perse.',
+                    ok: 'Scarta',
+                    destructive: true,
+                  );
+                  if (ok) d.discard();
+                }
+              : null,
+        ),
+      const SizedBox(width: Gap.xs),
+      PushButton.primary(
+        label: d.isNew ? 'Crea tabella' : 'Salva',
+        icon: AppIcons.save,
+        size: ControlScale.small,
+        tooltip: d.errors.isNotEmpty ? d.errors.first : 'Mostra lo script ed esegue le modifiche (${shortcutLabel(save)})',
+        onPressed: d.isDirty && d.errors.isEmpty ? () => saveTableDesign(context, tab) : null,
+      ),
+      const SizedBox(width: Gap.sm),
+      ToolSeparator(),
+    ];
   }
 
   /// Simplified analyst view: "Dati" first, developer pages under a
@@ -395,8 +573,11 @@ class _TableEditorViewState extends State<TableEditorView> {
     setState(() => ui.visual = v);
   }
 
-  Widget _properties(TableDetails d) => SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
+  Widget _properties(TableDetails d) =>
+      SingleChildScrollView(padding: const EdgeInsets.all(16), child: _propertiesContent(d));
+
+  Widget _propertiesContent(TableDetails d) => Align(
+    alignment: Alignment.topLeft,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

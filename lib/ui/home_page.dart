@@ -10,6 +10,7 @@ import '../cloud/ui/cloud_account_dialog.dart';
 import '../cloud/ui/cloud_explorer_panel.dart';
 import '../features/ai/ai.dart';
 import '../features/data_compare/data_compare_tab.dart';
+import '../features/design/ui/table_designer.dart';
 import '../features/git/git.dart';
 import '../features/performance/perf_dashboard.dart';
 import '../features/query_builder/query_builder_tab.dart';
@@ -165,9 +166,15 @@ class _HomePageState extends State<HomePage> {
         _MenuAction('Apri script SQL…', () => openScriptFile(context), _a(LogicalKeyboardKey.keyO)),
         const _MenuDivider(),
         _MenuAction(
-          table != null ? 'Salva modifiche ai dati' : 'Salva script',
+          table == null
+              ? 'Salva script'
+              : table.designDirty
+              ? 'Salva struttura della tabella'
+              : 'Salva modifiche ai dati',
           table != null
-              ? (table.isDirty ? () => _saveTableData(table) : null)
+              ? (table.designDirty
+                    ? () => saveTableDesign(context, table)
+                    : (table.dataDirty ? () => _saveTableData(table) : null))
               : (sql == null ? null : () => sql.save()),
           _a(LogicalKeyboardKey.keyS),
         ),
@@ -211,6 +218,14 @@ class _HomePageState extends State<HomePage> {
           });
           showCloudAccountDialog(context);
         }, null),
+        const _MenuDivider(),
+        _MenuAction(
+          'Nuova tabella…',
+          !connected || !dc!.dialect.isSql || dc.config.readOnly || app.settings.simpleMode
+              ? null
+              : () => app.openNewTable(dc, catalog: dc.defaultCatalog),
+          null,
+        ),
         const _MenuDivider(),
         _MenuAction('Confronto schemi…', () => app.openFeatureTab(SchemaCompareTab(source: dc)), null),
         _MenuAction('Confronto dati…', () => app.openFeatureTab(DataCompareTab(source: dc)), null),
@@ -439,8 +454,12 @@ class _HomePageState extends State<HomePage> {
   Future<void> _closeTab(EditorTab t) async {
     final app = AppScope.read(context);
     if (t is TableEditorTab && t.isDirty) {
-      final ok = await confirmDialog(context, 'Modifiche non salvate',
-          'I dati di "${t.title}" contengono modifiche non salvate. Chiudere comunque?',
+      final what = t.isNew
+          ? 'La tabella "${t.title}" non è ancora stata creata'
+          : t.designDirty
+          ? 'La struttura di "${t.title}" contiene modifiche non salvate'
+          : 'I dati di "${t.title}" contengono modifiche non salvate';
+      final ok = await confirmDialog(context, 'Modifiche non salvate', '$what. Chiudere comunque?',
           ok: 'Chiudi', destructive: true);
       if (!ok) return;
     }
