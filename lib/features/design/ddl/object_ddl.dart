@@ -467,6 +467,129 @@ class ObjectDdl {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // Sequences
+  // -------------------------------------------------------------------------
+
+  String seqRef(SequenceDef s, {String? name}) =>
+      dialect.qualified(family == DbFamily.sqlServer ? null : s.catalog, s.schema, name ?? s.name);
+
+  /// Options of CREATE / ALTER SEQUENCE ([create]: START WITH too).
+  List<String> _seqOptions(SequenceDef s, {required bool create, SequenceDef? from}) {
+    // Creating: only the options set; altering: only the changed ones.
+    bool changed(Object? a, Object? b) => from == null ? a != null && a != false : a != b;
+    final o = <String>[];
+    switch (family) {
+      case DbFamily.snowflake:
+        if (create && s.start != null) o.add('START = ${s.start}');
+        if (s.increment != null && changed(s.increment, from?.increment)) o.add('INCREMENT = ${s.increment}');
+        return o;
+      case DbFamily.firebird:
+        if (create && s.start != null) o.add('START WITH ${s.start}');
+        if (s.increment != null && changed(s.increment, from?.increment)) o.add('INCREMENT BY ${s.increment}');
+        return o;
+      default:
+        break;
+    }
+    final oracle = family == DbFamily.oracle;
+    if (create && _has(s.dataType) && family != DbFamily.oracle && family != DbFamily.mysql) o.add('AS ${s.dataType}');
+    if (create && s.start != null) o.add('START WITH ${s.start}');
+    if (s.increment != null && changed(s.increment, from?.increment)) o.add('INCREMENT BY ${s.increment}');
+    if (changed(s.minValue, from?.minValue)) {
+      o.add(
+        s.minValue != null
+            ? 'MINVALUE ${s.minValue}'
+            : (oracle || family == DbFamily.mysql ? 'NOMINVALUE' : 'NO MINVALUE'),
+      );
+    }
+    if (changed(s.maxValue, from?.maxValue)) {
+      o.add(
+        s.maxValue != null
+            ? 'MAXVALUE ${s.maxValue}'
+            : (oracle || family == DbFamily.mysql ? 'NOMAXVALUE' : 'NO MAXVALUE'),
+      );
+    }
+    if (changed(s.cache, from?.cache)) {
+      final none = s.cache == null || s.cache! <= 1;
+      if (none) {
+        o.add(oracle || family == DbFamily.mysql ? 'NOCACHE' : (family == DbFamily.postgres ? 'CACHE 1' : 'NO CACHE'));
+      } else {
+        o.add('CACHE ${s.cache}');
+      }
+    }
+    if (changed(s.cycle, from?.cycle)) {
+      o.add(s.cycle ? 'CYCLE' : (oracle || family == DbFamily.mysql ? 'NOCYCLE' : 'NO CYCLE'));
+    }
+    if (family == DbFamily.postgres && (create ? _has(s.ownedBy) : changed(s.ownedBy, from?.ownedBy))) {
+      o.add('OWNED BY ${_has(s.ownedBy) ? s.ownedBy : 'NONE'}');
+    }
+    return o;
+  }
+
+  List<String> createSequence(SequenceDef s) {
+    if (!caps.has(DesignFeature.sequences)) return [_note('Sequenze: ${caps.reason(DesignFeature.sequences)}')];
+    final opts = _seqOptions(s, create: true);
+    return [
+      'CREATE SEQUENCE ${seqRef(s)}${opts.isEmpty ? '' : ' ${opts.join(' ')}'}',
+      if (_has(s.comment) && (family == DbFamily.postgres || family == DbFamily.oracle || family == DbFamily.db2))
+        'COMMENT ON SEQUENCE ${seqRef(s)} IS ${lit(s.comment!)}',
+    ];
+  }
+
+  /// Statements that turn the sequence [from] into [to] (START WITH is the
+  /// value of a new sequence: use [restartSequence] for the current one).
+  List<String> alterSequence(SequenceDef from, SequenceDef to) {
+    final out = <String>[];
+    if (from.name != to.name) out.addAll(renameSequence(from, to.name));
+    final s = to.copyWith(name: to.name);
+    if (family == DbFamily.firebird &&
+        (from.minValue != to.minValue || from.maxValue != to.maxValue || from.cycle != to.cycle)) {
+      out.add(_note('Firebird non ha limiti né ciclo per le sequenze'));
+    }
+    final opts = _seqOptions(s, create: false, from: from);
+    if (opts.isNotEmpty) {
+      out.add(
+        family == DbFamily.snowflake
+            ? 'ALTER SEQUENCE ${seqRef(s)} SET ${opts.join(' ')}'
+            : 'ALTER SEQUENCE ${seqRef(s)} ${opts.join(' ')}',
+      );
+    }
+    if ((from.comment ?? '') != (to.comment ?? '') &&
+        (family == DbFamily.postgres || family == DbFamily.oracle || family == DbFamily.db2)) {
+      out.add(
+        'COMMENT ON SEQUENCE ${seqRef(s)} IS ${_has(to.comment) ? lit(to.comment!) : (family == DbFamily.postgres ? 'NULL' : "''")}',
+      );
+    }
+    return out;
+  }
+
+  /// The next value handed out becomes [value].
+  List<String> restartSequence(SequenceDef s, int value) {
+    final ref = seqRef(s);
+    switch (family) {
+      case DbFamily.oracle:
+        final v = dialect.version;
+        if (v != null && !v.atLeast(18)) return [_note('Riavvio della sequenza: richiede Oracle 18c')];
+        return ['ALTER SEQUENCE $ref RESTART START WITH $value'];
+      case DbFamily.snowflake:
+        return [_note('Snowflake non riavvia le sequenze: creane una nuova con START = $value')];
+      default:
+        return ['ALTER SEQUENCE $ref RESTART WITH $value'];
+    }
+  }
+
+  List<String> renameSequence(SequenceDef s, String to) => switch (family) {
+    DbFamily.postgres || DbFamily.snowflake => [
+      'ALTER SEQUENCE ${seqRef(s)} RENAME TO ${family == DbFamily.snowflake ? seqRef(s, name: to) : q(to)}',
+    ],
+    DbFamily.sqlServer => ["EXEC sp_rename ${_n(dialect.qualified(null, s.schema, s.name))}, ${_n(to)}, N'OBJECT'"],
+    DbFamily.mysql => ['RENAME TABLE ${seqRef(s)} TO ${seqRef(s, name: to)}'],
+    DbFamily.oracle => ['RENAME ${q(s.name)} TO ${q(to)}'],
+    _ => [_note('Ridenominazione della sequenza ${s.name} con ${dialect.dbmsName}')],
+  };
+
+  List<String> dropSequence(SequenceDef s) => ['DROP SEQUENCE ${seqRef(s)}'];
+
   /// DROP SCHEMA … CASCADE exists.
   bool get canDropSchemaCascade => family == DbFamily.postgres || family == DbFamily.snowflake;
 }

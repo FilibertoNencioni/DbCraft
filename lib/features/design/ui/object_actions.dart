@@ -3,6 +3,7 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../../../model/db_objects.dart';
 import '../../../services/sql_dialect.dart';
 import '../../../state/app_state.dart';
 import '../../../state/db_connection.dart';
@@ -11,9 +12,11 @@ import '../../../ui/widgets/common.dart';
 import '../../schema/ddl_execution.dart';
 import '../catalog/databases.dart';
 import '../catalog/design_catalog.dart';
+import '../ddl/code_ddl.dart';
 import '../ddl/object_ddl.dart';
 import '../ddl_script.dart';
 import '../model/object_defs.dart';
+import 'code_editor.dart';
 import 'object_dialogs.dart';
 
 Future<DesignCatalog?> _catalog(BuildContext context, DbConnection dc) async {
@@ -297,5 +300,207 @@ Future<bool> dropSchema(BuildContext context, DbConnection dc, String? catalog, 
     'Elimina lo schema $name',
     scope: SchemaScope.catalog(catalog),
     catalog: catalog,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sequences
+// ---------------------------------------------------------------------------
+
+SchemaScope _seqScope(String? catalog, String? schema) => SchemaScope.schema(catalog, schema);
+
+Future<bool> createSequence(BuildContext context, DbConnection dc, String? catalog, String? schema) async {
+  final cat = await _catalog(context, dc);
+  if (cat == null || !context.mounted) return false;
+  final existing = await _orElse(cat.sequences(catalog, schema), const <SequenceDef>[]);
+  if (!context.mounted) return false;
+  final s = await showSequenceDialog(
+    context,
+    dialect: dc.dialect,
+    catalog: catalog,
+    schema: schema,
+    taken: {for (final x in existing) x.name.toLowerCase()},
+  );
+  if (s == null || !context.mounted) return false;
+  return _run(
+    context,
+    dc,
+    ObjectDdl(dc.dialect).createSequence(s),
+    'Nuova sequenza ${s.name}',
+    scope: _seqScope(catalog, schema),
+    catalog: ObjectDdl(dc.dialect).scriptCatalog(catalog),
+  );
+}
+
+Future<bool> editSequence(BuildContext context, DbConnection dc, SequenceDef s) async {
+  final e = await showSequenceDialog(context, dialect: dc.dialect, catalog: s.catalog, schema: s.schema, initial: s);
+  if (e == null || !context.mounted) return false;
+  final statements = ObjectDdl(dc.dialect).alterSequence(s, e);
+  if (statements.isEmpty) return false;
+  return _run(
+    context,
+    dc,
+    statements,
+    'Sequenza ${s.name}',
+    scope: _seqScope(s.catalog, s.schema),
+    catalog: ObjectDdl(dc.dialect).scriptCatalog(s.catalog),
+  );
+}
+
+Future<bool> restartSequence(BuildContext context, DbConnection dc, SequenceDef s) async {
+  final v = await promptText(
+    context,
+    'Imposta il prossimo valore di ${s.name}',
+    label: 'Prossimo valore',
+    initial: '${(s.currentValue ?? 0) + (s.increment ?? 1)}',
+  );
+  final n = int.tryParse(v?.trim() ?? '');
+  if (n == null || !context.mounted) return false;
+  return _run(
+    context,
+    dc,
+    ObjectDdl(dc.dialect).restartSequence(s, n),
+    'Sequenza ${s.name}',
+    scope: _seqScope(s.catalog, s.schema),
+    catalog: ObjectDdl(dc.dialect).scriptCatalog(s.catalog),
+  );
+}
+
+Future<bool> renameSequence(BuildContext context, DbConnection dc, SequenceDef s) async {
+  final to = await promptText(context, 'Rinomina la sequenza ${s.name}', label: 'Nuovo nome', initial: s.name);
+  if (to == null || to.trim().isEmpty || to.trim() == s.name || !context.mounted) return false;
+  return _run(
+    context,
+    dc,
+    ObjectDdl(dc.dialect).renameSequence(s, to.trim()),
+    'Rinomina ${s.name}',
+    scope: _seqScope(s.catalog, s.schema),
+    catalog: ObjectDdl(dc.dialect).scriptCatalog(s.catalog),
+  );
+}
+
+Future<bool> dropSequence(BuildContext context, DbConnection dc, SequenceDef s) async {
+  final ok = await showDropDialog(context, title: 'Elimina sequenza', objectLabel: 'la sequenza ${s.name}');
+  if (ok == null || !context.mounted) return false;
+  return _run(
+    context,
+    dc,
+    ObjectDdl(dc.dialect).dropSequence(s),
+    'Elimina ${s.name}',
+    scope: _seqScope(s.catalog, s.schema),
+    catalog: ObjectDdl(dc.dialect).scriptCatalog(s.catalog),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Triggers
+// ---------------------------------------------------------------------------
+
+/// Header sheet, then the editor of a new trigger on [table].
+Future<void> newTrigger(BuildContext context, DbConnection dc, DbTable table) async {
+  final h = await showNewTriggerDialog(
+    context,
+    dialect: dc.dialect,
+    template: TriggerDef(
+      catalog: table.catalog,
+      schema: table.schema,
+      table: table.name,
+      name: 'trg_${table.name}',
+      timing: dc.dialect.family == DbFamily.sqlServer ? TriggerTiming.after : TriggerTiming.before,
+    ),
+  );
+  if (h == null || !context.mounted) return;
+  AppScope.read(context).openFeatureTab(CodeEditorTab.trigger(dc, table: table, template: h));
+}
+
+void editTrigger(BuildContext context, DbConnection dc, DbTable table, TriggerDef t) =>
+    AppScope.read(context).openFeatureTab<CodeEditorTab>(
+      CodeEditorTab.trigger(dc, table: table, original: t),
+      match: (x) => x.dc == dc && x.isTrigger && x.trigger?.name == t.name && x.table?.key == table.key,
+    );
+
+Future<bool> setTriggerEnabled(BuildContext context, DbConnection dc, TriggerDef t, bool enabled) => _run(
+  context,
+  dc,
+  CodeDdl(dc.dialect).setTriggerEnabled(t, enabled),
+  '${enabled ? 'Abilita' : 'Disabilita'} ${t.name}',
+  scope: SchemaScope.object(t.catalog, t.schema, t.table),
+  catalog: ObjectDdl(dc.dialect).scriptCatalog(t.catalog),
+);
+
+Future<bool> dropTrigger(BuildContext context, DbConnection dc, TriggerDef t) async {
+  final ok = await showDropDialog(context, title: 'Elimina trigger', objectLabel: 'il trigger ${t.name} di ${t.table}');
+  if (ok == null || !context.mounted) return false;
+  return _run(
+    context,
+    dc,
+    CodeDdl(dc.dialect).dropTrigger(t),
+    'Elimina ${t.name}',
+    scope: SchemaScope.object(t.catalog, t.schema, t.table),
+    catalog: ObjectDdl(dc.dialect).scriptCatalog(t.catalog),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Procedures and functions
+// ---------------------------------------------------------------------------
+
+Future<void> newRoutine(
+  BuildContext context,
+  DbConnection dc,
+  String? catalog,
+  String? schema,
+  RoutineKind kind,
+) async {
+  final name = await promptText(
+    context,
+    kind == RoutineKind.function ? 'Nuova funzione' : 'Nuova procedura',
+    label: 'Nome',
+    initial: kind == RoutineKind.function ? 'nuova_funzione' : 'nuova_procedura',
+  );
+  if (name == null || name.trim().isEmpty || !context.mounted) return;
+  AppScope.read(context)
+      .openFeatureTab(CodeEditorTab.routine(dc, kind: kind, catalog: catalog, schema: schema, name: name.trim()));
+}
+
+/// Opens the source of [p] in the code editor.
+Future<void> editRoutine(BuildContext context, DbConnection dc, DbProcedure p) async {
+  final cat = await _catalog(context, dc);
+  if (cat == null || !context.mounted) return;
+  final src = await _orElse(cat.routineSource(p), null);
+  if (!context.mounted) return;
+  if (src == null) {
+    await showErrorDialog(
+      context,
+      'Il catalogo di ${dc.dialect.dbmsName} non espone il sorgente di ${p.cleanName}.',
+      title: 'Sorgente non disponibile',
+    );
+    return;
+  }
+  AppScope.read(context).openFeatureTab<CodeEditorTab>(
+    CodeEditorTab.routine(dc, kind: src.kind, procedure: p, source: src),
+    match: (x) => x.dc == dc && !x.isTrigger && x.procedure?.key == p.key,
+  );
+}
+
+Future<bool> dropRoutine(BuildContext context, DbConnection dc, DbProcedure p) async {
+  final cat = await _catalog(context, dc);
+  if (cat == null || !context.mounted) return false;
+  final src = await _orElse(cat.routineSource(p), null);
+  if (!context.mounted) return false;
+  final kind = src?.kind ?? (p.type == 2 ? RoutineKind.function : RoutineKind.procedure);
+  final ok = await showDropDialog(
+    context,
+    title: 'Elimina ${kind.label}',
+    objectLabel: 'la ${kind.label} ${p.cleanName}',
+  );
+  if (ok == null || !context.mounted) return false;
+  return _run(
+    context,
+    dc,
+    CodeDdl(dc.dialect).dropRoutine(kind, p.catalog, p.schema, p.cleanName, arguments: src?.arguments),
+    'Elimina ${p.cleanName}',
+    scope: SchemaScope.schema(p.catalog, p.schema),
+    catalog: ObjectDdl(dc.dialect).scriptCatalog(p.catalog),
   );
 }

@@ -15,6 +15,7 @@ import '../../../services/sql_dialect.dart';
 import '../../../state/db_connection.dart';
 import '../../schema/schema_model.dart';
 import '../model/object_defs.dart';
+import 'code.dart';
 import 'databases.dart';
 import 'db2.dart';
 import 'firebird.dart';
@@ -164,6 +165,26 @@ class DesignCatalog {
       () async => await readViewDef(queries, dialect, t) ?? false,
     );
     return r is ViewDef ? r : null;
+  }
+
+  /// Sequences of [catalog].[schema].
+  Future<List<SequenceDef>> sequences(String? catalog, String? schema) => metadata.cached(
+    'design:seq:${catalog ?? ''}:${schema ?? ''}',
+    () => readSequences(queries, dialect, catalog, schema),
+  );
+
+  /// Triggers of the table [t].
+  Future<List<TriggerDef>> triggers(DbTable t) =>
+      metadata.cached('design:trg:${t.key}', () => readTriggers(queries, dialect, t));
+
+  /// Source of the procedure or function [p] (null when not exposed).
+  Future<RoutineSource?> routineSource(DbProcedure p) async {
+    final params = dialect.family == DbFamily.firebird ? await metadata.procedureParams(p) : const <DbProcedureParam>[];
+    final r = await metadata.cached<Object>(
+      'design:src:${p.key}',
+      () async => await readRoutineSource(queries, dialect, p, params: params) ?? false,
+    );
+    return r is RoutineSource ? r : null;
   }
 
   /// Databases with their properties (DBMS where databases are managed).

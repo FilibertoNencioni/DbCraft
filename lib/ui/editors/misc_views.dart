@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../features/design/catalog/code.dart';
+import '../../features/design/catalog/design_catalog.dart';
+import '../../features/design/ui/object_actions.dart';
 import '../../model/db_objects.dart';
 import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
@@ -7,6 +10,7 @@ import '../../state/editor_tabs.dart';
 import '../actions.dart';
 import '../widgets/common.dart';
 import 'er_diagram_view.dart';
+import 'sql_code_editor.dart';
 
 /// Procedure / function editor: properties and parameters.
 class ProcedureView extends StatefulWidget {
@@ -19,11 +23,16 @@ class ProcedureView extends StatefulWidget {
 
 class _ProcedureViewState extends State<ProcedureView> {
   Future<List<DbProcedureParam>>? _params;
+  Future<RoutineSource?>? _source;
 
   @override
   void initState() {
     super.initState();
     _params = widget.tab.connection.metadata?.procedureParams(widget.tab.procedure);
+    final cat = DesignCatalog.of(widget.tab.connection);
+    if (cat != null && widget.tab.connection.dialect.isSql) {
+      _source = cat.routineSource(widget.tab.procedure).then<RoutineSource?>((s) => s, onError: (_) => null);
+    }
   }
 
   @override
@@ -80,11 +89,39 @@ class _ProcedureViewState extends State<ProcedureView> {
                   ],
                 ),
               ),
-            const SizedBox(height: 12),
-            Text(
-              'Nota: il corpo della procedura non è esposto dalle API ODBC standard; '
-              'usa le viste di sistema del DBMS (es. sys.sql_modules, pg_proc, information_schema.routines).',
-              style: uiText(TypeSize.small, color: colors.textSecondary),
+            const SizedBox(height: 20),
+            FutureBuilder<RoutineSource?>(
+              future: _source,
+              builder: (context, src) {
+                final source = src.data;
+                final simple = AppScope.read(context).settings.simpleMode;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SectionLabel(
+                      'Sorgente',
+                      padding: const EdgeInsets.only(bottom: Gap.sm),
+                      trailing: source == null || simple
+                          ? null
+                          : ToolButton(
+                              icon: AppIcons.edit,
+                              label: 'Modifica sorgente',
+                              tooltip: 'Apri il sorgente in un editor',
+                              onPressed: () => editRoutine(context, c, p),
+                            ),
+                    ),
+                    if (src.connectionState != ConnectionState.done)
+                      const ProgressBar()
+                    else if (source == null)
+                      Text(
+                        'Il catalogo di ${c.dialect.dbmsName} non espone il sorgente di questa ${p.type == 2 ? 'funzione' : 'procedura'}.',
+                        style: uiText(TypeSize.small, color: colors.textSecondary),
+                      )
+                    else
+                      SizedBox(height: 360, child: SqlCodeView(text: source.source)),
+                  ],
+                );
+              },
             ),
           ],
         );

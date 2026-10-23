@@ -9,12 +9,14 @@ import '../../features/debugger/pg_debugger_tab.dart';
 import '../../features/design/ddl_script.dart';
 import '../../features/design/capabilities.dart';
 import '../../features/design/catalog/design_catalog.dart';
+import '../../features/design/ddl/code_ddl.dart';
 import '../../features/design/ddl/object_ddl.dart';
 import '../../features/design/model/object_defs.dart';
 import '../../features/design/table_design.dart';
 import '../../features/design/ui/constraint_dialogs.dart';
 import '../../features/design/ui/design_actions.dart' as design;
 import '../../features/design/ui/design_menu.dart';
+import '../../features/design/ui/object_actions.dart' as objects;
 import '../../features/design/ui/view_editor.dart';
 import '../../features/schema/ddl_builder.dart';
 import '../../features/schema/ddl_execution.dart';
@@ -216,7 +218,11 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     final simple = AppScope.read(context).settings.simpleMode;
     void walk(NavNode n, int depth) {
       if (f.isNotEmpty && n.filterable && !n.label.toLowerCase().contains(f)) return;
-      if (simple && n is ObjectFolderNode && (n.kind == ObjectKind.system || n.kind == ObjectKind.procedures)) return;
+      if (simple &&
+          n is ObjectFolderNode &&
+          (n.kind == ObjectKind.system || n.kind == ObjectKind.procedures || n.kind == ObjectKind.sequences)) {
+        return;
+      }
       out.add(_VisibleNode(n, depth));
       if (simple && n is TableNode) return;
       if (n.expanded && n.children != null) {
@@ -243,6 +249,10 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         app.openProcedure(p.connection!, p.procedure);
       case ConstraintNode c when !app.settings.simpleMode && !c.connection!.config.readOnly:
         design.editConstraint(context, c.connection!, c.table, c.definition);
+      case SequenceNode q when !app.settings.simpleMode:
+        objects.editSequence(context, q.connection!, q.sequence);
+      case TriggerNode t when !app.settings.simpleMode:
+        objects.editTrigger(context, t.connection!, t.table, t.trigger);
       default:
         _toggle(n);
     }
@@ -341,6 +351,8 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     ConstraintNode k when k.isKey => c.keyIcon,
     ConstraintNode k when k.definition is ForeignKeyDef => c.foreignKeyIcon,
     ConstraintNode _ => c.textSecondary,
+    TriggerNode t when !t.trigger.enabled => c.textTertiary,
+    SequenceNode _ || TriggerNode _ => c.accent,
     LeafNode _ => c.textTertiary,
     _ => c.textSecondary,
   };
@@ -610,14 +622,47 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           ),
           _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
         ]);
+      case SequenceNode q:
+        final ro = dc!.config.readOnly || simple;
+        items.addAll([
+          _item('Modifica…', ro ? null : () => objects.editSequence(context, dc, q.sequence)),
+          _item('Imposta valore…', ro ? null : () => objects.restartSequence(context, dc, q.sequence)),
+          _item('Rinomina…', ro ? null : () => objects.renameSequence(context, dc, q.sequence)),
+          _item('Copia nome', () => Clipboard.setData(ClipboardData(text: q.sequence.name))),
+          const MenuEntry.divider(),
+          MenuEntry('Elimina…', onSelected: ro ? null : () => objects.dropSequence(context, dc, q.sequence), enabled: !ro, destructive: true),
+        ]);
+      case TriggerNode t:
+        final ro = dc!.config.readOnly || simple;
+        final codes = CodeDdl(dc.dialect);
+        items.addAll([
+          _item('Modifica sorgente', simple ? null : () => objects.editTrigger(context, dc, t.table, t.trigger)),
+          if (codes.canDisableTriggers)
+            _item(
+              t.trigger.enabled ? 'Disabilita' : 'Abilita',
+              ro ? null : () => objects.setTriggerEnabled(context, dc, t.trigger, !t.trigger.enabled),
+            ),
+          _item('Copia nome', () => Clipboard.setData(ClipboardData(text: t.trigger.name))),
+          const MenuEntry.divider(),
+          MenuEntry('Elimina…', onSelected: ro ? null : () => objects.dropTrigger(context, dc, t.trigger), enabled: !ro, destructive: true),
+        ]);
       case ProcedureNode p:
         items.addAll([
           _item('Apri', () => app.openProcedure(dc!, p.procedure)),
+          if (designAvailable(dc!) && !simple) ...[
+            _item('Modifica sorgente', () => objects.editRoutine(context, dc, p.procedure)),
+            MenuEntry(
+              'Elimina…',
+              onSelected: dc.config.readOnly ? null : () => objects.dropRoutine(context, dc, p.procedure),
+              enabled: !dc.config.readOnly,
+              destructive: true,
+            ),
+          ],
           if (app.settings.aiEnabled)
             _item('Spiega con AI', () async {
-              if (await ensureAiReady(context) && mounted) await showAiExplainProcedure(this.context, dc!, p.procedure);
+              if (await ensureAiReady(context) && mounted) await showAiExplainProcedure(this.context, dc, p.procedure);
             }),
-          if (dc!.dialect.family == DbFamily.postgres)
+          if (dc.dialect.family == DbFamily.postgres)
             _item('Debug…', () => PgDebuggerTab.open(context, dc, p.procedure)),
           _item('Genera chiamata', () async {
             final params = await dc.metadata!.procedureParams(p.procedure);
@@ -626,6 +671,12 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           _item('Copia nome', () => Clipboard.setData(ClipboardData(text: p.procedure.cleanName))),
         ]);
       case TablePartNode p:
+        if (p.part == TablePart.triggers && designAvailable(dc!) && !simple) {
+          items.addAll([
+            _item('Nuovo trigger…', dc.config.readOnly ? null : () => objects.newTrigger(context, dc, p.table)),
+            const MenuEntry.divider(),
+          ]);
+        }
         if (designAvailable(dc!) && !simple && partKinds(p.part).isNotEmpty) {
           items.addAll([createConstraintMenu(context, dc, p.table, only: partKinds(p.part)), const MenuEntry.divider()]);
         }
@@ -637,6 +688,28 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           items.addAll(constraintMenu(context, k, refresh: () => _refreshParent(k)));
         }
       case ObjectFolderNode f:
+        if (f.kind == ObjectKind.sequences && designAvailable(dc!) && !simple) {
+          items.addAll([
+            _item(
+              'Nuova sequenza…',
+              dc.config.readOnly ? null : () => objects.createSequence(context, dc, f.catalog, f.schema),
+            ),
+            const MenuEntry.divider(),
+          ]);
+        }
+        if (f.kind == ObjectKind.procedures && designAvailable(dc!) && !simple && DesignCapabilities.of(dc.dialect).has(DesignFeature.routines)) {
+          items.addAll([
+            _item(
+              'Nuova procedura…',
+              dc.config.readOnly ? null : () => objects.newRoutine(context, dc, f.catalog, f.schema, RoutineKind.procedure),
+            ),
+            _item(
+              'Nuova funzione…',
+              dc.config.readOnly ? null : () => objects.newRoutine(context, dc, f.catalog, f.schema, RoutineKind.function),
+            ),
+            const MenuEntry.divider(),
+          ]);
+        }
         if (f.kind == ObjectKind.views && designAvailable(dc!) && !simple) {
           items.addAll([
             _item(

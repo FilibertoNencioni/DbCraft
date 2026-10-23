@@ -276,3 +276,148 @@ class ViewDef {
   }
   return (query: s, check: check);
 }
+
+/// A sequence (Firebird: generator). Null fields take the DBMS default.
+class SequenceDef {
+  const SequenceDef({
+    this.catalog,
+    this.schema,
+    required this.name,
+    this.dataType,
+    this.start,
+    this.increment,
+    this.minValue,
+    this.maxValue,
+    this.cycle = false,
+    this.cache,
+    this.ownedBy,
+    this.currentValue,
+    this.comment,
+  });
+
+  final String? catalog;
+  final String? schema;
+  final String name;
+
+  /// PostgreSQL / SQL Server / Db2 type (bigint, integer…).
+  final String? dataType;
+  final int? start;
+  final int? increment;
+  final int? minValue;
+  final int? maxValue;
+  final bool cycle;
+
+  /// Values kept in memory (0 or 1: no cache).
+  final int? cache;
+
+  /// PostgreSQL OWNED BY table.column.
+  final String? ownedBy;
+
+  /// Last value handed out, when the catalog tells (read only).
+  final int? currentValue;
+  final String? comment;
+
+  SequenceDef copyWith({
+    Object? catalog = _unset,
+    Object? schema = _unset,
+    String? name,
+    Object? dataType = _unset,
+    Object? start = _unset,
+    Object? increment = _unset,
+    Object? minValue = _unset,
+    Object? maxValue = _unset,
+    bool? cycle,
+    Object? cache = _unset,
+    Object? ownedBy = _unset,
+    Object? currentValue = _unset,
+    Object? comment = _unset,
+  }) => SequenceDef(
+    catalog: catalog == _unset ? this.catalog : catalog as String?,
+    schema: schema == _unset ? this.schema : schema as String?,
+    name: name ?? this.name,
+    dataType: dataType == _unset ? this.dataType : dataType as String?,
+    start: start == _unset ? this.start : start as int?,
+    increment: increment == _unset ? this.increment : increment as int?,
+    minValue: minValue == _unset ? this.minValue : minValue as int?,
+    maxValue: maxValue == _unset ? this.maxValue : maxValue as int?,
+    cycle: cycle ?? this.cycle,
+    cache: cache == _unset ? this.cache : cache as int?,
+    ownedBy: ownedBy == _unset ? this.ownedBy : ownedBy as String?,
+    currentValue: currentValue == _unset ? this.currentValue : currentValue as int?,
+    comment: comment == _unset ? this.comment : comment as String?,
+  );
+}
+
+enum TriggerTiming {
+  before('BEFORE'),
+  after('AFTER'),
+  insteadOf('INSTEAD OF');
+
+  const TriggerTiming(this.sql);
+  final String sql;
+}
+
+enum TriggerEvent {
+  insert('INSERT'),
+  update('UPDATE'),
+  delete('DELETE');
+
+  const TriggerEvent(this.sql);
+  final String sql;
+}
+
+/// A trigger of a table. [source] is the complete DDL that creates it, as
+/// the catalog returns it (PostgreSQL: the trigger function too); editing a
+/// trigger means editing its source.
+class TriggerDef {
+  const TriggerDef({
+    this.catalog,
+    this.schema,
+    required this.table,
+    required this.name,
+    this.timing = TriggerTiming.before,
+    this.events = const {TriggerEvent.insert},
+    this.forEachRow = true,
+    this.enabled = true,
+    this.source = '',
+    this.function,
+  });
+
+  final String? catalog;
+  final String? schema;
+  final String table;
+  final String name;
+  final TriggerTiming timing;
+  final Set<TriggerEvent> events;
+  final bool forEachRow;
+  final bool enabled;
+  final String source;
+
+  /// PostgreSQL trigger function (schema-qualified name).
+  final String? function;
+
+  String get summary =>
+      '${timing.sql} ${events.map((e) => e.sql).join(' OR ')}${forEachRow ? ' · riga' : ' · istruzione'}';
+
+  TriggerDef copyWith({String? name, bool? enabled, String? source}) => TriggerDef(
+    catalog: catalog,
+    schema: schema,
+    table: table,
+    name: name ?? this.name,
+    timing: timing,
+    events: events,
+    forEachRow: forEachRow,
+    enabled: enabled ?? this.enabled,
+    source: source ?? this.source,
+    function: function,
+  );
+}
+
+enum RoutineKind {
+  procedure('PROCEDURE', 'procedura'),
+  function('FUNCTION', 'funzione');
+
+  const RoutineKind(this.sql, this.label);
+  final String sql;
+  final String label;
+}

@@ -18,6 +18,7 @@ import 'dart:io';
 
 import 'package:dbcraft/features/design/capabilities.dart';
 import 'package:dbcraft/features/design/catalog/design_catalog.dart';
+import 'package:dbcraft/features/design/ddl/code_ddl.dart';
 import 'package:dbcraft/features/design/ddl/object_ddl.dart';
 import 'package:dbcraft/features/design/model/object_defs.dart';
 import 'package:dbcraft/features/schema/ddl_builder.dart';
@@ -283,6 +284,86 @@ void main() {
           expect(again.definition.toLowerCase(), contains('qty'));
           await run(dc, ddl.dropView(again));
           expect(await dc.metadata!.findTable(null, null, view.name), isNull);
+        } finally {
+          await run(dc, b.dropTable(base));
+        }
+      });
+
+      test('sequence round trip', () async {
+        if (!DesignCapabilities.of(dc.dialect).has(DesignFeature.sequences)) return;
+        final ddl = ObjectDdl(dc.dialect);
+        final cat = DesignCatalog.of(dc)!;
+        final schema = dc.dialect.family == DbFamily.sqlServer ? 'dbo' : null;
+        final s = SequenceDef(schema: schema, name: 'dbc_rs_$suffix', start: 10, increment: 5, maxValue: 1000);
+        await run(dc, ddl.createSequence(s));
+        try {
+          final read = (await cat.sequences(dc.mainCatalog, schema)).firstWhere((x) => x.name == s.name);
+          expect(read.start, 10);
+          expect(read.increment, 5);
+          expect(read.maxValue, 1000);
+          await run(dc, ddl.alterSequence(read, read.copyWith(increment: 7)));
+          await run(dc, ddl.restartSequence(read, 500));
+          final again = (await cat.sequences(dc.mainCatalog, schema)).firstWhere((x) => x.name == s.name);
+          expect(again.increment, 7);
+        } finally {
+          await run(dc, ddl.dropSequence(s));
+        }
+        expect((await cat.sequences(dc.mainCatalog, schema)).where((x) => x.name == s.name), isEmpty);
+      });
+
+      test('trigger and procedure round trip', () async {
+        final caps = DesignCapabilities.of(dc.dialect);
+        if (!caps.has(DesignFeature.triggers)) return;
+        final b = DdlBuilder(dc.dialect);
+        final code = CodeDdl(dc.dialect);
+        final schema = dc.dialect.family == DbFamily.sqlServer ? 'dbo' : null;
+        final base = TableDef(
+          schema: schema,
+          name: 'dbc_rtg_$suffix',
+          columns: const [
+            ColumnDef(name: 'id', type: 'integer', nullable: false),
+            ColumnDef(name: 'qty', type: 'integer'),
+          ],
+          primaryKey: PrimaryKeyDef(name: 'pk_dbc_rtg_$suffix', columns: const ['id']),
+        );
+        await run(dc, b.createTable(base));
+        try {
+          final table = (await dc.metadata!.findTable(null, schema, base.name))!;
+          final header = TriggerDef(
+            schema: table.schema,
+            table: table.name,
+            name: 'dbc_trg_$suffix',
+            timing: dc.dialect.family == DbFamily.sqlServer ? TriggerTiming.after : TriggerTiming.before,
+          );
+          await run(dc, code.saveTrigger(null, header.name, code.triggerTemplate(header)));
+          var triggers = await DesignCatalog.of(dc)!.triggers(table);
+          final t = triggers.singleWhere((x) => x.name == header.name);
+          expect(t.events, {TriggerEvent.insert});
+          // Saved again from its own source (replace, or drop and create).
+          await run(dc, code.saveTrigger(t, t.name, t.source));
+          if (code.canDisableTriggers) {
+            await run(dc, code.setTriggerEnabled(t, false));
+            triggers = await DesignCatalog.of(dc)!.triggers(table);
+            expect(triggers.single.enabled, isFalse);
+          }
+          await run(dc, code.dropTrigger(t));
+          expect(await DesignCatalog.of(dc)!.triggers(table), isEmpty);
+
+          if (caps.has(DesignFeature.routines)) {
+            final name = 'dbc_proc_$suffix';
+            await run(
+              dc,
+              code.saveRoutine(code.routineTemplate(RoutineKind.procedure, null, schema, name), RoutineKind.procedure),
+            );
+            final p = (await dc.metadata!.procedures(dc.mainCatalog, schema)).firstWhere((x) => x.cleanName == name);
+            final src = (await DesignCatalog.of(dc)!.routineSource(p))!;
+            expect(src.source.toLowerCase(), contains(name));
+            await run(
+              dc,
+              code.saveRoutine(src.source, src.kind, existing: (catalog: p.catalog, schema: p.schema, name: name)),
+            );
+            await run(dc, code.dropRoutine(src.kind, p.catalog, p.schema, name, arguments: src.arguments));
+          }
         } finally {
           await run(dc, b.dropTable(base));
         }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../features/design/capabilities.dart';
 import '../../features/design/catalog/design_catalog.dart';
+import '../../features/design/model/object_defs.dart';
 import '../../features/schema/schema_model.dart';
 import '../../model/db_objects.dart';
 import '../../state/db_connection.dart';
@@ -86,6 +87,8 @@ List<NavNode> objectFolders(DbConnection dc, String? catalog, String? schema) =>
   ObjectFolderNode(dc, catalog, schema, ObjectKind.views),
   ObjectFolderNode(dc, catalog, schema, ObjectKind.system),
   if (dc.metadata?.supportsProcedures ?? true) ObjectFolderNode(dc, catalog, schema, ObjectKind.procedures),
+  if (dc.dialect.isSql && DesignCapabilities.of(dc.dialect).has(DesignFeature.sequences))
+    ObjectFolderNode(dc, catalog, schema, ObjectKind.sequences),
 ];
 
 /// Schemas of [catalog]: the ODBC list plus, where the design catalog
@@ -152,7 +155,8 @@ enum ObjectKind {
   tables('Tabelle', AppIcons.table),
   views('Viste', AppIcons.erDiagram),
   system('Altri oggetti', AppIcons.settings),
-  procedures('Procedure e funzioni', AppIcons.function);
+  procedures('Procedure e funzioni', AppIcons.function),
+  sequences('Sequenze', AppIcons.number);
 
   const ObjectKind(this.label, this.icon);
   final String label;
@@ -177,6 +181,11 @@ class ObjectFolderNode extends NavNode {
   @override
   Future<List<NavNode>> load() async {
     final md = connection!.metadata!;
+    if (kind == ObjectKind.sequences) {
+      final cat = DesignCatalog.of(connection!);
+      final seqs = cat == null ? const <SequenceDef>[] : await cat.sequences(catalog, schema);
+      return [for (final s in seqs) SequenceNode(connection!, s)];
+    }
     if (kind == ObjectKind.procedures) {
       final procs = await md.procedures(catalog, schema);
       return [for (final p in procs) ProcedureNode(connection!, p)];
@@ -191,7 +200,7 @@ class ObjectFolderNode extends NavNode {
           return type.contains('VIEW');
         case ObjectKind.system:
           return !(type == 'TABLE' || type == 'BASE TABLE' || type.contains('VIEW'));
-        case ObjectKind.procedures:
+        case ObjectKind.procedures || ObjectKind.sequences:
           return false;
       }
     }
@@ -231,6 +240,8 @@ class TableNode extends NavNode {
     if (!table.isView) TablePartNode(connection!, table, TablePart.foreignKeys),
     if (!table.isView) TablePartNode(connection!, table, TablePart.references),
     if (!table.isView) TablePartNode(connection!, table, TablePart.indexes),
+    if (connection!.dialect.isSql && DesignCapabilities.of(connection!.dialect).has(DesignFeature.triggers))
+      TablePartNode(connection!, table, TablePart.triggers),
   ];
 }
 
@@ -240,7 +251,8 @@ enum TablePart {
   checks('Vincoli CHECK', AppIcons.check),
   foreignKeys('Chiavi esterne', AppIcons.link),
   references('Riferimenti', AppIcons.incoming),
-  indexes('Indici', AppIcons.sort);
+  indexes('Indici', AppIcons.sort),
+  triggers('Trigger', AppIcons.bolt);
 
   const TablePart(this.label, this.icon);
   final String label;
@@ -303,6 +315,10 @@ class TablePartNode extends NavNode {
       case TablePart.indexes:
         final t = await _definition();
         return [for (final i in t.indexes) ConstraintNode(connection!, table, i)];
+      case TablePart.triggers:
+        final cat = DesignCatalog.of(connection!);
+        final triggers = cat == null ? const <TriggerDef>[] : await cat.triggers(table);
+        return [for (final t in triggers) TriggerNode(connection!, table, t)];
     }
   }
 
@@ -385,6 +401,45 @@ class ConstraintNode extends NavNode {
   bool get expandable => false;
   @override
   String get key => 'con:${connection!.config.id}:${table.key}:${definition.runtimeType}:${referencing ? 'ref:' : ''}$label';
+  @override
+  Future<List<NavNode>> load() async => [];
+}
+
+class SequenceNode extends NavNode {
+  SequenceNode(DbConnection super.connection, this.sequence);
+  final SequenceDef sequence;
+
+  @override
+  String get label => sequence.name;
+  @override
+  String? get detail => sequence.currentValue == null ? null : 'valore ${sequence.currentValue}';
+  @override
+  IconData get icon => AppIcons.number;
+  @override
+  bool get expandable => false;
+  @override
+  bool get filterable => true;
+  @override
+  String get key => 'seq:${connection!.config.id}:${sequence.catalog ?? ''}:${sequence.schema ?? ''}:${sequence.name}';
+  @override
+  Future<List<NavNode>> load() async => [];
+}
+
+class TriggerNode extends NavNode {
+  TriggerNode(DbConnection super.connection, this.table, this.trigger);
+  final DbTable table;
+  final TriggerDef trigger;
+
+  @override
+  String get label => trigger.name;
+  @override
+  String? get detail => '${trigger.summary}${trigger.enabled ? '' : ' · disabilitato'}';
+  @override
+  IconData get icon => AppIcons.bolt;
+  @override
+  bool get expandable => false;
+  @override
+  String get key => 'trg:${connection!.config.id}:${table.key}:${trigger.name}';
   @override
   Future<List<NavNode>> load() async => [];
 }

@@ -19,8 +19,8 @@ class SqlSplitter {
   final bool blankLineDelimiter;
 
   static final _blockStart = RegExp(
-    r'^\s*(create\s+(or\s+replace\s+)?(definer\s*=\s*\S+\s+)?'
-    r'(procedure|function|trigger|package|type\s+body)|declare|'
+    r'^\s*(create\s+(or\s+(replace|alter)\s+)?((no)?editionable\s+)?(definer\s*=\s*\S+\s+)?'
+    r'(proc|procedure|function|trigger|package|type\s+body)\b|declare|'
     r'begin(?!\s*(tran|transaction|work)\b|\s*;)|do\s)',
     caseSensitive: false,
   );
