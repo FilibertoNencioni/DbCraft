@@ -1,11 +1,14 @@
 // Shared helpers of the design tool tests: one dialect per supported SQL
 // DBMS, golden SQL per dialect and a scripted fake session.
 
+import 'dart:io';
+
 import 'package:dbcraft/drivers/db_session.dart';
 import 'package:dbcraft/model/connection_config.dart';
 import 'package:dbcraft/odbc/odbc_types.dart';
 import 'package:dbcraft/services/metadata_service.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
+import 'package:dbcraft/state/app_state.dart';
 import 'package:dbcraft/state/db_connection.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -61,6 +64,9 @@ class ScriptedSession implements DbSession {
   final int pageSize;
   final log = <String>[];
   final _rules = <(RegExp, Object)>[];
+
+  /// ODBC catalog function → rows (in the [CatalogColumns] layout).
+  final catalogs = <String, List<List<Object?>>>{};
   final _cursors = <int, List<List<Object?>>>{};
   final _cursorColumns = <int, List<ColumnInfo>>{};
   var _nextCursor = 1;
@@ -69,6 +75,8 @@ class ScriptedSession implements DbSession {
   /// Statements matching [pattern] return [response]: a [Rows], an
   /// exception (thrown) or a function of the SQL returning either.
   void on(String pattern, Object response) => _rules.add((RegExp(pattern, caseSensitive: false), response));
+
+  void rulesClear() => _rules.clear();
 
   List<String> get executed => [
     for (final l in log)
@@ -123,7 +131,35 @@ class ScriptedSession implements DbSession {
   }
 
   @override
-  Future<ResultPage> catalog(String function, List<String?> args) async => catalogResult(const [], const []);
+  Future<ResultPage> catalog(String function, List<String?> args) async {
+    final layout = switch (function) {
+      'tables' => CatalogColumns.tables,
+      'columns' => CatalogColumns.columns,
+      'primaryKeys' => CatalogColumns.primaryKeys,
+      'foreignKeys' => CatalogColumns.foreignKeys,
+      'statistics' => CatalogColumns.statistics,
+      _ => const <String>[],
+    };
+    var rows = catalogs[function] ?? const [];
+    // Per table functions: TABLE_NAME is the third column.
+    if ((function == 'columns' || function == 'primaryKeys' || function == 'statistics') &&
+        args.length > 2 &&
+        args[2] != null) {
+      rows = [
+        for (final r in rows)
+          if (r[2] == args[2]) r,
+      ];
+    }
+    // SQLForeignKeys: (pk table…) lists the references, (…, fk table) the keys.
+    if (function == 'foreignKeys') {
+      final pkTable = args.length > 2 ? args[2] : null, fkTable = args.length > 5 ? args[5] : null;
+      rows = [
+        for (final r in rows)
+          if ((pkTable == null || r[2] == pkTable) && (fkTable == null || r[6] == fkTable)) r,
+      ];
+    }
+    return catalogResult(layout, rows);
+  }
 
   @override
   Future<void> setAutoCommit(bool value) async => log.add('autocommit $value');
@@ -171,4 +207,55 @@ DbConnection scriptedConnection(
       'schemaUsage': 1,
     });
   return dc;
+}
+
+/// SQLColumns row.
+List<Object?> catalogColumn(String table, String name, String type, int pos, {bool nullable = true, int? size}) => [
+  null,
+  'app',
+  table,
+  name,
+  4,
+  type,
+  size ?? 10,
+  null,
+  0,
+  10,
+  nullable ? 1 : 0,
+  null,
+  null,
+  null,
+  null,
+  null,
+  pos,
+  null, //
+];
+
+/// Scripted PostgreSQL connection with table app.orders (id pk, code, qty)
+/// and app.customers (id pk) in the ODBC catalog.
+ScriptedSession ordersSession() {
+  final s = ScriptedSession();
+  s.catalogs['tables'] = [
+    [null, 'app', 'orders', 'TABLE', null],
+    [null, 'app', 'customers', 'TABLE', null],
+  ];
+  s.catalogs['columns'] = [
+    catalogColumn('orders', 'id', 'int4', 1, nullable: false),
+    catalogColumn('orders', 'code', 'varchar', 2, size: 20),
+    catalogColumn('orders', 'qty', 'int4', 3),
+    catalogColumn('orders', 'customer_id', 'int4', 4),
+    catalogColumn('customers', 'id', 'int4', 1, nullable: false),
+  ];
+  s.catalogs['primaryKeys'] = [
+    [null, 'app', 'orders', 'id', 1, 'orders_pkey'],
+    [null, 'app', 'customers', 'id', 1, 'customers_pkey'],
+  ];
+  return s;
+}
+
+/// Application state on an empty temporary workspace.
+Future<AppState> testApp(WidgetTester tester) async {
+  final dir = Directory.systemTemp.createTempSync('dbcraft_design_test');
+  addTearDown(() => dir.deleteSync(recursive: true));
+  return (await tester.runAsync(() => AppState.load(workspaceDir: dir)))!;
 }

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../features/design/ddl_script.dart';
+import '../../features/design/ui/constraint_dialogs.dart';
 import '../../features/schema/ddl_execution.dart';
 import '../../features/schema/erd_dialogs.dart';
 import '../../features/schema/schema_diff.dart';
@@ -744,18 +745,22 @@ class _ErDiagramViewState extends State<ErDiagramView> {
     final child = e.working[from.id], parent = e.working[to.id];
     if (child == null || parent == null || parent.column(toCol) == null) return;
     if (from == to && col == toCol) return;
-    final fk = await showRelationDialog(
+    final dc = widget.connection;
+    final tables = [for (final t in e.working.values) t.toDbTable()];
+    final r = await showForeignKeyDialog(
       context,
-      child: child,
-      childColumn: col,
-      parent: parent,
-      parentColumn: toCol,
-      takenNames: {
-        for (final t in e.working.values)
-          for (final f in t.foreignKeys)
-            if (f.name != null) f.name!.toLowerCase(),
-      },
+      ConstraintContext(dialect: dc.dialect, table: child, isNew: !e.original.containsKey(from.id)),
+      prefill: ForeignKeyDef(
+        columns: [col],
+        refCatalog: parent.catalog,
+        refSchema: parent.schema,
+        refTable: parent.name,
+        refColumns: [toCol],
+      ),
+      tables: tables,
+      loadTable: (t) async => e.working.values.where((w) => w.name == t.name && w.schema == t.schema).firstOrNull,
     );
+    final fk = r?.value;
     if (fk == null || !mounted) return;
     setState(() {
       final cur = e.working[from.id]!;

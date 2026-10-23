@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../features/design/catalog/design_catalog.dart';
+import '../../features/schema/schema_model.dart';
 import '../../model/db_objects.dart';
 import '../../state/db_connection.dart';
 import '../theme/app_icons.dart';
@@ -205,6 +207,7 @@ class TableNode extends NavNode {
   Future<List<NavNode>> load() async => [
     TablePartNode(connection!, table, TablePart.columns),
     if (!table.isView) TablePartNode(connection!, table, TablePart.keys),
+    if (!table.isView) TablePartNode(connection!, table, TablePart.checks),
     if (!table.isView) TablePartNode(connection!, table, TablePart.foreignKeys),
     if (!table.isView) TablePartNode(connection!, table, TablePart.references),
     if (!table.isView) TablePartNode(connection!, table, TablePart.indexes),
@@ -214,6 +217,7 @@ class TableNode extends NavNode {
 enum TablePart {
   columns('Colonne', AppIcons.column),
   keys('Chiavi', AppIcons.key),
+  checks('Vincoli CHECK', AppIcons.check),
   foreignKeys('Chiavi esterne', AppIcons.link),
   references('Riferimenti', AppIcons.incoming),
   indexes('Indici', AppIcons.sort);
@@ -254,49 +258,115 @@ class TablePartNode extends NavNode {
             ),
         ];
       case TablePart.keys:
-        final pk = await md.primaryKey(table);
-        if (pk == null) return [];
+        final t = await _definition();
         return [
-          LeafNode(
-            connection!,
-            pk.name ?? 'PRIMARY KEY',
-            detail: pk.columns.join(', '),
-            icon: AppIcons.key,
-            isKey: true,
-            id: '${table.key}:pk',
-          ),
+          if (t.primaryKey != null) ConstraintNode(connection!, table, t.primaryKey!),
+          for (final u in t.uniques) ConstraintNode(connection!, table, u),
         ];
+      case TablePart.checks:
+        final t = await _definition();
+        return [for (final c in t.checks) ConstraintNode(connection!, table, c)];
       case TablePart.foreignKeys:
+        final t = await _definition();
+        return [for (final f in t.foreignKeys) ConstraintNode(connection!, table, f)];
       case TablePart.references:
-        final fks = part == TablePart.foreignKeys
-            ? await md.foreignKeys(table)
-            : await md.referencedBy(table);
+        final refs = await md.referencedBy(table);
         return [
-          for (final f in fks)
-            LeafNode(
+          for (final f in refs)
+            ConstraintNode(
               connection!,
-              f.name ?? '${f.fkTable}_${f.pkTable}_fk',
-              detail: part == TablePart.foreignKeys
-                  ? '(${f.columns.join(', ')}) → ${f.pkTable}(${f.refColumns.join(', ')})'
-                  : '${f.fkTable}(${f.columns.join(', ')})',
-              icon: AppIcons.link,
-              id: '${table.key}:fk:${f.name}:${f.fkTable}',
+              DbTable(catalog: f.fkCatalog, schema: f.fkSchema, name: f.fkTable, type: 'TABLE'),
+              ForeignKeyDef.fromDb(f),
+              referencing: true,
             ),
         ];
       case TablePart.indexes:
-        final ix = await md.indexes(table);
-        return [
-          for (final i in ix)
-            LeafNode(
-              connection!,
-              i.name,
-              detail: '${i.unique ? 'UNIQUE ' : ''}(${i.columns.join(', ')})',
-              icon: AppIcons.sort,
-              id: '${table.key}:ix:${i.name}',
-            ),
-        ];
+        final t = await _definition();
+        return [for (final i in t.indexes) ConstraintNode(connection!, table, i)];
     }
   }
+
+  /// The table with constraints and index attributes from the DBMS catalog
+  /// (the ODBC metadata when the catalog cannot be read).
+  Future<TableDef> _definition() async {
+    final cat = DesignCatalog.of(connection!);
+    if (cat != null) return cat.loadTable(table);
+    return TableDef.fromDetails(await connection!.metadata!.tableDetails(table));
+  }
+}
+
+/// A key, constraint or index of [table] ([definition] is a
+/// [PrimaryKeyDef], [UniqueDef], [CheckDef], [ForeignKeyDef] or [IndexDef]).
+/// [referencing]: a foreign key of [table] that references the table the
+/// node is listed under ("Riferimenti").
+class ConstraintNode extends NavNode {
+  ConstraintNode(DbConnection super.connection, this.table, this.definition, {this.referencing = false});
+  final DbTable table;
+  final Object definition;
+  final bool referencing;
+
+  String? get name => switch (definition) {
+    PrimaryKeyDef p => p.name,
+    UniqueDef u => u.name,
+    CheckDef c => c.name,
+    ForeignKeyDef f => f.name,
+    IndexDef i => i.name,
+    _ => null,
+  };
+
+  ConstraintState? get state => switch (definition) {
+    PrimaryKeyDef p => p.state,
+    UniqueDef u => u.state,
+    CheckDef c => c.state,
+    ForeignKeyDef f => f.state,
+    _ => null,
+  };
+
+  bool get enabled => definition is IndexDef ? (definition as IndexDef).enabled : (state?.enabled ?? true);
+  bool get validated => state?.validated ?? true;
+
+  bool get isKey => definition is PrimaryKeyDef;
+
+  @override
+  String get label => switch (definition) {
+    PrimaryKeyDef p => p.name ?? 'PRIMARY KEY',
+    UniqueDef u => u.name ?? 'UNIQUE',
+    CheckDef c => c.name ?? 'CHECK',
+    ForeignKeyDef f => referencing ? table.name : (f.name ?? '${table.name}_${f.refTable}_fk'),
+    IndexDef i => i.name,
+    _ => '',
+  };
+
+  @override
+  String? get detail {
+    final base = switch (definition) {
+      PrimaryKeyDef p => p.columns.join(', '),
+      UniqueDef u => 'UNIQUE (${u.columns.join(', ')})',
+      CheckDef c => c.expression,
+      ForeignKeyDef f when referencing => '${f.name == null ? '' : '${f.name} '}(${f.columns.join(', ')})',
+      ForeignKeyDef f => '(${f.columns.join(', ')}) → ${f.refTable}(${f.refColumns.join(', ')})',
+      IndexDef i => '${i.unique ? 'UNIQUE ' : ''}(${i.columns.map((c) => i.isDescending(c) ? '$c DESC' : c).join(', ')})',
+      _ => '',
+    };
+    final marks = [if (!enabled) 'disabilitato', if (enabled && !validated) 'non validato'];
+    return marks.isEmpty ? base : '$base · ${marks.join(', ')}';
+  }
+
+  @override
+  IconData get icon => switch (definition) {
+    PrimaryKeyDef _ => AppIcons.key,
+    UniqueDef _ => AppIcons.key,
+    CheckDef _ => AppIcons.check,
+    ForeignKeyDef _ => referencing ? AppIcons.incoming : AppIcons.link,
+    _ => AppIcons.sort,
+  };
+
+  @override
+  bool get expandable => false;
+  @override
+  String get key => 'con:${connection!.config.id}:${table.key}:${definition.runtimeType}:${referencing ? 'ref:' : ''}$label';
+  @override
+  Future<List<NavNode>> load() async => [];
 }
 
 class ProcedureNode extends NavNode {

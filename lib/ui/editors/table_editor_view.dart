@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../features/query_builder/query_model.dart';
 import '../../features/query_builder/visual_filter.dart';
+import '../../features/design/ui/constraints_page.dart';
 import '../../features/schema/ddl_builder.dart';
 import '../../model/db_objects.dart';
 import '../../odbc/odbc_types.dart';
@@ -43,13 +44,13 @@ class _TableEditorViewState extends State<TableEditorView> {
   Object? _dataError;
   int? _rowCount;
   int _lastInitialPage = -1;
-  late int _schemaGeneration = tab.connection.schemaGeneration;
+  int _schemaGeneration = 0;
 
   TableEditorTab get tab => widget.tab;
   DbTable get table => tab.table;
 
   static const _pageData = 1;
-  static const _pageNames = ['Proprietà', 'Dati', 'Colonne', 'Chiavi', 'Indici', 'DDL', 'Diagramma'];
+  static const _pageNames = ['Proprietà', 'Dati', 'Colonne', 'Vincoli', 'Indici', 'DDL', 'Diagramma'];
 
   /// Columns of the table once the metadata is loaded (visual filter).
   List<DbColumn>? _columnsMeta;
@@ -69,6 +70,7 @@ class _TableEditorViewState extends State<TableEditorView> {
     super.initState();
     _lastInitialPage = tab.initialPage;
     tab.addListener(_onTab);
+    _schemaGeneration = tab.connection.schemaGeneration;
     tab.connection.addListener(_onConnection);
     _init();
   }
@@ -94,7 +96,9 @@ class _TableEditorViewState extends State<TableEditorView> {
     _schemaGeneration = c.schemaGeneration;
     if (!c.isConnected || c.metadata == null || _details == null) return;
     if (!changes.any((s) => s.coversObject(table.catalog, table.schema, table.name))) return;
-    setState(() => _details = c.metadata!.tableDetails(table));
+    setState(() {
+      _details = c.metadata!.tableDetails(table);
+    });
   }
 
   Future<void> _init() async {
@@ -210,8 +214,12 @@ class _TableEditorViewState extends State<TableEditorView> {
                         d == null ? const Center(child: Spinner(size: Spinner.large)) : _properties(d),
                         _dataPage(),
                         d == null ? const SizedBox() : _columns(d),
-                        d == null ? const SizedBox() : _constraints(d),
-                        d == null ? const SizedBox() : _indexes(d),
+                        d == null || table.isView
+                            ? const SizedBox()
+                            : ConstraintsPage(connection: tab.connection, table: table, editable: !_simple),
+                        d == null || table.isView
+                            ? const SizedBox()
+                            : IndexesPage(connection: tab.connection, table: table, editable: !_simple),
                         d == null ? const SizedBox() : _ddl(d),
                         d == null || _page != 6
                             ? const SizedBox()
@@ -524,91 +532,6 @@ class _TableEditorViewState extends State<TableEditorView> {
           d.primaryKey?.columns.contains(c.name) ?? false ? 'PK' : '',
           c.remarks ?? '',
         ],
-    ],
-  );
-
-  Widget _constraints(TableDetails d) {
-    final c = DbColors.of(context);
-    Widget section(String title, Widget child) => Align(
-      alignment: Alignment.topLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820),
-        child: FormGroup(title: title, children: [child]),
-      ),
-    );
-    final app = AppScope.read(context);
-    return ListView(
-      padding: const EdgeInsets.all(Gap.lg),
-      children: [
-        section(
-          'Chiave primaria',
-          d.primaryKey == null
-              ? const Text('Nessuna chiave primaria')
-              : SelectableText('${d.primaryKey!.name ?? 'PRIMARY KEY'}  (${d.primaryKey!.columns.join(', ')})'),
-        ),
-        section(
-          'Vincoli UNIQUE',
-          Text(
-            d.indexes.where((i) => i.unique).map((i) => '${i.name} (${i.columns.join(', ')})').join('\n').isEmpty
-                ? 'Nessuno'
-                : d.indexes.where((i) => i.unique).map((i) => '${i.name} (${i.columns.join(', ')})').join('\n'),
-          ),
-        ),
-        section(
-          'Chiavi esterne',
-          d.foreignKeys.isEmpty
-              ? const Text('Nessuna')
-              : Column(
-                  children: [
-                    for (final f in d.foreignKeys)
-                      ListRow(
-                        icon: AppIcons.link,
-                        iconColor: c.foreignKeyIcon,
-                        title: f.name ?? '(senza nome)',
-                        subtitle:
-                            '(${f.columns.join(', ')}) → ${f.pkTable} (${f.refColumns.join(', ')})'
-                            '${DbForeignKey.ruleName(f.deleteRule).isEmpty ? '' : '  ON DELETE ${DbForeignKey.ruleName(f.deleteRule)}'}',
-                        trailing: LinkButton(
-                          label: 'Apri',
-                          onPressed: () => app.openTable(
-                            tab.connection,
-                            DbTable(catalog: f.pkCatalog, schema: f.pkSchema, name: f.pkTable, type: 'TABLE'),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-        ),
-        section(
-          'Referenziata da',
-          d.referencedBy.isEmpty
-              ? const Text('Nessuna tabella')
-              : Column(
-                  children: [
-                    for (final f in d.referencedBy)
-                      ListRow(
-                        icon: AppIcons.incoming,
-                        title: f.fkTable,
-                        subtitle: '${f.name ?? ''}  (${f.columns.join(', ')}) → (${f.refColumns.join(', ')})',
-                        trailing: LinkButton(
-                          label: 'Apri',
-                          onPressed: () => app.openTable(
-                            tab.connection,
-                            DbTable(catalog: f.fkCatalog, schema: f.fkSchema, name: f.fkTable, type: 'TABLE'),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _indexes(TableDetails d) => SimpleGrid(
-    headers: const ['Nome', 'Univoco', 'Tipo', 'Colonne'],
-    rows: [
-      for (final i in d.indexes) [i.name, i.unique ? 'sì' : 'no', i.typeName, i.columns.join(', ')],
     ],
   );
 

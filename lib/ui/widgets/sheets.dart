@@ -293,8 +293,13 @@ class SheetScaffold extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(_kMargin, Gap.lg, _kMargin, 18),
             child: Row(
               children: [
-                for (final (i, w) in leading.indexed) ...[if (i > 0) const SizedBox(width: Gap.sm), w],
-                const Spacer(),
+                // Flexible leading widgets (status lines) take all the free space.
+                Expanded(
+                  child: Row(
+                    children: [for (final (i, w) in leading.indexed) ...[if (i > 0) const SizedBox(width: Gap.sm), w]],
+                  ),
+                ),
+                if (leading.isNotEmpty && actions.isNotEmpty) const SizedBox(width: Gap.sm),
                 for (final (i, a) in actions.indexed) ...[if (i > 0) const SizedBox(width: Gap.sm), a],
               ],
             ),

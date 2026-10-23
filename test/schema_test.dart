@@ -1,3 +1,4 @@
+import 'package:dbcraft/features/design/ui/constraint_dialogs.dart';
 import 'package:dbcraft/features/schema/ddl_builder.dart';
 import 'package:dbcraft/features/schema/ddl_execution.dart';
 import 'package:dbcraft/features/schema/erd_dialogs.dart';
@@ -730,18 +731,24 @@ void main() {
 
     testWidgets('relation dialog builds the foreign key', (tester) async {
       final ctx = await host(tester);
-      final f = showRelationDialog(
+      final child = orders.copyWith(foreignKeys: const []);
+      final f = showForeignKeyDialog(
         ctx,
-        child: orders.copyWith(foreignKeys: const []),
-        childColumn: 'customer_id',
-        parent: customers,
-        parentColumn: 'id',
+        ConstraintContext(dialect: pg, table: child, isNew: true),
+        prefill: const ForeignKeyDef(
+          columns: ['customer_id'],
+          refSchema: 'app',
+          refTable: 'customers',
+          refColumns: ['id'],
+        ),
+        tables: [customers.toDbTable()],
+        loadTable: (_) async => customers,
       );
       await tester.pumpAndSettle();
       expect(find.text('fk_orders_customers'), findsOneWidget);
       await tester.tap(find.text('Crea'));
       await tester.pumpAndSettle();
-      final fk = (await f)!;
+      final fk = (await f)!.value;
       expect(fk.refTable, 'customers');
       expect(fk.refSchema, 'app');
       expect(fk.columns, ['customer_id']);
@@ -853,8 +860,8 @@ void main() {
     }
     await g.up();
     await tester.pumpAndSettle();
-    expect(find.text('Nuova relazione'), findsOneWidget);
-    expect(find.textContaining('non è chiave primaria'), findsOneWidget);
+    expect(find.text('Nuova chiave esterna'), findsOneWidget);
+    expect(find.textContaining('non sono chiave primaria né univoche'), findsOneWidget);
     await tester.tap(find.text('Crea'));
     await tester.pumpAndSettle();
     expect(find.text('1 modifica'), findsOneWidget);

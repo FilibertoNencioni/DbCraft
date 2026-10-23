@@ -7,8 +7,11 @@ import '../../features/ai/ai.dart';
 import '../../features/data_compare/data_compare_tab.dart';
 import '../../features/debugger/pg_debugger_tab.dart';
 import '../../features/design/ddl_script.dart';
+import '../../features/design/ui/design_actions.dart' as design;
+import '../../features/design/ui/design_menu.dart';
 import '../../features/schema/ddl_builder.dart';
 import '../../features/schema/ddl_execution.dart';
+import '../../features/schema/schema_model.dart';
 import '../../features/schema/schema_compare_view.dart';
 import '../../features/mock_data/mock_data_dialog.dart';
 import '../../features/performance/perf_dashboard.dart';
@@ -231,6 +234,8 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         app.openTable(t.connection!, t.table);
       case ProcedureNode p:
         app.openProcedure(p.connection!, p.procedure);
+      case ConstraintNode c when !app.settings.simpleMode && !c.connection!.config.readOnly:
+        design.editConstraint(context, c.connection!, c.table, c.definition);
       default:
         _toggle(n);
     }
@@ -325,6 +330,10 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     ConnectionNode x => x.dc.config.template.color,
     TableNode _ || ProcedureNode _ => c.accent,
     LeafNode l when l.isKey => c.keyIcon,
+    ConstraintNode k when !k.enabled => c.textTertiary,
+    ConstraintNode k when k.isKey => c.keyIcon,
+    ConstraintNode k when k.definition is ForeignKeyDef => c.foreignKeyIcon,
+    ConstraintNode _ => c.textSecondary,
     LeafNode _ => c.textTertiary,
     _ => c.textSecondary,
   };
@@ -496,6 +505,10 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
             ),
             _item('Genera DDL', () => gen(DdlBuilder(d).tableScript)),
           ],
+          if (!tb.isView && d.isSql && !simple) ...[
+            const MenuEntry.divider(),
+            createConstraintMenu(context, dc, tb),
+          ],
           const MenuEntry.divider(),
           _item('Esporta dati…', () => showTableExportDialog(context, dc, tb)),
           if (!tb.isView)
@@ -562,8 +575,18 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           }),
           _item('Copia nome', () => Clipboard.setData(ClipboardData(text: p.procedure.cleanName))),
         ]);
+      case TablePartNode p:
+        if (designAvailable(dc!) && !simple && partKinds(p.part).isNotEmpty) {
+          items.addAll([createConstraintMenu(context, dc, p.table, only: partKinds(p.part)), const MenuEntry.divider()]);
+        }
+        items.add(_item('Aggiorna', () => _refresh(n), shortcut: _refreshKey));
+      case ConstraintNode k:
+        if (simple || !designAvailable(dc!)) {
+          if (k.name != null) items.add(_item('Copia nome', () => Clipboard.setData(ClipboardData(text: k.name!))));
+        } else {
+          items.addAll(constraintMenu(context, k, refresh: () => _refreshParent(k)));
+        }
       case ObjectFolderNode _:
-      case TablePartNode _:
         items.add(_item('Aggiorna', () => _refresh(n), shortcut: _refreshKey));
       case LeafNode l:
         items.add(_item('Copia nome', () => Clipboard.setData(ClipboardData(text: l.name))));
@@ -580,6 +603,23 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       if (!mounted) return;
       showToast(context, '${t.name}: ${r.rows.first.first} righe');
     });
+  }
+
+  /// Refreshes the node listing [n].
+  Future<void> _refreshParent(NavNode n) async {
+    for (final root in _cache.values) {
+      final p = _parentIn(root, n);
+      if (p != null) return _refresh(p);
+    }
+  }
+
+  static NavNode? _parentIn(NavNode root, NavNode n) {
+    for (final ch in root.children ?? const <NavNode>[]) {
+      if (identical(ch, n)) return root;
+      final p = _parentIn(ch, n);
+      if (p != null) return p;
+    }
+    return null;
   }
 
   /// Destructive single statement: script preview, confirmation, refresh.

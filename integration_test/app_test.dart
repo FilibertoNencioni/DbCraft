@@ -159,7 +159,7 @@ void main() {
     await check.close();
 
     // Constraints & DDL pages.
-    await tester.tap(find.text('Chiavi').last);
+    await tester.tap(find.text('Vincoli').last);
     await settle(tester);
     await shot(tester, '06_table_constraints');
     await tester.tap(find.text('DDL').last);
