@@ -25,6 +25,7 @@ import 'pg.dart';
 import 'snowflake.dart';
 import 'sqlite.dart';
 import 'table_extras.dart';
+import 'views.dart';
 
 /// A catalog row keyed by lower-case column name.
 typedef CatalogRow = Map<String, Object?>;
@@ -154,6 +155,15 @@ class DesignCatalog {
     } catch (_) {
       return base;
     }
+  }
+
+  /// Definition of the view [t] (null when the catalog has none).
+  Future<ViewDef?> viewDef(DbTable t) async {
+    final r = await metadata.cached<Object>(
+      'design:view:${t.key}',
+      () async => await readViewDef(queries, dialect, t) ?? false,
+    );
+    return r is ViewDef ? r : null;
   }
 
   /// Databases with their properties (DBMS where databases are managed).

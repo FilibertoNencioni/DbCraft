@@ -9,6 +9,8 @@ import '../../features/design/table_design.dart';
 import '../../features/design/ui/constraints_page.dart';
 import '../../features/design/ui/design_actions.dart';
 import '../../features/design/ui/table_designer.dart';
+import '../../features/design/ui/view_editor.dart';
+import '../../features/design/view_design.dart';
 import '../../features/schema/ddl_builder.dart';
 import '../../model/db_objects.dart';
 import '../../odbc/odbc_types.dart';
@@ -59,10 +61,52 @@ class _TableEditorViewState extends State<TableEditorView> {
 
   static const _pageData = 1;
   static const _pageChanges = 7;
-  static const _pageNames = ['Proprietà', 'Dati', 'Colonne', 'Vincoli', 'Indici', 'DDL', 'Diagramma', 'Modifiche'];
+  static const _pageDefinition = 8;
+  static const _pageNames = [
+    'Proprietà', 'Dati', 'Colonne', 'Vincoli', 'Indici', 'DDL', 'Diagramma', 'Modifiche', 'Definizione', //
+  ];
 
   /// Pages of a table that does not exist yet.
   static const _newPages = [0, 2, 3, 4, 7];
+
+  /// Pages of a view.
+  static const _viewPages = [0, 1, 2, 8, 5];
+
+  /// Pages shown in the page switcher.
+  List<int> get _visiblePages {
+    if (tab.isNew) return tab.viewDesign != null ? const [_pageDefinition] : _newPages;
+    if (table.isView) return _viewPages;
+    return [
+      for (var i = 0; i < _pageDefinition; i++)
+        if (i != _pageChanges || (_design != null && _designable)) i,
+    ];
+  }
+
+  /// The view definition can be edited here.
+  bool get _viewEditable {
+    final c = tab.connection;
+    return table.isView && c.dialect.isSql && !c.config.readOnly && !_simple;
+  }
+
+  /// Reads the definition of the view (or refreshes an unchanged one).
+  Future<void> _loadViewDesign() async {
+    final cat = DesignCatalog.of(tab.connection);
+    if (cat == null || !table.isView) return;
+    try {
+      final def = await cat.viewDef(table);
+      if (!mounted || def == null) return;
+      final v = tab.viewDesign;
+      if (v == null) {
+        tab.viewDesign = ViewDesign.existing(tab.connection.dialect, def);
+        _attachDesign();
+      } else if (!v.isDirty) {
+        v.saved(def);
+      }
+    } catch (_) {
+      // The definition page shows that it cannot be read.
+    }
+    if (mounted) setState(() {});
+  }
 
   /// The structure can be edited here (the designer).
   bool get _designable {
@@ -102,11 +146,20 @@ class _TableEditorViewState extends State<TableEditorView> {
   /// Follows the design: tab title and dirty mark, toolbar, pages.
   void _attachDesign() {
     final d = _design;
-    if (identical(d, _attached)) return;
-    _attached?.removeListener(_onDesign);
-    _attached = d;
-    d?.addListener(_onDesign);
+    if (!identical(d, _attached)) {
+      _attached?.removeListener(_onDesign);
+      _attached = d;
+      d?.addListener(_onDesign);
+    }
+    final v = tab.viewDesign;
+    if (!identical(v, _attachedView)) {
+      _attachedView?.removeListener(_onDesign);
+      _attachedView = v;
+      v?.addListener(_onDesign);
+    }
   }
+
+  ViewDesign? _attachedView;
 
   void _onDesign() {
     tab.refresh();
@@ -173,13 +226,15 @@ class _TableEditorViewState extends State<TableEditorView> {
       _details = c.metadata!.tableDetails(table);
     });
     if (_design != null && !_design!.isDirty) _loadDesign();
+    if (table.isView && !(tab.viewDesign?.isDirty ?? false)) _loadViewDesign();
   }
 
   Future<void> _init() async {
     if (tab.isNew) {
-      if (_page != 0 && !_newPages.contains(_page)) _page = 0;
+      if (!_visiblePages.contains(_page)) _page = _visiblePages.first;
       return;
     }
+    if (table.isView && !_viewPages.contains(_page)) _page = 0;
     if (!await ensureConnected(context, tab.connection)) return;
     setState(() {
       _details = tab.connection.metadata!.tableDetails(table);
@@ -188,12 +243,17 @@ class _TableEditorViewState extends State<TableEditorView> {
       if (mounted) setState(() => _columnsMeta = d.columns);
     }, onError: (_) {});
     if (_page == _pageData) _loadData();
-    if (_design == null) _loadDesign();
+    if (table.isView) {
+      _loadViewDesign();
+    } else if (_design == null) {
+      _loadDesign();
+    }
   }
 
   @override
   void dispose() {
     _attached?.removeListener(_onDesign);
+    _attachedView?.removeListener(_onDesign);
     tab.removeListener(_onTab);
     tab.connection.removeListener(_onConnection);
     _where.dispose();
@@ -276,6 +336,15 @@ class _TableEditorViewState extends State<TableEditorView> {
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     final d = _design;
+    final vd = tab.viewDesign;
+    if (tab.isNew && vd != null) {
+      return Column(
+        children: [
+          _header(app),
+          Expanded(child: ViewDefinitionPage(design: vd, connection: tab.connection)),
+        ],
+      );
+    }
     if (tab.isNew && d != null) {
       return Column(
         children: [
@@ -361,6 +430,15 @@ class _TableEditorViewState extends State<TableEditorView> {
                         design == null
                             ? const SizedBox()
                             : DesignChangesPage(design: design, connection: tab.connection),
+                        !table.isView
+                            ? const SizedBox()
+                            : vd == null
+                            ? EmptyState(
+                                icon: AppIcons.code,
+                                title: 'Definizione non disponibile',
+                                message: 'Il catalogo di ${tab.connection.dialect.dbmsName} non espone il testo di questa vista.',
+                              )
+                            : ViewDefinitionPage(design: vd, connection: tab.connection, readOnly: !_viewEditable),
                       ],
                     );
                   },
@@ -422,6 +500,7 @@ class _TableEditorViewState extends State<TableEditorView> {
                 ),
                 // Only on the structure pages: the data page has its own "Salva".
                 if (_design != null && _designable && _newPages.contains(_page)) ..._designTools(),
+                if (tab.viewDesign != null && _viewEditable && (_page == 0 || _page == _pageDefinition)) ..._viewTools(),
                 if (!app.settings.simpleMode && !tab.isNew)
                   ToolButton(
                     icon: AppIcons.script,
@@ -463,7 +542,7 @@ class _TableEditorViewState extends State<TableEditorView> {
                   value: _page,
                   items: [
                     for (final (i, n) in _pageNames.indexed)
-                      if (tab.isNew ? _newPages.contains(i) : (i != _pageChanges || (_design != null && _designable)))
+                      if (_visiblePages.contains(i))
                         (i, i == _pageChanges && (_design?.changes.isNotEmpty ?? false) ? '$n (${_design!.changes.length})' : n, null),
                   ],
                   onChanged: _setPage,
@@ -471,6 +550,29 @@ class _TableEditorViewState extends State<TableEditorView> {
         ],
       ),
     );
+  }
+
+  /// Discard and save of the view editor.
+  List<Widget> _viewTools() {
+    final v = tab.viewDesign!;
+    return [
+      if (!v.isNew)
+        ToolButton(
+          icon: AppIcons.replay,
+          tooltip: 'Scarta le modifiche alla vista',
+          onPressed: v.isDirty ? v.discard : null,
+        ),
+      const SizedBox(width: Gap.xs),
+      PushButton.primary(
+        label: v.isNew ? 'Crea vista' : 'Salva',
+        icon: AppIcons.save,
+        size: ControlScale.small,
+        tooltip: v.errors.isNotEmpty ? v.errors.first : 'Mostra lo script ed esegue le modifiche',
+        onPressed: v.isDirty && v.errors.isEmpty ? () => saveViewDesign(context, tab) : null,
+      ),
+      const SizedBox(width: Gap.sm),
+      ToolSeparator(),
+    ];
   }
 
   /// Undo, redo, discard and save of the designer.
@@ -717,12 +819,13 @@ class _TableEditorViewState extends State<TableEditorView> {
   );
 
   Widget _ddl(TableDetails d) {
-    final ddl = DdlBuilder(tab.connection.dialect).tableScript(d);
+    final view = tab.viewDesign?.original;
+    final ddl = view != null ? viewScript(tab.connection.dialect, view) : DdlBuilder(tab.connection.dialect).tableScript(d);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         PaneHeader(
-          title: 'DDL ricostruito dai metadati ODBC',
+          title: view != null ? 'DDL letto dal catalogo del database' : 'DDL ricostruito dai metadati ODBC',
           actions: [
             ToolButton(
               icon: AppIcons.copy,

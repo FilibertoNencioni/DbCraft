@@ -7,10 +7,15 @@ import '../../features/ai/ai.dart';
 import '../../features/data_compare/data_compare_tab.dart';
 import '../../features/debugger/pg_debugger_tab.dart';
 import '../../features/design/ddl_script.dart';
+import '../../features/design/capabilities.dart';
+import '../../features/design/catalog/design_catalog.dart';
+import '../../features/design/ddl/object_ddl.dart';
+import '../../features/design/model/object_defs.dart';
 import '../../features/design/table_design.dart';
 import '../../features/design/ui/constraint_dialogs.dart';
 import '../../features/design/ui/design_actions.dart' as design;
 import '../../features/design/ui/design_menu.dart';
+import '../../features/design/ui/view_editor.dart';
 import '../../features/schema/ddl_builder.dart';
 import '../../features/schema/ddl_execution.dart';
 import '../../features/schema/schema_model.dart';
@@ -530,7 +535,21 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               'Genera DELETE',
               () => gen((x) => '${d.deleteSql(tb, x.columns, x.primaryKey?.columns ?? [])};'),
             ),
-            _item('Genera DDL', () => gen(DdlBuilder(d).tableScript)),
+            _item(
+              'Genera DDL',
+              tb.isView
+                  ? () => guarded(context, () async {
+                      final v = await DesignCatalog.of(dc)?.viewDef(tb);
+                      sqlWith(v == null ? DdlBuilder(d).tableScript(await dc.metadata!.tableDetails(tb)) : viewScript(d, v));
+                    })
+                  : () => gen(DdlBuilder(d).tableScript),
+            ),
+          ],
+          if (tb.isView && d.isSql && !simple) ...[
+            const MenuEntry.divider(),
+            _item('Modifica definizione', dc.config.readOnly ? null : () => app.openTable(dc, tb, page: 8)),
+            if (_materialized(tb) && DesignCapabilities.of(d).has(DesignFeature.materializedViews))
+              _item('Aggiorna i dati della vista', dc.config.readOnly ? null : () => _refreshMaterialized(dc, tb)),
           ],
           if (!tb.isView && d.isSql && !simple) ...[
             const MenuEntry.divider(),
@@ -585,7 +604,9 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
             'Elimina (DROP)…',
             dc.config.readOnly
                 ? null
-                : () => _dangerous(dc, d.dropSql(tb), 'Elimina ${tb.name}', SchemaScope.schema(tb.catalog, tb.schema)),
+                : () => tb.isView
+                      ? _dropView(dc, tb)
+                      : _dangerous(dc, d.dropSql(tb), 'Elimina ${tb.name}', SchemaScope.schema(tb.catalog, tb.schema)),
           ),
           _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
         ]);
@@ -616,6 +637,15 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           items.addAll(constraintMenu(context, k, refresh: () => _refreshParent(k)));
         }
       case ObjectFolderNode f:
+        if (f.kind == ObjectKind.views && designAvailable(dc!) && !simple) {
+          items.addAll([
+            _item(
+              'Nuova vista…',
+              dc.config.readOnly ? null : () => app.openNewView(dc, catalog: f.catalog, schema: f.schema),
+            ),
+            const MenuEntry.divider(),
+          ]);
+        }
         if (f.kind == ObjectKind.tables && designAvailable(dc!) && !simple) {
           items.addAll([
             _item(
@@ -641,6 +671,42 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       if (!mounted) return;
       showToast(context, '${t.name}: ${r.rows.first.first} righe');
     });
+  }
+
+  static bool _materialized(DbTable t) {
+    final type = t.type.toUpperCase();
+    return type.contains('MATERIALIZED') || type.contains('MATVIEW');
+  }
+
+  /// DROP of a view as its kind needs (DROP MATERIALIZED VIEW…).
+  Future<void> _dropView(DbConnection dc, DbTable t) async {
+    final v = await loadViewDef(dc, t);
+    if (!mounted) return;
+    final sql = v == null ? [dc.dialect.dropSql(t)] : ObjectDdl(dc.dialect).dropView(v);
+    await showDdlScriptDialog(
+      context,
+      dc: dc,
+      title: 'Elimina ${t.name}',
+      script: DdlScript(
+        sql,
+        scope: SchemaScope.schema(t.catalog, t.schema),
+        catalog: ObjectDdl(dc.dialect).scriptCatalog(t.catalog),
+      ),
+    );
+  }
+
+  Future<void> _refreshMaterialized(DbConnection dc, DbTable t) async {
+    final v = await loadViewDef(dc, t);
+    if (!mounted) return;
+    await showDdlScriptDialog(
+      context,
+      dc: dc,
+      title: 'Aggiorna ${t.name}',
+      script: DdlScript(
+        ObjectDdl(dc.dialect).refreshMaterializedView(v ?? ViewDef(catalog: t.catalog, schema: t.schema, name: t.name, definition: '', materialized: true)),
+        scope: SchemaScope.object(t.catalog, t.schema, t.name),
+      ),
+    );
   }
 
   /// New table with the structure of [t].

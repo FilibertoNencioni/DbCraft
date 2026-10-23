@@ -254,6 +254,40 @@ void main() {
         expect(await cat.schemaDef(catalog, s.name), isNull);
       });
 
+      test('view round trip', () async {
+        final b = DdlBuilder(dc.dialect);
+        final ddl = ObjectDdl(dc.dialect);
+        final base = TableDef(
+          name: 'dbc_rv_$suffix',
+          columns: const [
+            ColumnDef(name: 'id', type: 'integer', nullable: false),
+            ColumnDef(name: 'qty', type: 'integer'),
+          ],
+          primaryKey: PrimaryKeyDef(name: 'pk_dbc_rv_$suffix', columns: const ['id']),
+        );
+        final t = dc.dialect.quoteIdent(base.name);
+        final view = ViewDef(name: 'dbc_rvv_$suffix', definition: 'SELECT id FROM $t');
+        await run(dc, b.createTable(base));
+        try {
+          await run(dc, ddl.createView(view));
+          final found = await dc.metadata!.findTable(null, null, view.name);
+          expect(found, isNotNull);
+          expect(found!.isView, isTrue);
+          final read = (await DesignCatalog.of(dc)!.viewDef(found))!;
+          expect(read.definition.toLowerCase(), contains(base.name));
+          expect(read.definition.toLowerCase(), isNot(contains('create')));
+          // Change the query (OR REPLACE / OR ALTER, or drop and create).
+          final changed = read.copyWith(originalName: read.name, definition: 'SELECT id, qty FROM $t');
+          await run(dc, ddl.alterView(read, changed));
+          final again = (await DesignCatalog.of(dc)!.viewDef(found))!;
+          expect(again.definition.toLowerCase(), contains('qty'));
+          await run(dc, ddl.dropView(again));
+          expect(await dc.metadata!.findTable(null, null, view.name), isNull);
+        } finally {
+          await run(dc, b.dropTable(base));
+        }
+      });
+
       test('constraints and indexes round trip', () async {
         final b = DdlBuilder(dc.dialect);
         final caps = DesignCapabilities.of(dc.dialect);

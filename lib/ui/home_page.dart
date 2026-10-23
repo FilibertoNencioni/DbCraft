@@ -13,6 +13,7 @@ import '../features/data_compare/data_compare_tab.dart';
 import '../features/design/capabilities.dart';
 import '../features/design/ui/object_actions.dart' as objects;
 import '../features/design/ui/table_designer.dart';
+import '../features/design/ui/view_editor.dart';
 import '../features/git/git.dart';
 import '../features/performance/perf_dashboard.dart';
 import '../features/query_builder/query_builder_tab.dart';
@@ -175,7 +176,7 @@ class _HomePageState extends State<HomePage> {
               : 'Salva modifiche ai dati',
           table != null
               ? (table.designDirty
-                    ? () => saveTableDesign(context, table)
+                    ? () => table.viewDesign != null ? saveViewDesign(context, table) : saveTableDesign(context, table)
                     : (table.dataDirty ? () => _saveTableData(table) : null))
               : (sql == null ? null : () => sql.save()),
           _a(LogicalKeyboardKey.keyS),
@@ -261,6 +262,22 @@ class _HomePageState extends State<HomePage> {
         _MenuAction('Piano di esecuzione', sqlCmd(SqlCommand.explain), _a(LogicalKeyboardKey.keyE, shift: true)),
         _MenuAction('Piano visuale', sqlCmd(SqlCommand.visualPlan), _a(LogicalKeyboardKey.keyE, alt: true)),
         _MenuAction('Interrompi esecuzione', sql != null && sql.running ? () => sql.cancel() : null, _a(LogicalKeyboardKey.period)),
+        const _MenuDivider(),
+        _MenuAction(
+          'Crea vista dalla query…',
+          sql == null ||
+                  sql.connection == null ||
+                  !sql.connection!.dialect.isSql ||
+                  sql.connection!.config.readOnly ||
+                  app.settings.simpleMode
+              ? null
+              : () {
+                  final st = sql.currentStatement();
+                  if (st == null) return;
+                  app.openNewView(sql.connection!, catalog: sql.catalog, definition: st.text);
+                },
+          null,
+        ),
         const _MenuDivider(),
         _MenuAction('Formatta SQL', sqlCmd(SqlCommand.format), _a(LogicalKeyboardKey.keyF, shift: true)),
         _MenuAction('Trova e sostituisci…', sqlCmd(SqlCommand.find), _a(LogicalKeyboardKey.keyF)),

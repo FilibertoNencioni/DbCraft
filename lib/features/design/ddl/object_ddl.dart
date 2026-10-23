@@ -273,6 +273,200 @@ class ObjectDdl {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Views
+  // -------------------------------------------------------------------------
+
+  /// Name of [v] in its statements. SQL Server refuses a database prefix
+  /// in CREATE / ALTER / DROP VIEW: the script runs in that database instead
+  /// ([scriptCatalog]).
+  String viewRef(ViewDef v, {bool current = false}) =>
+      dialect.qualified(family == DbFamily.sqlServer ? null : v.catalog, v.schema, current ? v.dbName : v.name);
+
+  /// Database a script on objects of [catalog] must run in (SQL Server
+  /// modules cannot be qualified with it); null elsewhere.
+  String? scriptCatalog(String? catalog) => family == DbFamily.sqlServer ? catalog : null;
+
+  String _query(ViewDef v) => v.definition.trim().replaceFirst(RegExp(r';\s*$'), '');
+
+  /// CREATE VIEW (or CREATE OR REPLACE / OR ALTER with [replace], where the
+  /// DBMS has it).
+  List<String> createView(ViewDef v, {bool replace = false}) {
+    if (v.materialized && !caps.has(DesignFeature.materializedViews)) {
+      return [_note('Vista materializzata ${v.name}: ${caps.reason(DesignFeature.materializedViews)}')];
+    }
+    final ref = viewRef(v);
+    final q = _query(v);
+    final check = v.checkOption == ViewCheckOption.none || v.materialized ? null : v.checkOption;
+    final orReplace = replace && caps.has(DesignFeature.replaceView);
+    switch (family) {
+      case DbFamily.postgres:
+        final sb = StringBuffer(
+          'CREATE ${orReplace && !v.materialized ? 'OR REPLACE ' : ''}${v.materialized ? 'MATERIALIZED ' : ''}VIEW $ref',
+        );
+        if (!v.materialized && v.securityBarrier) sb.write(' WITH (security_barrier = true)');
+        sb.write(' AS\n$q');
+        if (v.materialized && !v.withData) sb.write('\nWITH NO DATA');
+        if (check != null) sb.write('\nWITH ${check.sql} CHECK OPTION');
+        return [sb.toString(), if (_has(v.comment)) ...viewComment(v)];
+      case DbFamily.sqlServer:
+        return [
+          'CREATE ${orReplace ? 'OR ALTER ' : ''}VIEW $ref${v.schemaBinding ? ' WITH SCHEMABINDING' : ''} AS\n$q'
+              '${check != null ? '\nWITH CHECK OPTION' : ''}',
+          if (_has(v.comment)) ...viewComment(v),
+        ];
+      case DbFamily.mysql:
+        final sb = StringBuffer('CREATE ${orReplace ? 'OR REPLACE ' : ''}');
+        if (_has(v.algorithm)) sb.write('ALGORITHM = ${v.algorithm} ');
+        if (_has(v.sqlSecurity)) sb.write('SQL SECURITY ${v.sqlSecurity} ');
+        sb.write('VIEW $ref AS\n$q');
+        if (check != null) sb.write('\nWITH ${check.sql} CHECK OPTION');
+        return [sb.toString()];
+      case DbFamily.oracle:
+        if (v.materialized) return ['CREATE MATERIALIZED VIEW $ref AS\n$q', if (_has(v.comment)) ...viewComment(v)];
+        return [
+          'CREATE ${orReplace ? 'OR REPLACE ' : ''}${v.force ? 'FORCE ' : ''}VIEW $ref AS\n$q'
+              '${check != null ? '\nWITH CHECK OPTION' : ''}',
+          if (_has(v.comment)) ...viewComment(v),
+        ];
+      case DbFamily.db2:
+        return [
+          'CREATE ${orReplace ? 'OR REPLACE ' : ''}VIEW $ref AS\n$q${check != null ? '\nWITH ${check.sql} CHECK OPTION' : ''}',
+          if (_has(v.comment)) ...viewComment(v),
+        ];
+      case DbFamily.firebird:
+        return [
+          '${orReplace ? 'CREATE OR ALTER' : 'CREATE'} VIEW $ref AS\n$q${check != null ? '\nWITH CHECK OPTION' : ''}',
+          if (_has(v.comment)) ...viewComment(v),
+        ];
+      case DbFamily.snowflake:
+        final sb = StringBuffer(
+          'CREATE ${orReplace ? 'OR REPLACE ' : ''}${v.secure ? 'SECURE ' : ''}${v.materialized ? 'MATERIALIZED ' : ''}VIEW $ref',
+        );
+        if (_has(v.comment)) sb.write(' COMMENT = ${lit(v.comment!)}');
+        sb.write(' AS\n$q');
+        return [sb.toString()];
+      default:
+        return ['CREATE VIEW $ref AS\n$q'];
+    }
+  }
+
+  /// Comment of [v] (empty: removed).
+  List<String> viewComment(ViewDef v) {
+    final ref = viewRef(v);
+    final text = v.comment ?? '';
+    final value = text.isEmpty ? 'NULL' : lit(text);
+    switch (family) {
+      case DbFamily.postgres:
+        return ['COMMENT ON ${v.materialized ? 'MATERIALIZED ' : ''}VIEW $ref IS $value'];
+      case DbFamily.oracle:
+        return ['COMMENT ON ${v.materialized ? 'MATERIALIZED VIEW' : 'TABLE'} $ref IS ${lit(text)}'];
+      case DbFamily.db2:
+        return ['COMMENT ON TABLE $ref IS ${lit(text)}'];
+      case DbFamily.firebird:
+        return ['COMMENT ON VIEW $ref IS $value'];
+      case DbFamily.snowflake:
+        return [text.isEmpty ? 'ALTER VIEW $ref UNSET COMMENT' : 'ALTER VIEW $ref SET COMMENT = ${lit(text)}'];
+      case DbFamily.sqlServer:
+        final proc = text.isEmpty ? 'sp_dropextendedproperty' : 'sp_addextendedproperty';
+        return [
+          "EXEC $proc @name = N'MS_Description', ${text.isEmpty ? '' : '@value = ${_n(text)}, '}"
+              "@level0type = N'SCHEMA', @level0name = ${_n(v.schema ?? 'dbo')}, @level1type = N'VIEW', @level1name = ${_n(v.name)}",
+        ];
+      default:
+        return const [];
+    }
+  }
+
+  List<String> dropView(ViewDef v, {bool cascade = false}) {
+    final ref = viewRef(v, current: true);
+    switch (family) {
+      case DbFamily.postgres:
+        return ['DROP ${v.materialized ? 'MATERIALIZED ' : ''}VIEW $ref${cascade ? ' CASCADE' : ''}'];
+      case DbFamily.oracle:
+        return [
+          v.materialized ? 'DROP MATERIALIZED VIEW $ref' : 'DROP VIEW $ref${cascade ? ' CASCADE CONSTRAINTS' : ''}',
+        ];
+      case DbFamily.snowflake:
+        return ['DROP ${v.materialized ? 'MATERIALIZED ' : ''}VIEW $ref'];
+      default:
+        return ['DROP VIEW $ref'];
+    }
+  }
+
+  /// RENAME where the DBMS has it, otherwise DROP + CREATE.
+  List<String> renameView(ViewDef v, String to) {
+    final ref = viewRef(v, current: true);
+    final target = v.copyWith(name: to, originalName: null);
+    switch (family) {
+      case DbFamily.postgres:
+        return ['ALTER ${v.materialized ? 'MATERIALIZED ' : ''}VIEW $ref RENAME TO ${q(to)}'];
+      case DbFamily.mysql:
+        return ['RENAME TABLE $ref TO ${viewRef(target)}'];
+      case DbFamily.snowflake:
+        return ['ALTER VIEW $ref RENAME TO ${viewRef(target)}'];
+      case DbFamily.oracle when !v.materialized:
+        return ['RENAME ${q(v.dbName)} TO ${q(to)}'];
+      default:
+        return [
+          '-- ${dialect.dbmsName} non rinomina le viste: viene eliminata e creata di nuovo',
+          ...dropView(v),
+          ...createView(target),
+        ];
+    }
+  }
+
+  /// Statements that turn the view [from] (in the database) into [to].
+  List<String> alterView(ViewDef from, ViewDef to) {
+    final queryChanged = _query(from).replaceAll(RegExp(r'\s+'), ' ') != _query(to).replaceAll(RegExp(r'\s+'), ' ');
+    final optionsChanged = !from.sameOptions(to);
+    final renamed = from.name != to.name;
+    final commentChanged = (from.comment ?? '') != (to.comment ?? '');
+    if (!queryChanged && !optionsChanged && !renamed && !commentChanged) return const [];
+    // Materialized views (and a switch of kind) are always recreated.
+    final recreate =
+        optionsChanged && (from.materialized != to.materialized || to.materialized) ||
+        (queryChanged || optionsChanged) && (to.materialized || !caps.has(DesignFeature.replaceView));
+    if (recreate) {
+      return [
+        '-- La vista ${from.name} viene eliminata e creata di nuovo: i permessi concessi su di essa vanno ripristinati',
+        ...dropView(from),
+        ...createView(to.copyWith(originalName: null)),
+      ];
+    }
+    final out = <String>[];
+    var current = to.copyWith(name: from.name, originalName: null);
+    if (renamed) {
+      final r = renameView(from, to.name);
+      if (r.any((x) => x.startsWith('DROP'))) {
+        // Recreated with the new definition right away.
+        return [r.first, ...dropView(from), ...createView(to.copyWith(originalName: null))];
+      }
+      out.addAll(r);
+      current = to.copyWith(originalName: null);
+    }
+    if (queryChanged || optionsChanged) {
+      // OR REPLACE keeps grants and dependent objects.
+      out.addAll(
+        createView(current, replace: true).where((x) => !x.startsWith('COMMENT') && !x.startsWith('EXEC sp_add')),
+      );
+    }
+    if (commentChanged && family != DbFamily.mysql) out.addAll(viewComment(current));
+    return out;
+  }
+
+  List<String> refreshMaterializedView(ViewDef v, {bool concurrently = false}) {
+    final ref = viewRef(v, current: true);
+    return switch (family) {
+      DbFamily.postgres => ['REFRESH MATERIALIZED VIEW ${concurrently ? 'CONCURRENTLY ' : ''}$ref'],
+      DbFamily.oracle => [
+        "BEGIN DBMS_MVIEW.REFRESH(${lit([if (v.schema != null) v.schema!, v.dbName].join('.'))}); END;",
+      ],
+      DbFamily.snowflake => [_note('Snowflake aggiorna da solo le viste materializzate')],
+      _ => [_note('Aggiornamento della vista materializzata ${v.name}')],
+    };
+  }
+
   /// DROP SCHEMA … CASCADE exists.
   bool get canDropSchemaCascade => family == DbFamily.postgres || family == DbFamily.snowflake;
 }

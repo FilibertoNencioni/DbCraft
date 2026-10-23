@@ -335,6 +335,10 @@ class AppState extends ChangeNotifier {
   void openNewTable(DbConnection c, {String? catalog, String? schema, TableDesign? template}) =>
       _open(TableEditorTab.create(c, catalog: catalog, schema: schema, template: template));
 
+  /// Opens the editor of a new view (from [definition] when given).
+  void openNewView(DbConnection c, {String? catalog, String? schema, String? definition}) =>
+      _open(TableEditorTab.createView(c, catalog: catalog, schema: schema, definition: definition));
+
   void openProcedure(DbConnection c, DbProcedure p) {
     for (final t in tabs) {
       if (t is ProcedureEditorTab && t.connection == c && t.procedure.key == p.key) {

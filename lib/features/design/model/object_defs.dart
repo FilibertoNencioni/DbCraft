@@ -118,3 +118,161 @@ class SchemaDef {
     retentionDays: retentionDays == _unset ? this.retentionDays : retentionDays as int?,
   );
 }
+
+/// WITH CHECK OPTION of an updatable view.
+enum ViewCheckOption {
+  none(''),
+  local('LOCAL'),
+  cascaded('CASCADED');
+
+  const ViewCheckOption(this.sql);
+  final String sql;
+}
+
+/// A view or materialized view. [definition] is the query (SELECT …)
+/// without the CREATE VIEW header.
+class ViewDef {
+  const ViewDef({
+    this.catalog,
+    this.schema,
+    required this.name,
+    required this.definition,
+    this.materialized = false,
+    this.checkOption = ViewCheckOption.none,
+    this.securityBarrier = false,
+    this.schemaBinding = false,
+    this.secure = false,
+    this.force = false,
+    this.algorithm,
+    this.sqlSecurity,
+    this.withData = true,
+    this.comment,
+    this.originalName,
+  });
+
+  final String? catalog;
+  final String? schema;
+  final String name;
+  final String definition;
+  final bool materialized;
+  final ViewCheckOption checkOption;
+
+  /// PostgreSQL security_barrier.
+  final bool securityBarrier;
+
+  /// SQL Server WITH SCHEMABINDING.
+  final bool schemaBinding;
+
+  /// Snowflake SECURE view.
+  final bool secure;
+
+  /// Oracle FORCE: created even when the query does not compile.
+  final bool force;
+
+  /// MySQL ALGORITHM: UNDEFINED, MERGE, TEMPTABLE.
+  final String? algorithm;
+
+  /// MySQL SQL SECURITY: DEFINER, INVOKER.
+  final String? sqlSecurity;
+
+  /// PostgreSQL materialized view filled at creation (WITH DATA).
+  final bool withData;
+  final String? comment;
+
+  /// Name in the database when renamed in the editor.
+  final String? originalName;
+
+  String get dbName => originalName ?? name;
+
+  ViewDef copyWith({
+    Object? catalog = _unset,
+    Object? schema = _unset,
+    String? name,
+    String? definition,
+    bool? materialized,
+    ViewCheckOption? checkOption,
+    bool? securityBarrier,
+    bool? schemaBinding,
+    bool? secure,
+    bool? force,
+    Object? algorithm = _unset,
+    Object? sqlSecurity = _unset,
+    bool? withData,
+    Object? comment = _unset,
+    Object? originalName = _unset,
+  }) => ViewDef(
+    catalog: catalog == _unset ? this.catalog : catalog as String?,
+    schema: schema == _unset ? this.schema : schema as String?,
+    name: name ?? this.name,
+    definition: definition ?? this.definition,
+    materialized: materialized ?? this.materialized,
+    checkOption: checkOption ?? this.checkOption,
+    securityBarrier: securityBarrier ?? this.securityBarrier,
+    schemaBinding: schemaBinding ?? this.schemaBinding,
+    secure: secure ?? this.secure,
+    force: force ?? this.force,
+    algorithm: algorithm == _unset ? this.algorithm : algorithm as String?,
+    sqlSecurity: sqlSecurity == _unset ? this.sqlSecurity : sqlSecurity as String?,
+    withData: withData ?? this.withData,
+    comment: comment == _unset ? this.comment : comment as String?,
+    originalName: originalName == _unset ? this.originalName : originalName as String?,
+  );
+
+  /// Same options (everything but the name and the query).
+  bool sameOptions(ViewDef o) =>
+      materialized == o.materialized &&
+      checkOption == o.checkOption &&
+      securityBarrier == o.securityBarrier &&
+      schemaBinding == o.schemaBinding &&
+      secure == o.secure &&
+      force == o.force &&
+      (algorithm ?? '') == (o.algorithm ?? '') &&
+      (sqlSecurity ?? '') == (o.sqlSecurity ?? '');
+}
+
+/// The query of a CREATE VIEW statement as stored by many catalogs (SQL
+/// Server, Db2, SQLite, Snowflake GET_DDL): the text after the first AS
+/// outside parentheses and quotes that follows the view name, without a
+/// trailing WITH … CHECK OPTION and ';'. Text that is not a CREATE VIEW is
+/// returned trimmed.
+({String query, ViewCheckOption check}) splitViewSql(String sql) {
+  var s = sql.trim();
+  final head = RegExp(r'^\s*CREATE\b[\s\S]*?\bVIEW\b', caseSensitive: false).firstMatch(s);
+  if (head != null) {
+    // First top-level AS after the header.
+    var depth = 0;
+    String? quote;
+    for (var i = head.end; i < s.length - 1; i++) {
+      final ch = s[i];
+      if (quote != null) {
+        if (ch == quote) quote = null;
+        continue;
+      }
+      if (ch == '"' || ch == '`' || ch == "'") {
+        quote = ch;
+      } else if (ch == '[') {
+        quote = ']';
+      } else if (ch == '(') {
+        depth++;
+      } else if (ch == ')') {
+        depth--;
+      } else if (depth == 0 &&
+          (ch == 'A' || ch == 'a') &&
+          (s[i + 1] == 'S' || s[i + 1] == 's') &&
+          RegExp(r'\s').hasMatch(s[i - 1]) &&
+          (i + 2 >= s.length || RegExp(r'\s').hasMatch(s[i + 2]))) {
+        s = s.substring(i + 2).trim();
+        break;
+      }
+    }
+  }
+  if (s.endsWith(';')) s = s.substring(0, s.length - 1).trimRight();
+  var check = ViewCheckOption.none;
+  final m = RegExp(r'\s+WITH\s+(LOCAL\s+|CASCADED\s+)?CHECK\s+OPTION\s*$', caseSensitive: false).firstMatch(s);
+  if (m != null) {
+    final kind = m.group(1)?.trim().toUpperCase();
+    check = kind == 'LOCAL' ? ViewCheckOption.local : ViewCheckOption.cascaded;
+    s = s.substring(0, m.start).trimRight();
+  }
+  return (query: s, check: check);
+}

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:re_editor/re_editor.dart';
 
 import '../features/design/table_design.dart';
+import '../features/design/view_design.dart';
 import '../model/db_objects.dart';
 import '../odbc/odbc_types.dart';
 import '../services/sql_splitter.dart';
@@ -511,6 +512,13 @@ class TableEditorTab extends EditorTab {
       initialPage = 0,
       design = template ?? TableDesign.create(_connection.dialect, catalog: catalog, schema: schema);
 
+  /// Editor of a new view in [catalog].[schema] (from [definition]: "Crea
+  /// vista dalla query").
+  TableEditorTab.createView(this._connection, {String? catalog, String? schema, String? definition})
+    : table = DbTable(catalog: catalog, schema: schema, name: '', type: 'VIEW'),
+      initialPage = 8,
+      viewDesign = ViewDesign.create(_connection.dialect, catalog: catalog, schema: schema, definition: definition);
+
   final DbConnection _connection;
 
   /// The table; it changes when the designer renames or creates it.
@@ -520,8 +528,11 @@ class TableEditorTab extends EditorTab {
   /// Table designer session (structure changes not yet applied).
   TableDesign? design;
 
-  /// The table does not exist yet in the database.
-  bool get isNew => design?.isNew ?? false;
+  /// View editor session (definition changes not yet applied).
+  ViewDesign? viewDesign;
+
+  /// The table or view does not exist yet in the database.
+  bool get isNew => design?.isNew ?? viewDesign?.isNew ?? false;
 
   /// Data tab state survives switching editor tabs.
   ResultSetModel? data;
@@ -533,8 +544,8 @@ class TableEditorTab extends EditorTab {
   @override
   String get title {
     if (!isNew) return table.name;
-    final n = design!.working.name;
-    return n.isEmpty ? 'Nuova tabella' : n;
+    final n = design?.working.name ?? viewDesign!.working.name;
+    return n.isEmpty ? (viewDesign != null ? 'Nuova vista' : 'Nuova tabella') : n;
   }
 
   @override
@@ -546,7 +557,7 @@ class TableEditorTab extends EditorTab {
   bool get dataDirty => data?.isDirty ?? false;
 
   /// Unsaved structure edits (or a table not created yet).
-  bool get designDirty => design?.isDirty ?? false;
+  bool get designDirty => (design?.isDirty ?? false) || (viewDesign?.isDirty ?? false);
 
   @override
   bool get isDirty => dataDirty || designDirty;
@@ -555,6 +566,7 @@ class TableEditorTab extends EditorTab {
   void dispose() {
     data?.close();
     design?.dispose();
+    viewDesign?.dispose();
     super.dispose();
   }
 }
