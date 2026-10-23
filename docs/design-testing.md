@@ -68,7 +68,8 @@ flutter test integration_test/design_db_test.dart -d macos \
 - **Target di default.** Senza `DESIGN_TARGETS` gira solo `sqlite`, su un file temporaneo e senza bisogno di server. Il driver SQLite ODBC si cerca in `/opt/homebrew/lib/libsqlite3odbc.dylib`; un percorso diverso si passa con `--dart-define=SQLITE_ODBC=…`.
 - **Connessioni.** Le stringhe di connessione predefinite corrispondono al compose. Per cambiarne una si usa `--dart-define=DESIGN_<TARGET>='Driver=…;…'` (per esempio `DESIGN_ORACLE`).
 - **Snowflake.** Gira solo con `DESIGN_SNOWFLAKE`, una stringa di connessione a un account di prova.
-- **Oggetti temporanei.** Ogni test crea oggetti con il prefisso `dbc_rt_` e li elimina alla fine, anche quando fallisce.
+- **Oggetti temporanei.** Ogni test crea oggetti con il prefisso `dbc_` e li elimina alla fine, anche quando fallisce.
+- **Sicurezza.** Il round-trip di utenti e ruoli crea un ruolo, un utente (su SQL Server anche il login) con un permesso e l'appartenenza al ruolo, li rilegge, cambia permessi e ruoli e li elimina. Serve un utente amministratore: con privilegi minori il test fallisce alla creazione. Le password passano per `runScript`, come nel foglio dello script: mai nella cronologia.
 
 ### Come si scrive un round-trip
 
@@ -87,4 +88,5 @@ Nell'app (`flutter run -d macos`), contro i container:
 - connessione in **sola lettura**: le azioni sono disabilitate;
 - **commit manuale**: il contatore delle istruzioni in sospeso è corretto, e CREATE/DROP DATABASE vanno in una sessione separata;
 - **vista semplificata**: gli strumenti di design sono nascosti;
+- **utenti e ruoli**: dopo aver creato un utente con password, la password non compare né nella cronologia delle query né nello script copiato o aperto nell'editor;
 - dopo ogni modifica il navigator si aggiorna da solo e i nodi aperti restano aperti.

@@ -15,6 +15,7 @@ import '../../../services/sql_dialect.dart';
 import '../../../state/db_connection.dart';
 import '../../schema/schema_model.dart';
 import '../model/object_defs.dart';
+import '../model/security_defs.dart';
 import 'code.dart';
 import 'databases.dart';
 import 'db2.dart';
@@ -23,6 +24,7 @@ import 'mssql.dart';
 import 'mysql.dart';
 import 'oracle.dart';
 import 'pg.dart';
+import 'security.dart';
 import 'snowflake.dart';
 import 'sqlite.dart';
 import 'table_extras.dart';
@@ -213,6 +215,45 @@ class DesignCatalog {
 
   Future<List<String>> schemaOwners(String? catalog) =>
       metadata.cached('design:schemaowners:${catalog ?? ''}', () => readSchemaOwners(queries, dialect, catalog));
+
+  /// Users, roles and logins (SQL Server: users and roles of [catalog]).
+  Future<List<PrincipalDef>> principals({String? catalog}) =>
+      metadata.cached('design:principals:${catalog ?? ''}', () => readPrincipals(queries, dialect, catalog: catalog));
+
+  /// Every role membership (SQL Server: server roles and the roles of
+  /// [catalog]).
+  Future<List<RoleMembership>> memberships({String? catalog}) =>
+      metadata.cached('design:members:${catalog ?? ''}', () => readMemberships(queries, dialect, catalog: catalog));
+
+  /// Roles and privileges of [p].
+  Future<PrincipalAccess> access(PrincipalDef p, {String? catalog}) =>
+      metadata.cached('design:access:${catalog ?? ''}:${p.key}', () async {
+        List<RoleMembership> all;
+        try {
+          all = await memberships(catalog: catalog);
+        } on CatalogPermissionException {
+          all = const [];
+        }
+        return readAccess(queries, dialect, p, catalog: catalog, memberships: all);
+      });
+
+  /// Who holds which privileges on the table or view [t].
+  Future<List<ObjectGrant>> objectGrants(DbTable t) => metadata.cached('design:grants:${t.key}', () async {
+    List<PrincipalDef> known;
+    try {
+      known = await principals(catalog: t.catalog);
+    } catch (_) {
+      known = const [];
+    }
+    final target = GrantDef(
+      privilege: '',
+      target: t.isView ? GrantTarget.view : GrantTarget.table,
+      catalog: t.catalog,
+      schema: t.schema,
+      object: t.name,
+    );
+    return readObjectGrants(queries, dialect, target, known);
+  });
 
   /// Cached rows of the first working alternative.
   Future<List<CatalogRow>> cachedRows(String key, List<String> alternatives, {List<Object?> params = const []}) =>

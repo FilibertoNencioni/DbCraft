@@ -9,6 +9,7 @@ import '../../features/design/table_design.dart';
 import '../../features/design/ui/constraints_page.dart';
 import '../../features/design/ui/design_actions.dart';
 import '../../features/design/ui/table_designer.dart';
+import '../../features/design/ui/table_permissions.dart';
 import '../../features/design/ui/view_editor.dart';
 import '../../features/design/view_design.dart';
 import '../../features/schema/ddl_builder.dart';
@@ -17,6 +18,7 @@ import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
 import '../../state/editor_tabs.dart';
 import '../../state/result_set_model.dart';
+import '../navigator/nav_nodes.dart' show hasSecurity;
 import '../actions.dart';
 import '../dialogs/export_dialog.dart';
 import '../dialogs/import_dialog.dart';
@@ -62,8 +64,9 @@ class _TableEditorViewState extends State<TableEditorView> {
   static const _pageData = 1;
   static const _pageChanges = 7;
   static const _pageDefinition = 8;
+  static const _pagePermissions = 9;
   static const _pageNames = [
-    'Proprietà', 'Dati', 'Colonne', 'Vincoli', 'Indici', 'DDL', 'Diagramma', 'Modifiche', 'Definizione', //
+    'Proprietà', 'Dati', 'Colonne', 'Vincoli', 'Indici', 'DDL', 'Diagramma', 'Modifiche', 'Definizione', 'Permessi', //
   ];
 
   /// Pages of a table that does not exist yet.
@@ -75,11 +78,18 @@ class _TableEditorViewState extends State<TableEditorView> {
   /// Pages shown in the page switcher.
   List<int> get _visiblePages {
     if (tab.isNew) return tab.viewDesign != null ? const [_pageDefinition] : _newPages;
-    if (table.isView) return _viewPages;
+    if (table.isView) return [..._viewPages, if (_permissions) _pagePermissions];
     return [
       for (var i = 0; i < _pageDefinition; i++)
         if (i != _pageChanges || (_design != null && _designable)) i,
+      if (_permissions) _pagePermissions,
     ];
+  }
+
+  /// The privileges on the object can be read and granted here.
+  bool get _permissions {
+    final c = tab.connection;
+    return !_simple && hasSecurity(c) && DesignCapabilities.of(c.dialect).has(DesignFeature.grants);
   }
 
   /// The view definition can be edited here.
@@ -234,7 +244,7 @@ class _TableEditorViewState extends State<TableEditorView> {
       if (!_visiblePages.contains(_page)) _page = _visiblePages.first;
       return;
     }
-    if (table.isView && !_viewPages.contains(_page)) _page = 0;
+    if (table.isView && !_viewPages.contains(_page) && _page != _pagePermissions) _page = 0;
     if (!await ensureConnected(context, tab.connection)) return;
     setState(() {
       _details = tab.connection.metadata!.tableDetails(table);
@@ -439,6 +449,9 @@ class _TableEditorViewState extends State<TableEditorView> {
                                 message: 'Il catalogo di ${tab.connection.dialect.dbmsName} non espone il testo di questa vista.',
                               )
                             : ViewDefinitionPage(design: vd, connection: tab.connection, readOnly: !_viewEditable),
+                        det == null || _page != _pagePermissions
+                            ? const SizedBox()
+                            : TablePermissionsPage(connection: tab.connection, table: table),
                       ],
                     );
                   },

@@ -12,6 +12,8 @@ import '../features/ai/ai.dart';
 import '../features/data_compare/data_compare_tab.dart';
 import '../features/design/capabilities.dart';
 import '../features/design/ui/object_actions.dart' as objects;
+import '../features/design/ui/security_tab.dart';
+import 'navigator/nav_nodes.dart' show hasSecurity;
 import '../features/design/ui/table_designer.dart';
 import '../features/design/ui/view_editor.dart';
 import '../features/git/git.dart';
@@ -238,6 +240,11 @@ class _HomePageState extends State<HomePage> {
           !connected || !dc!.dialect.isSql || dc.config.readOnly || app.settings.simpleMode
               ? null
               : () => app.openNewTable(dc, catalog: dc.defaultCatalog),
+          null,
+        ),
+        _MenuAction(
+          'Utenti e ruoli…',
+          !connected || app.settings.simpleMode || !hasSecurity(dc!) ? null : () => openSecurity(context, dc),
           null,
         ),
         const _MenuDivider(),

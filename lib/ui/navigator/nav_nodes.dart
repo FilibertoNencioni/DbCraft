@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../features/design/capabilities.dart';
 import '../../features/design/catalog/design_catalog.dart';
+import '../../features/design/ddl/security/security_ddl.dart';
 import '../../features/design/model/object_defs.dart';
+import '../../features/design/model/security_defs.dart';
 import '../../features/schema/schema_model.dart';
 import '../../model/db_objects.dart';
+import '../../services/sql_dialect.dart';
 import '../../state/db_connection.dart';
 import '../theme/app_icons.dart';
 
@@ -68,19 +71,26 @@ class ConnectionNode extends NavNode {
   @override
   Future<List<NavNode>> load() async {
     final md = dc.metadata!;
+    final security = [if (hasSecurity(dc)) SecurityNode(dc, server: dc.dialect.family == DbFamily.sqlServer)];
     if (md.supportsCatalogs) {
       final cats = await md.catalogs();
       if (cats.isNotEmpty) {
-        return [for (final c in cats) CatalogNode(dc, c, current: c == (dc.defaultCatalog ?? md.currentCatalog))];
+        return [
+          for (final c in cats) CatalogNode(dc, c, current: c == (dc.defaultCatalog ?? md.currentCatalog)),
+          ...security,
+        ];
       }
     }
     if (md.supportsSchemas) {
       final schemas = await listSchemas(dc, null);
-      if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(dc, null, s)];
+      if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(dc, null, s), ...security];
     }
-    return objectFolders(dc, null, null);
+    return [...objectFolders(dc, null, null), ...security];
   }
 }
+
+/// Whether [dc] has users and roles to manage.
+bool hasSecurity(DbConnection dc) => dc.dialect.isSql && SecurityDdl.forFamily(dc.dialect).kinds.isNotEmpty;
 
 List<NavNode> objectFolders(DbConnection dc, String? catalog, String? schema) => [
   ObjectFolderNode(dc, catalog, schema, ObjectKind.tables),
@@ -129,7 +139,12 @@ class CatalogNode extends NavNode {
     final md = connection!.metadata!;
     if (md.supportsSchemas) {
       final schemas = await listSchemas(connection!, catalog);
-      if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(connection!, catalog, s)];
+      // SQL Server users and roles belong to a database.
+      final security = [
+        if (connection!.dialect.family == DbFamily.sqlServer && hasSecurity(connection!))
+          SecurityNode(connection!, catalog: catalog),
+      ];
+      if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(connection!, catalog, s), ...security];
     }
     return objectFolders(connection!, catalog, null);
   }
@@ -464,6 +479,101 @@ class ProcedureNode extends NavNode {
   Future<List<NavNode>> load() async => [];
 }
 
+/// "Sicurezza": users, roles and logins. For SQL Server the folder under
+/// the connection ([server]) lists the logins, the one under each database
+/// its users and roles.
+class SecurityNode extends NavNode {
+  SecurityNode(DbConnection super.connection, {this.catalog, this.server = false});
+  final String? catalog;
+  final bool server;
+
+  @override
+  String get label => 'Sicurezza';
+  @override
+  IconData get icon => AppIcons.security;
+  @override
+  String get key => 'sec:${connection!.config.id}:${catalog ?? ''}:$server';
+
+  List<PrincipalKind> get kinds {
+    final all = SecurityDdl.forFamily(connection!.dialect).kinds;
+    if (connection!.dialect.family != DbFamily.sqlServer) return all;
+    return [
+      for (final k in all)
+        if ((k == PrincipalKind.login) == server) k,
+    ];
+  }
+
+  @override
+  Future<List<NavNode>> load() async => [for (final k in kinds) PrincipalFolderNode(connection!, k, catalog: catalog)];
+}
+
+/// Plural label of a principal kind (navigator folders).
+String principalKindPlural(PrincipalKind k) => switch (k) {
+  PrincipalKind.user => 'Utenti',
+  PrincipalKind.role => 'Ruoli',
+  PrincipalKind.login => 'Login',
+  PrincipalKind.group => 'Gruppi',
+};
+
+IconData principalIcon(PrincipalKind k) => switch (k) {
+  PrincipalKind.user => AppIcons.user,
+  PrincipalKind.role => AppIcons.role,
+  PrincipalKind.login => AppIcons.login,
+  PrincipalKind.group => AppIcons.group,
+};
+
+class PrincipalFolderNode extends NavNode {
+  PrincipalFolderNode(DbConnection super.connection, this.kind, {this.catalog});
+  final PrincipalKind kind;
+  final String? catalog;
+
+  @override
+  String get label => principalKindPlural(kind);
+  @override
+  String? get detail => children == null ? null : '${children!.length}';
+  @override
+  IconData get icon => AppIcons.folder;
+  @override
+  String get key => 'principals:${connection!.config.id}:${catalog ?? ''}:${kind.name}';
+
+  @override
+  Future<List<NavNode>> load() async {
+    final cat = DesignCatalog.of(connection!);
+    if (cat == null) return const [];
+    final all = await cat.principals(catalog: catalog);
+    return [
+      for (final p in all)
+        if (p.kind == kind) PrincipalNode(connection!, p, catalog: catalog),
+    ];
+  }
+}
+
+class PrincipalNode extends NavNode {
+  PrincipalNode(DbConnection super.connection, this.principal, {this.catalog});
+  final PrincipalDef principal;
+  final String? catalog;
+
+  @override
+  String get label => principal.display;
+  @override
+  String? get detail =>
+      [if (principal.builtIn) 'di sistema', if (principal.locked) 'disabilitato'].join(' · ').nullIfEmpty;
+  @override
+  IconData get icon => principalIcon(principal.kind);
+  @override
+  bool get expandable => false;
+  @override
+  bool get filterable => true;
+  @override
+  String get key => 'principal:${connection!.config.id}:${catalog ?? ''}:${principal.key}';
+  @override
+  Future<List<NavNode>> load() async => [];
+}
+
+extension on String {
+  String? get nullIfEmpty => isEmpty ? null : this;
+}
+
 class LeafNode extends NavNode {
   LeafNode(
     DbConnection super.connection,
@@ -532,7 +642,8 @@ List<NavNode> nodesForSchemaChanges(NavNode root, List<SchemaScope> scopes) {
   if (scopes.isEmpty) return const [];
   if (scopes.any((s) => s.level == SchemaLevel.connection)) return [root];
   final catalogs = scopes.where((s) => s.level == SchemaLevel.catalog).toList();
-  final objects = scopes.where((s) => s.level.index >= SchemaLevel.schema.index).toList();
+  final objects = scopes.where((s) => s.level == SchemaLevel.schema || s.level == SchemaLevel.object).toList();
+  final security = scopes.where((s) => s.level == SchemaLevel.security).toList();
   final out = <NavNode>[];
   var catalogNodes = false;
   void walk(NavNode n) {
@@ -540,6 +651,7 @@ List<NavNode> nodesForSchemaChanges(NavNode root, List<SchemaScope> scopes) {
       final hit = switch (ch) {
         CatalogNode c => catalogs.any((s) => s.covers(c.catalog, null)),
         ObjectFolderNode f => objects.any((s) => s.covers(f.catalog, f.schema)),
+        SecurityNode f => security.any((s) => s.catalog == null || f.catalog == null || s.catalog == f.catalog),
         _ => false,
       };
       if (ch is CatalogNode) catalogNodes = true;

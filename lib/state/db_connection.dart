@@ -31,16 +31,22 @@ class SchemaScope {
   const SchemaScope.object(String? catalog, String? schema, String object)
     : this._(SchemaLevel.object, catalog: catalog, schema: schema, object: object);
 
+  /// Users, roles or privileges changed (of [catalog] for SQL Server
+  /// database users): no schema object is affected.
+  const SchemaScope.security([String? catalog]) : this._(SchemaLevel.security, catalog: catalog);
+
   final SchemaLevel level;
   final String? catalog;
   final String? schema;
   final String? object;
 
   /// Whether a location (catalog, schema) is inside this scope.
-  bool covers(String? catalog, String? schema) =>
-      level == SchemaLevel.connection ||
-      ((this.catalog == null || catalog == null || _same(this.catalog, catalog)) &&
-          (level == SchemaLevel.catalog || this.schema == null || schema == null || _same(this.schema, schema)));
+  bool covers(String? catalog, String? schema) {
+    if (level == SchemaLevel.security) return false;
+    return level == SchemaLevel.connection ||
+        ((this.catalog == null || catalog == null || _same(this.catalog, catalog)) &&
+            (level == SchemaLevel.catalog || this.schema == null || schema == null || _same(this.schema, schema)));
+  }
 
   /// Whether the object [name] at (catalog, schema) is inside this scope.
   bool coversObject(String? catalog, String? schema, String name) =>
@@ -52,7 +58,7 @@ class SchemaScope {
   String toString() => 'SchemaScope(${level.name} ${[catalog, schema, object].whereType<String>().join('.')})';
 }
 
-enum SchemaLevel { connection, catalog, schema, object }
+enum SchemaLevel { connection, catalog, schema, object, security }
 
 /// Runtime state of a configured connection (DBeaver "data source").
 ///

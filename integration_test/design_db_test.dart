@@ -20,7 +20,11 @@ import 'package:dbcraft/features/design/capabilities.dart';
 import 'package:dbcraft/features/design/catalog/design_catalog.dart';
 import 'package:dbcraft/features/design/ddl/code_ddl.dart';
 import 'package:dbcraft/features/design/ddl/object_ddl.dart';
+import 'package:dbcraft/features/design/ddl/security/security_ddl.dart';
+import 'package:dbcraft/features/design/ddl_script.dart';
 import 'package:dbcraft/features/design/model/object_defs.dart';
+import 'package:dbcraft/features/design/model/security_defs.dart';
+import 'package:dbcraft/features/design/security_design.dart';
 import 'package:dbcraft/features/schema/ddl_builder.dart';
 import 'package:dbcraft/features/schema/schema_diff.dart';
 import 'package:dbcraft/features/schema/schema_migration.dart';
@@ -135,6 +139,17 @@ Future<void> run(DbConnection dc, List<String> statements) async {
     if (r.cursorId != null) await dc.main!.closeCursor(r.cursorId!);
   }
   dc.schemaChanged();
+}
+
+/// Runs a script with secrets as the script sheet does: passwords resolved
+/// only for the server, outside the history.
+Future<void> runScript(DbConnection dc, DdlScript script) async {
+  if (script.catalog != null) await dc.main!.setCurrentCatalog(script.catalog!);
+  for (final s in script.executable) {
+    final r = await dc.unrecordedMain!.execute(script.resolve(s));
+    if (r.cursorId != null) await dc.unrecordedMain!.closeCursor(r.cursorId!);
+  }
+  dc.schemaChanged(script.scope);
 }
 
 /// [expected] as read back from the database (ODBC metadata plus the DBMS
@@ -435,6 +450,107 @@ void main() {
         } finally {
           await run(dc, b.dropSchema([child, parent]));
         }
+      });
+      test('security round trip', () async {
+        final d = dc.dialect;
+        final ddl = SecurityDdl.forFamily(d);
+        if (ddl.kinds.isEmpty || !ddl.canCreate(PrincipalKind.role)) return;
+        final family = d.family;
+        final catalog = family == DbFamily.sqlServer ? dc.mainCatalog : null;
+        final b = DdlBuilder(d);
+        final table = TableDef(
+          name: 'dbc_sec_$suffix',
+          columns: const [ColumnDef(name: 'id', type: 'integer', nullable: false)],
+          primaryKey: PrimaryKeyDef(name: 'pk_dbc_sec_$suffix', columns: const ['id']),
+        );
+        await run(dc, b.createTable(table));
+        final t = (await dc.metadata!.findTable(null, null, table.name))!;
+        final on = GrantDef(
+          privilege: '',
+          target: GrantTarget.table,
+          catalog: ddl.catalogInGrants ? t.catalog : null,
+          schema: t.schema,
+          object: t.name,
+        );
+        final cat = DesignCatalog.of(dc)!;
+        final dropped = <PrincipalDef>[];
+        String upper(String s) => family == DbFamily.oracle || family == DbFamily.firebird ? s.toUpperCase() : s;
+        const password = 'DbCraft_Sec1!';
+        try {
+          if (ddl.kinds.contains(PrincipalKind.login)) {
+            final login = PrincipalDesign.create(d, PrincipalKind.login, name: 'dbc_l_$suffix')..setPassword(password);
+            await runScript(dc, login.script());
+            dropped.add(login.working);
+          }
+          final role = PrincipalDesign.create(d, PrincipalKind.role, catalog: catalog, name: upper('dbc_r_$suffix'))
+            ..setGrant(on, 'SELECT', true);
+          await runScript(dc, role.script());
+          dropped.insert(0, role.working);
+          final user = PrincipalDesign.create(d, PrincipalKind.user, catalog: catalog, name: upper('dbc_u_$suffix'));
+          if (family == DbFamily.sqlServer) {
+            user.update(user.working.copyWith(login: 'dbc_l_$suffix'));
+          } else {
+            user.setPassword(password);
+          }
+          user
+            ..setGrant(on, 'INSERT', true)
+            ..setRole(role.working.name, true, roleHost: role.working.host);
+          await runScript(dc, user.script());
+          dropped.insert(0, user.working);
+
+          final ps = await cat.principals(catalog: catalog);
+          final u = ps.firstWhere((p) => p.key == user.working.key);
+          final r = ps.firstWhere((p) => p.key == role.working.key);
+          var access = await cat.access(u, catalog: catalog);
+          expect([for (final m in access.memberOf) m.role.toLowerCase()], contains(r.name.toLowerCase()));
+          expect(
+            [
+              for (final g in access.grants)
+                if (g.objectKey == on.objectKey) g.privilege,
+            ],
+            ['INSERT'],
+          );
+          final roleAccess = await cat.access(r, catalog: catalog);
+          expect(
+            [
+              for (final g in roleAccess.grants)
+                if (g.objectKey == on.objectKey) g.privilege,
+            ],
+            ['SELECT'],
+          );
+
+          // Edit: INSERT → UPDATE with the grant option, out of the role.
+          final edit = PrincipalDesign.existing(d, u, access, catalog: catalog)
+            ..setGrant(on, 'INSERT', false)
+            ..setGrant(on, 'UPDATE', true)
+            ..setGrantOption(on, true)
+            ..setRole(r.name, false, roleHost: r.host);
+          await runScript(dc, edit.script());
+          access = await cat.access(u, catalog: catalog);
+          final now = [
+            for (final g in access.grants)
+              if (g.objectKey == on.objectKey) g,
+          ];
+          expect([for (final g in now) g.privilege], ['UPDATE']);
+          expect(now.single.withGrantOption, isTrue);
+          expect(access.memberOf.where((m) => m.role.toLowerCase() == r.name.toLowerCase()), isEmpty);
+          expect(
+            (await cat.objectGrants(t)).map((g) => g.grantee.name.toLowerCase()),
+            containsAll([u.name.toLowerCase(), r.name.toLowerCase()]),
+          );
+        } finally {
+          for (final p in dropped) {
+            try {
+              await runScript(
+                dc,
+                DdlScript(ddl.dropPrincipal(p), catalog: p.kind == PrincipalKind.login ? null : catalog),
+              );
+            } catch (_) {}
+          }
+          await run(dc, b.dropTable(table));
+        }
+        final left = await cat.principals(catalog: catalog);
+        expect(left.where((p) => p.name.toLowerCase().contains('dbc_') && p.name.endsWith('$suffix')), isEmpty);
       });
     });
   }

@@ -17,6 +17,9 @@ import '../../features/design/ui/constraint_dialogs.dart';
 import '../../features/design/ui/design_actions.dart' as design;
 import '../../features/design/ui/design_menu.dart';
 import '../../features/design/ui/object_actions.dart' as objects;
+import '../../features/design/ui/security_tab.dart';
+import '../../features/design/ddl/security/security_ddl.dart';
+import '../../features/design/model/security_defs.dart';
 import '../../features/design/ui/view_editor.dart';
 import '../../features/schema/ddl_builder.dart';
 import '../../features/schema/ddl_execution.dart';
@@ -223,6 +226,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           (n.kind == ObjectKind.system || n.kind == ObjectKind.procedures || n.kind == ObjectKind.sequences)) {
         return;
       }
+      if (simple && n is SecurityNode) return;
       out.add(_VisibleNode(n, depth));
       if (simple && n is TableNode) return;
       if (n.expanded && n.children != null) {
@@ -253,6 +257,8 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         objects.editSequence(context, q.connection!, q.sequence);
       case TriggerNode t when !app.settings.simpleMode:
         objects.editTrigger(context, t.connection!, t.table, t.trigger);
+      case PrincipalNode p when !app.settings.simpleMode:
+        openSecurity(context, p.connection!, catalog: p.catalog, select: p.principal);
       default:
         _toggle(n);
     }
@@ -409,6 +415,26 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   MenuEntry<void> _item(String label, VoidCallback? action, {SingleActivator? shortcut}) =>
       MenuEntry(label, onSelected: action, enabled: action != null, shortcut: shortcut);
 
+  List<MenuEntry<void>> _newPrincipalItems(
+    BuildContext context,
+    DbConnection dc,
+    List<PrincipalKind> kinds,
+    String? catalog,
+  ) {
+    final ddl = SecurityDdl.forFamily(dc.dialect);
+    final simple = AppScope.read(context).settings.simpleMode;
+    return [
+      for (final k in kinds)
+        _item(
+          'Nuovo ${k.label.toLowerCase()}…',
+          dc.config.readOnly || simple || !ddl.canCreate(k)
+              ? null
+              : () => openSecurity(context, dc, catalog: catalog, create: k),
+        ),
+      if (kinds.any(ddl.canCreate)) const MenuEntry.divider(),
+    ];
+  }
+
   Future<void> _contextMenu(BuildContext context, NavNode n, Offset pos) async {
     final app = AppScope.read(context);
     final items = <MenuEntry<void>>[];
@@ -437,6 +463,8 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               () => app.openFeatureTab<PerformanceDashboardTab>(PerformanceDashboardTab(d), match: (t) => t.dc == d),
             ),
           _item('Informazioni connessione', d.isConnected ? () => app.openConnectionInfo(d) : null),
+          if (designAvailable(d) && !simple && hasSecurity(d))
+            _item('Utenti e ruoli…', () => openSecurity(context, d)),
           if (designAvailable(d) && !simple) ...[
             const MenuEntry.divider(),
             ...connectionDesignMenu(
@@ -729,6 +757,42 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           ]);
         }
         items.add(_item('Aggiorna', () => _refresh(n), shortcut: _refreshKey));
+      case SecurityNode sec:
+        items.addAll([
+          ..._newPrincipalItems(context, dc!, sec.kinds, sec.catalog),
+          _item('Utenti e ruoli…', () => openSecurity(context, dc, catalog: sec.catalog)),
+          const MenuEntry.divider(),
+          _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
+        ]);
+      case PrincipalFolderNode f:
+        items.addAll([
+          ..._newPrincipalItems(context, dc!, [f.kind], f.catalog),
+          _item('Utenti e ruoli…', () => openSecurity(context, dc, catalog: f.catalog)),
+          const MenuEntry.divider(),
+          _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
+        ]);
+      case PrincipalNode p:
+        final ddl = SecurityDdl.forFamily(dc!.dialect);
+        final ro = dc.config.readOnly || simple || p.principal.builtIn || !ddl.canCreate(p.principal.kind);
+        items.addAll([
+          _item('Apri', simple ? null : () => openSecurity(context, dc, catalog: p.catalog, select: p.principal)),
+          _item('Copia nome', () => Clipboard.setData(ClipboardData(text: p.principal.display))),
+          const MenuEntry.divider(),
+          MenuEntry(
+            'Elimina…',
+            onSelected: ro
+                ? null
+                : () async {
+                    final tab = AppScope.read(context).openFeatureTab(
+                      SecurityTab(dc, catalog: p.catalog),
+                      match: (t) => t.dc == dc && (p.catalog == null || t.catalog == p.catalog),
+                    );
+                    await tab.drop(context, p.principal);
+                  },
+            enabled: !ro,
+            destructive: true,
+          ),
+        ]);
       case LeafNode l:
         items.add(_item('Copia nome', () => Clipboard.setData(ClipboardData(text: l.name))));
       default:
