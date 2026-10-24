@@ -18,7 +18,10 @@ enum ExtraKind {
   stages('Stage', 'stage', ExtraLevel.schema),
   fileFormats('Formati di file', 'formato di file', ExtraLevel.schema),
   policies('Policy di sicurezza', 'policy', ExtraLevel.table),
-  exclusions('Vincoli di esclusione', 'vincolo di esclusione', ExtraLevel.table);
+  exclusions('Vincoli di esclusione', 'vincolo di esclusione', ExtraLevel.table),
+
+  /// Cassandra user defined types (in a keyspace).
+  userTypes('Tipi definiti dall\'utente', 'tipo', ExtraLevel.schema);
 
   const ExtraKind(this.label, this.singular, this.level);
 

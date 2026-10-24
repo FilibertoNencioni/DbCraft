@@ -16,8 +16,8 @@ String? _text(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.
 
 /// Rows of text fields edited in an [EditableGrid] (enum values, domain
 /// checks, exclusion elements), with stable keys.
-class _FieldRows {
-  _FieldRows(this.width, Iterable<List<String>> initial) {
+class FieldRows {
+  FieldRows(this.width, Iterable<List<String>> initial) {
     for (final r in initial) {
       add(r);
     }
@@ -55,9 +55,13 @@ class _FieldRows {
   }
 }
 
+/// Height of an EditableGrid of [rows] rows: header, rows, "Aggiungi".
+double gridHeight(int rows) => (24 + rows.clamp(1, 8) * 28 + 44).toDouble();
+
 /// Common frame of the sheets: form, live script, error, buttons.
-class _ExtraSheet extends StatelessWidget {
-  const _ExtraSheet({
+class ExtraSheet extends StatelessWidget {
+  const ExtraSheet({
+    super.key,
     required this.title,
     required this.isNew,
     required this.children,
@@ -101,15 +105,20 @@ class _ExtraSheet extends StatelessWidget {
   }
 }
 
-Widget _mono(TextEditingController c, {String? hint, int lines = 3, VoidCallback? changed, bool autofocus = false}) =>
-    MacTextField(
-      controller: c,
-      mono: true,
-      maxLines: lines,
-      hint: hint,
-      autofocus: autofocus,
-      onChanged: (_) => changed?.call(),
-    );
+Widget monoField(
+  TextEditingController c, {
+  String? hint,
+  int lines = 3,
+  VoidCallback? changed,
+  bool autofocus = false,
+}) => MacTextField(
+  controller: c,
+  mono: true,
+  maxLines: lines,
+  hint: hint,
+  autofocus: autofocus,
+  onChanged: (_) => changed?.call(),
+);
 
 // ---------------------------------------------------------------------------
 // Extension
@@ -187,7 +196,7 @@ class _ExtensionDialogState extends State<_ExtensionDialog> {
   Widget build(BuildContext context) {
     final known = _known;
     final versions = {?known?.defaultVersion, ?i?.defaultVersion, ?i?.version}.toList();
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuova estensione' : 'Estensione ${i!.name}',
       isNew: i == null,
       statements: _statements,
@@ -284,7 +293,7 @@ class _EnumDialogState extends State<_EnumDialog> {
   late final i = widget.initial;
   late final _name = TextEditingController(text: i?.name ?? '');
   late final _comment = TextEditingController(text: i?.comment ?? '');
-  late final _values = _FieldRows(1, [
+  late final _values = FieldRows(1, [
     for (final v in i?.values ?? const <String>[]) [v],
   ]);
   int? _selected;
@@ -334,7 +343,7 @@ class _EnumDialogState extends State<_EnumDialog> {
   @override
   Widget build(BuildContext context) {
     final old = i?.values.toSet() ?? const <String>{};
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuovo tipo enumerato' : 'Tipo ${i!.name}',
       subtitle: widget.schema,
       isNew: i == null,
@@ -364,7 +373,7 @@ class _EnumDialogState extends State<_EnumDialog> {
         ),
         const SizedBox(height: Gap.md),
         SizedBox(
-          height: 220,
+          height: gridHeight(_values.rows.length),
           child: EditableGrid(
             columns: const [EditableGridColumn('Valori')],
             rowCount: _values.rows.length,
@@ -422,7 +431,7 @@ class _DomainDialogState extends State<_DomainDialog> {
   late final _collation = TextEditingController(text: i?.collation ?? '');
   late final _comment = TextEditingController(text: i?.comment ?? '');
   late final _check = TextEditingController(text: i?.checks.firstOrNull?.expression ?? '');
-  late final _checks = _FieldRows(2, [
+  late final _checks = FieldRows(2, [
     for (final c in i?.checks ?? const <DomainCheck>[]) [c.name ?? '', c.expression],
   ]);
   late bool _notNull = i?.notNull ?? false;
@@ -479,7 +488,7 @@ class _DomainDialogState extends State<_DomainDialog> {
   @override
   Widget build(BuildContext context) {
     void changed() => setState(() {});
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuovo dominio' : 'Dominio ${i!.name}',
       subtitle: widget.schema,
       isNew: i == null,
@@ -514,13 +523,13 @@ class _DomainDialogState extends State<_DomainDialog> {
             FormRow(
               label: 'Predefinito',
               help: 'Espressione SQL',
-              child: _mono(_default, lines: 1, changed: changed),
+              child: monoField(_default, lines: 1, changed: changed),
             ),
             if (_fb)
               FormRow(
                 label: 'Condizione',
                 help: 'VALUE è il valore da controllare: VALUE > 0',
-                child: _mono(_check, hint: 'VALUE > 0', changed: changed),
+                child: monoField(_check, hint: 'VALUE > 0', changed: changed),
               ),
             FormRow(
               label: 'Collation',
@@ -536,7 +545,7 @@ class _DomainDialogState extends State<_DomainDialog> {
           const SizedBox(height: Gap.md),
           SectionLabel('Vincoli CHECK'),
           SizedBox(
-            height: 160,
+            height: gridHeight(_checks.rows.length),
             child: EditableGrid(
               columns: const [EditableGridColumn('Nome', width: 160), EditableGridColumn('Condizione (VALUE > 0)')],
               rowCount: _checks.rows.length,
@@ -676,7 +685,7 @@ class _PolicyDialogState extends State<_PolicyDialog> {
   Widget build(BuildContext context) {
     void changed() => setState(() {});
     final roles = {...widget.roles, ...?i?.roles}.toList();
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuova policy' : 'Policy ${i!.name}',
       subtitle: [?widget.schema, widget.table].join('.'),
       isNew: i == null,
@@ -725,13 +734,13 @@ class _PolicyDialogState extends State<_PolicyDialog> {
               FormRow(
                 label: 'Righe visibili (USING)',
                 help: 'Le righe esistenti a cui si applica',
-                child: _mono(_using, hint: 'owner = current_user', changed: changed),
+                child: monoField(_using, hint: 'owner = current_user', changed: changed),
               ),
             if (_command.hasCheck)
               FormRow(
                 label: 'Righe ammesse (WITH CHECK)',
                 help: 'Le righe nuove o modificate devono rispettarla',
-                child: _mono(_check, hint: 'owner = current_user', changed: changed),
+                child: monoField(_check, hint: 'owner = current_user', changed: changed),
               ),
           ],
         ),
@@ -818,7 +827,7 @@ class _ExclusionDialogState extends State<_ExclusionDialog> {
   late String _method = i?.method ?? 'gist';
   late bool _deferrable = i?.deferrable ?? false;
   late bool _deferred = i?.initiallyDeferred ?? false;
-  late final _elements = _FieldRows(2, [
+  late final _elements = FieldRows(2, [
     for (final e in i?.elements ?? const <ExclusionElement>[]) [e.expression, e.operator],
   ]);
   String? _error;
@@ -876,7 +885,7 @@ class _ExclusionDialogState extends State<_ExclusionDialog> {
   @override
   Widget build(BuildContext context) {
     void changed() => setState(() {});
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuovo vincolo di esclusione' : 'Vincolo ${i!.name}',
       subtitle: [?widget.schema, widget.table].join('.'),
       isNew: i == null,
@@ -906,7 +915,7 @@ class _ExclusionDialogState extends State<_ExclusionDialog> {
             ),
             FormRow(
               label: 'Solo le righe (WHERE)',
-              child: _mono(_where, hint: 'not annullata', lines: 1, changed: changed),
+              child: monoField(_where, hint: 'not annullata', lines: 1, changed: changed),
             ),
             FormRow(
               label: 'Verifica',
@@ -931,7 +940,7 @@ class _ExclusionDialogState extends State<_ExclusionDialog> {
         const SizedBox(height: Gap.md),
         SectionLabel('Elementi'),
         SizedBox(
-          height: 170,
+          height: gridHeight(_elements.rows.length),
           child: EditableGrid(
             columns: const [EditableGridColumn('Colonna o espressione'), EditableGridColumn('Operatore', width: 140)],
             rowCount: _elements.rows.length,
@@ -1040,7 +1049,7 @@ class _SynonymDialogState extends State<_SynonymDialog> {
   @override
   Widget build(BuildContext context) {
     void changed() => setState(() {});
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuovo sinonimo' : 'Sinonimo ${i!.name}',
       subtitle: widget.schema,
       isNew: i == null,
@@ -1221,7 +1230,7 @@ class _EventDialogState extends State<_EventDialog> {
   @override
   Widget build(BuildContext context) {
     void changed() => setState(() {});
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuovo evento' : 'Evento ${i!.name}',
       subtitle: widget.catalog,
       isNew: i == null,
@@ -1319,7 +1328,7 @@ class _EventDialogState extends State<_EventDialog> {
         ),
         const SizedBox(height: Gap.md),
         SectionLabel('Istruzione (una istruzione o BEGIN … END)'),
-        _mono(_body, hint: 'DELETE FROM log WHERE creato < NOW() - INTERVAL 30 DAY', lines: 7, changed: changed),
+        monoField(_body, hint: 'DELETE FROM log WHERE creato < NOW() - INTERVAL 30 DAY', lines: 7, changed: changed),
       ],
     );
   }
@@ -1417,7 +1426,7 @@ class _WarehouseDialogState extends State<_WarehouseDialog> {
   @override
   Widget build(BuildContext context) {
     void changed() => setState(() {});
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuovo warehouse' : 'Warehouse ${i!.name}',
       subtitle: i?.state?.toLowerCase(),
       isNew: i == null,
@@ -1587,7 +1596,7 @@ class _StageDialogState extends State<_StageDialog> {
   @override
   Widget build(BuildContext context) {
     void changed() => setState(() {});
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuovo stage' : 'Stage ${i!.name}',
       subtitle: [?widget.catalog, ?widget.schema].join('.'),
       isNew: i == null,
@@ -1748,7 +1757,7 @@ class _FileFormatDialogState extends State<_FileFormatDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return _ExtraSheet(
+    return ExtraSheet(
       title: i == null ? 'Nuovo formato di file' : 'Formato ${i!.name}',
       subtitle: [?widget.catalog, ?widget.schema].join('.'),
       isNew: i == null,
@@ -1830,7 +1839,7 @@ class _RowSecurityDialogState extends State<_RowSecurityDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return _ExtraSheet(
+    return ExtraSheet(
       title: 'Sicurezza a livello di riga',
       subtitle: [?widget.schema, widget.table].join('.'),
       isNew: false,

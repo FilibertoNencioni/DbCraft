@@ -5,6 +5,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../services/sql_dialect.dart';
+import '../schema/ddl_builder.dart';
 import '../../state/db_connection.dart';
 import 'catalog/security.dart';
 import 'ddl/security/security_ddl.dart';
@@ -27,7 +28,11 @@ class PrincipalDesign extends ChangeNotifier {
       working = PrincipalDef(
         name: name,
         kind: kind,
-        host: dialect.family == DbFamily.mysql && (kind == PrincipalKind.user || !dialect.isMariaDb) ? '%' : null,
+        host: switch (dialect.family) {
+          DbFamily.mysql when kind == PrincipalKind.user || !dialect.isMariaDb => '%',
+          DbFamily.mongodb => 'admin',
+          _ => null,
+        },
         auth: kind == PrincipalKind.user && dialect.family == DbFamily.sqlServer
             ? PrincipalAuth.login
             : PrincipalAuth.password,
@@ -53,6 +58,10 @@ class PrincipalDesign extends ChangeNotifier {
   List<GrantDef> grants;
   final List<RoleMembership> originalRoles;
   List<RoleMembership> roles;
+
+  /// Statements appended to a non-empty script (Redis ACL SAVE when the
+  /// server keeps the users in an ACL file).
+  List<String> trailing = const [];
 
   SecurityDdl get ddl => SecurityDdl.forFamily(dialect);
 
@@ -207,8 +216,9 @@ class PrincipalDesign extends ChangeNotifier {
   DdlScript script() {
     final bag = SecretBag();
     final d = SecurityDdl.forFamily(dialect, secrets: bag);
+    final statements = _build(d);
     return DdlScript(
-      _build(d),
+      [...statements, if (executableStatements(statements).isNotEmpty) ...trailing],
       secrets: bag.values,
       scope: SchemaScope.security(catalog),
       catalog: working.kind == PrincipalKind.login ? null : (dialect.family == DbFamily.sqlServer ? catalog : null),

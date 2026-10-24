@@ -19,8 +19,10 @@ import '../ddl/extra_ddl.dart';
 import '../ddl/object_ddl.dart';
 import '../ddl_script.dart';
 import '../model/extra_defs.dart';
+import '../model/nosql_defs.dart';
 import '../model/security_defs.dart';
 import 'extra_dialogs.dart';
+import 'nosql_dialogs.dart';
 import 'object_dialogs.dart';
 import 'package_editor.dart';
 
@@ -198,6 +200,10 @@ Future<bool> createExtra(
       );
       if (s == null || !context.mounted) return false;
       return _run(context, dc, ddl.createStage(s), '$title ${s.name}', scope);
+    case ExtraKind.userTypes:
+      final u = await showUdtDialog(context, dialect: d, keyspace: catalog ?? schema ?? '');
+      if (u == null || !context.mounted) return false;
+      return _run(context, dc, ddl.create(u), '$title ${u.name}', scope);
     case ExtraKind.fileFormats:
       final f = await showFileFormatDialog(context, dialect: d, catalog: catalog, schema: schema);
       if (f == null || !context.mounted) return false;
@@ -304,6 +310,8 @@ Future<bool> editExtra(
       );
     case FileFormatDef f:
       to = await showFileFormatDialog(context, dialect: d, catalog: f.catalog, schema: f.schema, initial: f);
+    case UdtDef u:
+      to = await showUdtDialog(context, dialect: d, keyspace: u.keyspace, initial: u);
   }
   if (to == null || !context.mounted) return false;
   return _run(context, dc, ddl.alter(o, to), title, scope, catalog: o.catalog, transactional: transactional);

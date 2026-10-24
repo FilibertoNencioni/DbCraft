@@ -20,7 +20,11 @@ import 'package:dbcraft/features/design/capabilities.dart';
 import 'package:dbcraft/features/design/catalog/design_catalog.dart';
 import 'package:dbcraft/features/design/ddl/code_ddl.dart';
 import 'package:dbcraft/features/design/ddl/extra_ddl.dart';
+import 'package:dbcraft/features/design/catalog/nosql.dart';
+import 'package:dbcraft/features/design/catalog/security.dart';
+import 'package:dbcraft/features/design/ddl/nosql_ddl.dart';
 import 'package:dbcraft/features/design/model/extra_defs.dart';
+import 'package:dbcraft/features/design/model/nosql_defs.dart';
 import 'package:dbcraft/features/design/ddl/object_ddl.dart';
 import 'package:dbcraft/features/design/ddl/security/security_ddl.dart';
 import 'package:dbcraft/features/design/ddl_script.dart';
@@ -48,6 +52,62 @@ class DesignTarget {
   final DbFamily family;
   final String connectionString;
   final bool mariaDb;
+}
+
+/// A server reached through a native driver (no ODBC): MongoDB, Cassandra,
+/// Redis. Defaults match tool/design_db/compose.yml.
+class NativeTarget {
+  const NativeTarget(
+    this.key,
+    this.family,
+    this.driver, {
+    required this.port,
+    this.user = '',
+    this.password = 'DbCraft_Test1',
+    this.database = '',
+    this.options = const {},
+  });
+  final String key;
+  final DbFamily family;
+  final String driver;
+  final String port;
+  final String user;
+  final String password;
+  final String database;
+  final Map<String, String> options;
+}
+
+const _nativeTargets = <NativeTarget>[
+  NativeTarget(
+    'mongo',
+    DbFamily.mongodb,
+    'mongodb',
+    port: '57017',
+    user: 'dbcraft',
+    database: 'dbcraft',
+    options: {'authSource': 'admin'},
+  ),
+  NativeTarget('cassandra', DbFamily.cassandra, 'cassandra', port: '59042', user: 'cassandra', password: 'cassandra'),
+  NativeTarget('redis', DbFamily.redis, 'redis', port: '56379'),
+];
+
+Future<DbConnection> connectNative(NativeTarget t) async {
+  final dc = DbConnection(
+    ConnectionConfig(
+      id: t.key,
+      name: t.key,
+      mode: ConnectionMode.native,
+      nativeDriver: t.driver,
+      host: '127.0.0.1',
+      port: t.port,
+      user: t.user,
+      password: t.password,
+      database: t.database,
+      extraParams: {...t.options},
+    ),
+  );
+  await dc.connect();
+  return dc;
 }
 
 /// Connection strings: the --dart-define value, or the compose default.
@@ -684,6 +744,356 @@ void main() {
           }
         }
       });
+    });
+  }
+  for (final target in _nativeTargets.where((t) => wanted.contains(t.key))) {
+    group(target.key, () {
+      late DbConnection dc;
+      final suffix = DateTime.now().millisecondsSinceEpoch % 100000;
+
+      setUpAll(() async => dc = await connectNative(target));
+      tearDownAll(() async => dc.disconnect());
+
+      test('the DBMS is recognized', () {
+        expect(dc.dialect.family, target.family);
+      });
+
+      test('security round trip', () async {
+        final d = dc.dialect;
+        final ddl = SecurityDdl.forFamily(d);
+        final cat = DesignCatalog.of(dc)!;
+        final family = d.family;
+        const password = 'DbCraft_Sec1!';
+        final dropped = <PrincipalDef>[];
+        final db = 'dbc_sec_$suffix';
+        if (family == DbFamily.cassandra) {
+          await run(dc, CassandraDdl(d).createKeyspace(KeyspaceDef(name: db)));
+        }
+        if (family == DbFamily.mongodb) await run(dc, const MongoDdl().createDatabase(db, 'dati'));
+        final on = family == DbFamily.redis ? null : GrantDef(privilege: '', target: GrantTarget.database, catalog: db);
+        try {
+          PrincipalDesign? role;
+          if (ddl.kinds.contains(PrincipalKind.role)) {
+            role = PrincipalDesign.create(d, PrincipalKind.role, name: 'dbc_r_$suffix');
+            if (family == DbFamily.mongodb) role.update(role.working.copyWith(host: db));
+            role.setGrant(on!, family == DbFamily.mongodb ? 'find' : 'SELECT', true);
+            await runScript(dc, role.script());
+            dropped.add(role.working);
+          }
+          final user = PrincipalDesign.create(d, PrincipalKind.user, name: 'dbc_u_$suffix')..setPassword(password);
+          if (family == DbFamily.redis) user.update(user.working.copyWith(aclRules: '~app:* +@read'));
+          if (role != null) user.setRole(role.working.name, true, roleHost: role.working.host);
+          await runScript(dc, user.script());
+          dropped.insert(0, user.working);
+
+          var ps = await cat.principals();
+          final u = ps.firstWhere((p) => p.key == user.working.key);
+          if (family == DbFamily.redis) {
+            expect(u.aclRules, contains('~app:*'));
+            expect(u.aclRules, contains('+@read'));
+            final edit = PrincipalDesign.existing(d, u, PrincipalAccess.none)
+              ..update(u.copyWith(aclRules: '~cache:* +get', locked: true));
+            await runScript(dc, edit.script());
+            final again = (await cat.principals()).firstWhere((p) => p.key == u.key);
+            expect(again.locked, isTrue);
+            expect(again.aclRules, contains('~cache:*'));
+            expect(again.aclRules, isNot(contains('~app:*')));
+          } else {
+            final r = ps.firstWhere((p) => p.key == role!.working.key);
+            var access = await cat.access(u);
+            expect([for (final m in access.memberOf) m.role], contains(r.name));
+            var roleAccess = await cat.access(r);
+            expect(
+              [
+                for (final g in roleAccess.grants)
+                  if (g.objectKey == on!.objectKey) g.privilege,
+              ],
+              [family == DbFamily.mongodb ? 'find' : 'SELECT'],
+            );
+            final editRole = PrincipalDesign.existing(d, r, roleAccess)
+              ..setGrant(on!, family == DbFamily.mongodb ? 'find' : 'SELECT', false)
+              ..setGrant(on, family == DbFamily.mongodb ? 'insert' : 'MODIFY', true);
+            await runScript(dc, editRole.script());
+            final editUser = PrincipalDesign.existing(d, u, access)..setRole(r.name, false, roleHost: r.host);
+            await runScript(dc, editUser.script());
+            roleAccess = await cat.access(r);
+            expect(
+              [
+                for (final g in roleAccess.grants)
+                  if (g.objectKey == on.objectKey) g.privilege,
+              ],
+              [family == DbFamily.mongodb ? 'insert' : 'MODIFY'],
+            );
+            access = await cat.access(u);
+            expect(access.memberOf.where((m) => m.role == r.name), isEmpty);
+          }
+        } finally {
+          for (final p in dropped) {
+            try {
+              await runScript(dc, DdlScript(ddl.dropPrincipal(p)));
+            } catch (_) {}
+          }
+          if (family == DbFamily.cassandra) await run(dc, CassandraDdl(d).dropKeyspace(db));
+          if (family == DbFamily.mongodb) await run(dc, const MongoDdl().dropDatabase(db));
+        }
+        final left = await cat.principals();
+        expect(left.where((p) => p.name.endsWith('_$suffix')), isEmpty);
+      });
+
+      if (target.family == DbFamily.mongodb) {
+        test('collection, index and view round trip', () async {
+          const ddl = MongoDdl();
+          final q = DesignCatalog.of(dc)!.queries;
+          final db = 'dbc_db_$suffix';
+          final c = MongoCollectionDef(
+            database: db,
+            name: 'ordini',
+            collation: 'it',
+            validator: r'{$jsonSchema: {bsonType: "object", required: ["codice"]}}',
+            validationLevel: 'moderate',
+            validationAction: 'warn',
+          );
+          await run(dc, ddl.createCollection(c));
+          try {
+            var read = (await readMongoCollection(q, db, 'ordini'))! as MongoCollectionDef;
+            expect(read.collation, 'it');
+            expect(read.validationLevel, 'moderate');
+            expect(read.validator, contains('codice'));
+            expect(ddl.alterCollection(read, read), isEmpty);
+            final strict = MongoCollectionDef(
+              database: db,
+              name: 'ordini',
+              collation: 'it',
+              validator: read.validator,
+              validationLevel: 'strict',
+              validationAction: 'error',
+            );
+            await run(dc, ddl.alterCollection(read, strict));
+            read = (await readMongoCollection(q, db, 'ordini'))! as MongoCollectionDef;
+            expect(read.validationLevel, 'strict');
+            expect(read.validationAction, 'error');
+
+            final ix = MongoIndexDef(
+              database: db,
+              collection: 'ordini',
+              name: 'ix_codice',
+              keys: const [MongoIndexKey('codice'), MongoIndexKey('data', '-1')],
+              unique: true,
+              partialFilter: r'{codice: {$exists: true}}',
+            );
+            await run(dc, ddl.createIndex(ix));
+            final ttl = MongoIndexDef(
+              database: db,
+              collection: 'ordini',
+              keys: const [MongoIndexKey('scade')],
+              ttlSeconds: 3600,
+            );
+            await run(dc, ddl.createIndex(ttl));
+            var indexes = await readMongoIndexes(q, db, 'ordini');
+            final readIx = indexes.firstWhere((i) => i.name == 'ix_codice');
+            expect([for (final k in readIx.keys) '${k.field}:${k.kind}'], ['codice:1', 'data:-1']);
+            expect(readIx.unique, isTrue);
+            expect(readIx.partialFilter, contains('codice'));
+            expect(indexes.firstWhere((i) => i.name == 'scade_1').ttlSeconds, 3600);
+            await run(
+              dc,
+              ddl.alterIndex(
+                readIx,
+                MongoIndexDef(
+                  database: db,
+                  collection: 'ordini',
+                  name: 'ix_codice',
+                  keys: readIx.keys,
+                  unique: true,
+                  partialFilter: readIx.partialFilter,
+                  hidden: true,
+                ),
+              ),
+            );
+            indexes = await readMongoIndexes(q, db, 'ordini');
+            expect(indexes.firstWhere((i) => i.name == 'ix_codice').hidden, isTrue);
+            await run(dc, ddl.dropIndex(readIx));
+            expect((await readMongoIndexes(q, db, 'ordini')).where((i) => i.name == 'ix_codice'), isEmpty);
+
+            final v = MongoViewDef(
+              database: db,
+              name: 'v_ordini',
+              viewOn: 'ordini',
+              pipeline: r'[{$match: {stato: "aperto"}}]',
+            );
+            await run(dc, ddl.createView(v));
+            var rv = (await readMongoCollection(q, db, 'v_ordini'))! as MongoViewDef;
+            expect(rv.viewOn, 'ordini');
+            expect(rv.pipeline, contains('aperto'));
+            await run(
+              dc,
+              ddl.alterView(
+                rv,
+                MongoViewDef(
+                  database: db,
+                  name: 'v_ordini',
+                  viewOn: 'ordini',
+                  pipeline: r'[{$match: {stato: "chiuso"}}]',
+                ),
+              ),
+            );
+            rv = (await readMongoCollection(q, db, 'v_ordini'))! as MongoViewDef;
+            expect(rv.pipeline, contains('chiuso'));
+
+            await run(
+              dc,
+              ddl.alterCollection(
+                read,
+                MongoCollectionDef(
+                  database: db,
+                  name: 'ordini2',
+                  collation: 'it',
+                  validator: read.validator,
+                  validationLevel: 'strict',
+                  validationAction: 'error',
+                ),
+              ),
+            );
+            expect(await readMongoCollection(q, db, 'ordini2'), isNotNull);
+            final capped = MongoCollectionDef(
+              database: db,
+              name: 'log',
+              type: MongoCollectionType.capped,
+              cappedSize: 65536,
+              cappedMax: 100,
+            );
+            await run(dc, ddl.createCollection(capped));
+            final rc = (await readMongoCollection(q, db, 'log'))! as MongoCollectionDef;
+            expect(rc.type, MongoCollectionType.capped);
+            expect(rc.cappedMax, 100);
+            final ts = MongoCollectionDef(
+              database: db,
+              name: 'misure',
+              type: MongoCollectionType.timeseries,
+              timeField: 't',
+              metaField: 'sensore',
+              granularity: 'minutes',
+              expireAfterSeconds: 86400,
+            );
+            await run(dc, ddl.createCollection(ts));
+            final rt = (await readMongoCollection(q, db, 'misure'))! as MongoCollectionDef;
+            expect(rt.type, MongoCollectionType.timeseries);
+            expect(rt.metaField, 'sensore');
+            expect(rt.expireAfterSeconds, 86400);
+          } finally {
+            await run(dc, ddl.dropDatabase(db));
+          }
+          expect(await readMongoCollection(q, db, 'ordini2'), isNull);
+        });
+      }
+
+      if (target.family == DbFamily.cassandra) {
+        test('keyspace, table, index, type and view round trip', () async {
+          final ddl = CassandraDdl(dc.dialect);
+          final q = DesignCatalog.of(dc)!.queries;
+          final ks = 'dbc_ks_$suffix';
+          await run(dc, ddl.createKeyspace(KeyspaceDef(name: ks)));
+          try {
+            var k = (await readKeyspace(q, ks))!;
+            expect(k.replicationFactor, 1);
+            expect(ddl.alterKeyspace(k, KeyspaceDef(name: ks)), isEmpty);
+            await run(dc, ddl.alterKeyspace(k, KeyspaceDef(name: ks, durableWrites: false)));
+            k = (await readKeyspace(q, ks))!;
+            expect(k.durableWrites, isFalse);
+
+            final t = CqlTableDef(
+              keyspace: ks,
+              name: 'letture',
+              columns: const [
+                CqlColumn('sensore', 'text', kind: CqlColumnKind.partition),
+                CqlColumn('giorno', 'date', kind: CqlColumnKind.partition),
+                CqlColumn('ora', 'timestamp', kind: CqlColumnKind.clustering, descending: true),
+                CqlColumn('luogo', 'text', kind: CqlColumnKind.static),
+                CqlColumn('valore', 'double'),
+              ],
+              comment: 'Letture dei sensori',
+              defaultTtl: 86400,
+            );
+            await run(dc, ddl.createTable(t));
+            var rt = (await readCqlTable(q, ks, 'letture'))!;
+            expect(
+              [for (final c in rt.columns) '${c.name}:${c.kind.name}${c.descending ? ':desc' : ''}'],
+              ['sensore:partition', 'giorno:partition', 'ora:clustering:desc', 'luogo:static', 'valore:regular'],
+            );
+            expect(rt.comment, 'Letture dei sensori');
+            expect(
+              ddl.alterTable(
+                rt,
+                CqlTableDef(
+                  keyspace: ks,
+                  name: 'letture',
+                  columns: t.columns,
+                  comment: t.comment,
+                  defaultTtl: t.defaultTtl,
+                  gcGraceSeconds: rt.gcGraceSeconds,
+                  compaction: rt.compaction,
+                ),
+              ),
+              isEmpty,
+            );
+            final changed = CqlTableDef(
+              keyspace: ks,
+              name: 'letture',
+              columns: [...t.columns.where((c) => c.name != 'luogo'), const CqlColumn('unita', 'text')],
+              comment: 'Sensori',
+              defaultTtl: 0,
+              gcGraceSeconds: rt.gcGraceSeconds,
+              compaction: 'LeveledCompactionStrategy',
+            );
+            await run(dc, ddl.alterTable(rt, changed));
+            rt = (await readCqlTable(q, ks, 'letture'))!;
+            expect(rt.columns.map((c) => c.name), containsAll(['unita']));
+            expect(rt.columns.map((c) => c.name), isNot(contains('luogo')));
+            expect(rt.compaction, 'LeveledCompactionStrategy');
+
+            final ix = CqlIndexDef(keyspace: ks, table: 'letture', name: 'ix_valore', column: 'valore', using: 'sai');
+            await run(dc, ddl.createIndex(ix));
+            final ixs = await readCqlIndexes(q, ks, 'letture');
+            expect(ixs.single.column, 'valore');
+            expect(ixs.single.using, 'sai');
+            await run(dc, ddl.dropIndex(ix));
+
+            final u = UdtDef(keyspace: ks, name: 'indirizzo', fields: const [('via', 'text'), ('cap', 'text')]);
+            await run(dc, ddl.createType(u));
+            await run(
+              dc,
+              ddl.alterType(
+                u,
+                UdtDef(
+                  keyspace: ks,
+                  name: 'indirizzo',
+                  fields: const [('strada', 'text'), ('cap', 'text'), ('citta', 'text')],
+                ),
+              ),
+            );
+            final types = await readUserTypes(q, ks);
+            expect(types.single.fields.map((f) => f.$1), ['strada', 'cap', 'citta']);
+
+            final mv = CqlMaterializedViewDef(
+              keyspace: ks,
+              name: 'per_ora',
+              baseTable: 'letture',
+              where: 'sensore IS NOT NULL AND giorno IS NOT NULL AND ora IS NOT NULL',
+              primaryKey: '((giorno), ora, sensore)',
+            );
+            await run(dc, ddl.createMaterializedView(mv));
+            final rmv = (await readMaterializedView(q, ks, 'per_ora'))!;
+            expect(rmv.baseTable, 'letture');
+            expect(rmv.primaryKey, '(giorno, ora, sensore)');
+            await run(dc, ddl.dropMaterializedView(ks, 'per_ora'));
+            await run(dc, ddl.dropType(ks, 'indirizzo'));
+            await run(dc, ddl.dropTable(ks, 'letture'));
+          } finally {
+            await run(dc, ddl.dropKeyspace(ks));
+          }
+          expect(await readKeyspace(q, ks), isNull);
+        });
+      }
     });
   }
 }

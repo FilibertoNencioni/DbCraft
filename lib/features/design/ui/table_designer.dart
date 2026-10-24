@@ -179,6 +179,28 @@ class _DesignPropertiesPageState extends State<DesignPropertiesPage> {
                           onChanged: (v) => _option('tablespace', v),
                         ),
                       ),
+                    if (family == DbFamily.bigquery && d.isNew) ...[
+                      FormRow(
+                        label: 'Partizionamento',
+                        help: 'Espressione di PARTITION BY: DATE(creato), _PARTITIONDATE…',
+                        child: MacTextField(
+                          controller: _fields.of(0, 'partitionBy', t.options['partitionBy'] ?? ''),
+                          mono: true,
+                          hint: 'nessuno',
+                          onChanged: (v) => _option('partitionBy', v),
+                        ),
+                      ),
+                      FormRow(
+                        label: 'Clustering',
+                        help: 'Fino a 4 colonne, separate da virgola',
+                        child: MacTextField(
+                          controller: _fields.of(0, 'clusterBy', t.options['clusterBy'] ?? ''),
+                          mono: true,
+                          hint: 'nessuno',
+                          onChanged: (v) => _option('clusterBy', v),
+                        ),
+                      ),
+                    ],
                     if (family == DbFamily.sqlServer && d.isNew)
                       FormRow(
                         label: 'Filegroup',

@@ -14,6 +14,7 @@ import 'db2.dart';
 import 'firebird.dart';
 import 'mssql.dart';
 import 'mysql.dart';
+import 'nosql.dart';
 import 'oracle.dart';
 import 'pg.dart';
 import 'snowflake.dart';
@@ -31,6 +32,10 @@ abstract class SecurityDdl {
     DbFamily.db2 => Db2SecurityDdl(dialect, secrets),
     DbFamily.firebird => FirebirdSecurityDdl(dialect, secrets),
     DbFamily.snowflake => SnowflakeSecurityDdl(dialect, secrets),
+    DbFamily.mongodb => MongoSecurityDdl(dialect, secrets),
+    DbFamily.cassandra => CassandraSecurityDdl(dialect, secrets),
+    DbFamily.redis => RedisSecurityDdl(dialect, secrets),
+    DbFamily.bigquery => BigQuerySecurityDdl(dialect, secrets),
     _ => _UnsupportedSecurityDdl(dialect, secrets),
   };
 

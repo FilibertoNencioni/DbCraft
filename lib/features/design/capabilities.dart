@@ -73,6 +73,9 @@ enum DesignFeature {
   stages,
   fileFormats,
 
+  /// Cassandra user defined types.
+  userTypes,
+
   // Security
   users,
   roles,
@@ -246,10 +249,13 @@ class DesignCapabilities {
           if (!_standard.contains(f)) out[f] = 'DBMS non riconosciuto: disponibili solo le operazioni SQL standard';
         }
       case DbFamily.bigquery || DbFamily.cassandra || DbFamily.mongodb || DbFamily.redis:
-        // Native drivers: the design tools for them come later.
+        // Native drivers: the features each one offers (Cassandra and
+        // MongoDB through their own sheets, BigQuery through the SQL ones).
+        final offered = _nosql[d.family]!;
         for (final f in DesignFeature.values) {
-          out[f] = 'Strumenti di design non ancora disponibili per $name';
+          if (!offered.contains(f)) out[f] = '$name non supporta questa operazione';
         }
+        if (d.family == DbFamily.redis && !atLeast(6)) out[DesignFeature.users] = 'Richiede $name 6.0 o successivo';
     }
     // Objects only some DBMS have.
     final f = d.family;
@@ -267,6 +273,7 @@ class DesignCapabilities {
       DesignFeature.warehouses: sf,
       DesignFeature.stages: sf,
       DesignFeature.fileFormats: sf,
+      DesignFeature.userTypes: f == DbFamily.cassandra,
     };
     for (final e in only.entries) {
       if (!e.value) out.putIfAbsent(e.key, () => '$name non ha questo tipo di oggetto');
@@ -274,6 +281,44 @@ class DesignCapabilities {
     if (pg) needs(DesignFeature.rowSecurity, atLeast(9, 5), '9.5');
     return out;
   }
+
+  static const _nosql = {
+    DbFamily.mongodb: {
+      DesignFeature.createDatabase,
+      DesignFeature.createTable,
+      DesignFeature.views,
+      DesignFeature.indexes,
+      DesignFeature.indexDescending,
+      DesignFeature.indexFilter,
+      DesignFeature.disableIndex,
+      DesignFeature.users,
+      DesignFeature.roles,
+      DesignFeature.grants,
+    },
+    DbFamily.cassandra: {
+      DesignFeature.createDatabase,
+      DesignFeature.createTable,
+      DesignFeature.alterTableInPlace,
+      DesignFeature.indexes,
+      DesignFeature.materializedViews,
+      DesignFeature.userTypes,
+      DesignFeature.comments,
+      DesignFeature.users,
+      DesignFeature.roles,
+      DesignFeature.grants,
+    },
+    DbFamily.redis: {DesignFeature.users},
+    DbFamily.bigquery: {
+      DesignFeature.createTable,
+      DesignFeature.alterTableInPlace,
+      DesignFeature.schemas,
+      DesignFeature.views,
+      DesignFeature.replaceView,
+      DesignFeature.materializedViews,
+      DesignFeature.comments,
+      DesignFeature.grants,
+    },
+  };
 
   /// Features of an unknown SQL DBMS.
   static const _standard = {
@@ -318,4 +363,9 @@ DesignFeature extraFeature(ExtraKind k) => switch (k) {
   ExtraKind.fileFormats => DesignFeature.fileFormats,
   ExtraKind.policies => DesignFeature.rowSecurity,
   ExtraKind.exclusions => DesignFeature.exclusionConstraints,
+  ExtraKind.userTypes => DesignFeature.userTypes,
 };
+
+/// The SQL design tools (table designer, constraint sheets, view editor)
+/// apply to [d]: SQL databases except Cassandra, which has its own sheets.
+bool sqlDesign(SqlDialect d) => d.isSql && d.family != DbFamily.cassandra;

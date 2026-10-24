@@ -181,6 +181,9 @@ class ObjectDdl {
         return [sb.toString()];
       case DbFamily.sqlServer:
         return ['CREATE SCHEMA $name$auth', if (_has(s.comment)) _mssqlSchemaComment(s.name, s.comment!, false)];
+      case DbFamily.bigquery:
+        // A BigQuery dataset, in the project of the catalog.
+        return ['CREATE SCHEMA ${_schemaRef(s)}${_has(s.comment) ? ' OPTIONS(description = ${lit(s.comment!)})' : ''}'];
       default:
         return ['CREATE SCHEMA $name$auth', if (_has(s.comment)) 'COMMENT ON SCHEMA $name IS ${lit(s.comment!)}'];
     }
@@ -213,6 +216,12 @@ class ObjectDdl {
         }
         if (changed(from.comment, to.comment)) {
           out.add(_mssqlSchemaComment(to.name, to.comment ?? '', _has(from.comment)));
+        }
+      case DbFamily.bigquery:
+        if (changed(from.comment, to.comment)) {
+          out.add(
+            'ALTER SCHEMA ${_schemaRef(to)} SET OPTIONS (description = ${_has(to.comment) ? lit(to.comment!) : 'NULL'})',
+          );
         }
       case DbFamily.db2:
         if (changed(from.comment, to.comment)) {
@@ -258,6 +267,8 @@ class ObjectDdl {
         return ['DROP SCHEMA ${q(s.name)}${cascade ? ' CASCADE' : ''}'];
       case DbFamily.snowflake:
         return ['DROP SCHEMA ${_schemaRef(s)}${cascade ? ' CASCADE' : ' RESTRICT'}'];
+      case DbFamily.bigquery:
+        return ['DROP SCHEMA ${_schemaRef(s)}${cascade ? ' CASCADE' : ''}'];
       case DbFamily.db2:
         return [
           if (cascade) _note('Db2 elimina solo schemi vuoti: elimina prima gli oggetti'),
@@ -591,5 +602,6 @@ class ObjectDdl {
   List<String> dropSequence(SequenceDef s) => ['DROP SEQUENCE ${seqRef(s)}'];
 
   /// DROP SCHEMA … CASCADE exists.
-  bool get canDropSchemaCascade => family == DbFamily.postgres || family == DbFamily.snowflake;
+  bool get canDropSchemaCascade =>
+      family == DbFamily.postgres || family == DbFamily.snowflake || family == DbFamily.bigquery;
 }

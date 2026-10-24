@@ -273,7 +273,7 @@ class _ConstraintsPageState extends _TablePageState<ConstraintsPage> {
   @override
   Widget build(BuildContext context) => buildWith((t, refs) {
     final caps = DesignCapabilities.of(dc.dialect);
-    final editable = widget.editable && dc.dialect.isSql;
+    final editable = widget.editable && sqlDesign(dc.dialect);
     final d = design;
     final ro = (dc.config.readOnly && d == null) || !editable;
     VoidCallback? add(ConstraintKind k) => ro
@@ -372,7 +372,7 @@ class _IndexesPageState extends _TablePageState<IndexesPage> {
     if (!caps.has(DesignFeature.indexes)) {
       return EmptyState(icon: AppIcons.sort, title: 'Nessun indice', message: caps.reason(DesignFeature.indexes)!);
     }
-    final editable = widget.editable && dc.dialect.isSql;
+    final editable = widget.editable && sqlDesign(dc.dialect);
     final d = design;
     final ro = (dc.config.readOnly && d == null) || !editable;
     String details(IndexDef i) => [

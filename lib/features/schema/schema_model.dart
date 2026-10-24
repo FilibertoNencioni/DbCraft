@@ -797,6 +797,10 @@ List<String> commonTypes(DbFamily family) => switch (family) {
     'INTEGER', 'BIGINT', 'SMALLINT', 'BOOLEAN', 'DECIMAL', 'NUMERIC', 'DOUBLE PRECISION', 'VARCHAR', //
     'CHAR', 'BLOB SUB_TYPE TEXT', 'DATE', 'TIME', 'TIMESTAMP', 'BLOB',
   ],
+  DbFamily.bigquery => const [
+    'STRING', 'INT64', 'FLOAT64', 'NUMERIC', 'BIGNUMERIC', 'BOOL', 'BYTES', 'DATE', 'DATETIME', 'TIME', //
+    'TIMESTAMP', 'JSON', 'GEOGRAPHY', 'INTERVAL', 'ARRAY<STRING>', 'STRUCT<>',
+  ],
   DbFamily.snowflake => const [
     'NUMBER', 'INTEGER', 'FLOAT', 'BOOLEAN', 'VARCHAR', 'TEXT', 'DATE', 'TIME', 'TIMESTAMP_NTZ', //
     'TIMESTAMP_TZ', 'VARIANT', 'BINARY',

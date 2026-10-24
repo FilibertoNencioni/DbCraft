@@ -14,6 +14,7 @@ import '../../features/design/ui/view_editor.dart';
 import '../../features/design/view_design.dart';
 import '../../features/schema/ddl_builder.dart';
 import '../../model/db_objects.dart';
+import '../../services/sql_dialect.dart';
 import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
 import '../../state/editor_tabs.dart';
@@ -89,13 +90,17 @@ class _TableEditorViewState extends State<TableEditorView> {
   /// The privileges on the object can be read and granted here.
   bool get _permissions {
     final c = tab.connection;
-    return !_simple && hasSecurity(c) && DesignCapabilities.of(c.dialect).has(DesignFeature.grants);
+    final f = c.dialect.family;
+    return !_simple &&
+        f != DbFamily.mongodb &&
+        (hasSecurity(c) || f == DbFamily.bigquery) &&
+        DesignCapabilities.of(c.dialect).has(DesignFeature.grants);
   }
 
   /// The view definition can be edited here.
   bool get _viewEditable {
     final c = tab.connection;
-    return table.isView && c.dialect.isSql && !c.config.readOnly && !_simple;
+    return table.isView && sqlDesign(c.dialect) && !c.config.readOnly && !_simple;
   }
 
   /// Reads the definition of the view (or refreshes an unchanged one).
@@ -122,7 +127,7 @@ class _TableEditorViewState extends State<TableEditorView> {
   bool get _designable {
     final c = tab.connection;
     return !table.isView &&
-        c.dialect.isSql &&
+        sqlDesign(c.dialect) &&
         !c.config.readOnly &&
         !_simple &&
         DesignCapabilities.of(c.dialect).has(DesignFeature.createTable);

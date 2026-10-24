@@ -172,6 +172,9 @@ class DdlBuilder {
       if (c.autoIncrement) sb.write(' AUTO_INCREMENT');
       if (c.comment != null && c.comment!.isNotEmpty) sb.write(' COMMENT ${dialect.stringLiteral(c.comment!)}');
     }
+    if (family == DbFamily.bigquery && c.comment != null && c.comment!.isNotEmpty) {
+      sb.write(' OPTIONS(description = ${dialect.stringLiteral(c.comment!)})');
+    }
     return sb.toString();
   }
 
@@ -272,6 +275,13 @@ class DdlBuilder {
         if (o['tablespace']?.isNotEmpty ?? false) sb.write(' IN ${q(o['tablespace']!)}');
       case DbFamily.sqlServer:
         if (o['filegroup']?.isNotEmpty ?? false) sb.write(' ON ${q(o['filegroup']!)}');
+      case DbFamily.bigquery:
+        // Partitioning, clustering and the description (OPTIONS).
+        if (o['partitionBy']?.isNotEmpty ?? false) sb.write(' PARTITION BY ${o['partitionBy']}');
+        if (o['clusterBy']?.isNotEmpty ?? false) sb.write(' CLUSTER BY ${o['clusterBy']}');
+        if (t.comment != null && t.comment!.isNotEmpty) {
+          sb.write(' OPTIONS(description = ${dialect.stringLiteral(t.comment!)})');
+        }
       case DbFamily.mysql:
         if (o['engine']?.isNotEmpty ?? false) sb.write(' ENGINE=${o['engine']}');
         if (o['charset']?.isNotEmpty ?? false) sb.write(' DEFAULT CHARSET=${o['charset']}');
@@ -294,7 +304,7 @@ class DdlBuilder {
         out.addAll(createIndex(t, ix));
       }
     }
-    if (withComments && family != DbFamily.mysql) {
+    if (withComments && family != DbFamily.mysql && family != DbFamily.bigquery) {
       if (t.comment != null && t.comment!.isNotEmpty) out.addAll(tableComment(t, t.comment));
       for (final c in t.columns) {
         if (c.comment != null && c.comment!.isNotEmpty) out.addAll(columnComment(t, c));
@@ -571,6 +581,8 @@ class DdlBuilder {
     final clustered = family == DbFamily.sqlServer && pk.clustered != null
         ? (pk.clustered! ? ' CLUSTERED' : ' NONCLUSTERED')
         : '';
+    // BigQuery records primary keys without enforcing them.
+    if (family == DbFamily.bigquery) return 'PRIMARY KEY (${_cols(pk.columns)}) NOT ENFORCED';
     return '${_named(pk.name)}PRIMARY KEY$clustered (${_cols(pk.columns)})${_deferrable(pk.state)}';
   }
 
@@ -1018,6 +1030,10 @@ class DdlBuilder {
         return const [];
       case DbFamily.mysql:
         return ['ALTER TABLE ${tableRef(t)} COMMENT = ${dialect.stringLiteral(text)}'];
+      case DbFamily.bigquery:
+        return [
+          'ALTER TABLE ${tableRef(t)} SET OPTIONS (description = ${text.isEmpty ? 'NULL' : dialect.stringLiteral(text)})',
+        ];
       case DbFamily.sqlServer:
         return [_mssqlDescription(t, null, text, previous)];
       default:
@@ -1033,6 +1049,11 @@ class DdlBuilder {
         return const [];
       case DbFamily.mysql:
         return ['ALTER TABLE ${tableRef(t)} MODIFY COLUMN ${columnDefinition(c)}'];
+      case DbFamily.bigquery:
+        return [
+          'ALTER TABLE ${tableRef(t)} ALTER COLUMN ${q(c.name)} SET OPTIONS '
+              '(description = ${text.isEmpty ? 'NULL' : dialect.stringLiteral(text)})',
+        ];
       case DbFamily.sqlServer:
         return [_mssqlDescription(t, c.name, text, previous)];
       default:

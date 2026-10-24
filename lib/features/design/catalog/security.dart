@@ -3,7 +3,12 @@
 // readers throw CatalogPermissionException (see CatalogQueries.first) and
 // the security manager shows what it could read.
 
+import 'dart:convert';
+
+import '../../../drivers/mongodb/bson.dart';
 import '../../../services/sql_dialect.dart';
+import '../ddl/nosql_ddl.dart';
+import '../ddl/security/nosql.dart';
 import '../ddl/security/security_ddl.dart';
 import '../model/security_defs.dart';
 import 'design_catalog.dart';
@@ -257,6 +262,24 @@ Future<List<PrincipalDef>> readPrincipals(CatalogQueries q, SqlDialect d, {Strin
             builtIn: _snowflakeSystemRoles.contains(rowText(r, 'name')!.toUpperCase()),
           ),
       ];
+    case DbFamily.mongodb:
+      return readMongoPrincipals(q);
+    case DbFamily.cassandra:
+      final rows = await q.first(['SELECT role, can_login, is_superuser FROM system_auth.roles']);
+      return [
+        for (final r in rows)
+          PrincipalDef(
+            name: rowText(r, 'role')!,
+            kind: rowBool(r, 'can_login') ? PrincipalKind.user : PrincipalKind.role,
+            superuser: rowBool(r, 'is_superuser'),
+          ),
+      ]..sort((a, b) => a.name.compareTo(b.name));
+    case DbFamily.redis:
+      final rows = await q.first(['ACL LIST']);
+      return [
+        for (final r in rows)
+          if (r['value'] ?? r.values.lastOrNull case final String line) ?parseAclUser(line),
+      ];
     default:
       return const [];
   }
@@ -343,6 +366,14 @@ Future<List<RoleMembership>> readMemberships(CatalogQueries q, SqlDialect d, {St
       return [
         for (final r in rows)
           RoleMembership(rowText(r, 'role_name')!, rowText(r, 'member_name')!, withAdmin: rowBool(r, 'admin_option')),
+      ];
+    case DbFamily.mongodb:
+      return readMongoMemberships(q);
+    case DbFamily.cassandra:
+      final rows = await q.first(['SELECT role, member_of FROM system_auth.roles']);
+      return [
+        for (final r in rows)
+          for (final role in _jsonStrings(r['member_of'])) RoleMembership(role, rowText(r, 'role')!),
       ];
     default:
       return const [];
@@ -580,6 +611,21 @@ Future<PrincipalAccess> readAccess(
         if (g != null) grants.add(g);
       }
       return PrincipalAccess(memberOf: memberOf, grants: grants);
+    case DbFamily.mongodb:
+      if (p.kind != PrincipalKind.role) return PrincipalAccess(memberOf: roles);
+      return PrincipalAccess(memberOf: roles, grants: await readMongoRoleGrants(q, p));
+    case DbFamily.cassandra:
+      final rows = await q.first([
+        'SELECT resource, permissions FROM system_auth.role_permissions WHERE role = ${lit(name)}',
+      ]);
+      return PrincipalAccess(
+        memberOf: roles,
+        grants: [
+          for (final r in rows)
+            if (_cassandraTarget(rowText(r, 'resource') ?? '') case final on?)
+              for (final perm in _jsonStrings(r['permissions'])) on.withPrivilege(perm),
+        ],
+      );
     default:
       return PrincipalAccess(memberOf: roles);
   }
@@ -984,7 +1030,202 @@ Future<List<ObjectGrant>> readObjectGrants(
               g(rowText(r, 'privilege')!, rowBool(r, 'grant_option')),
             ),
       ];
+    case DbFamily.cassandra:
+      final resource = 'data/${table.catalog}/${table.object}';
+      final rows = await q.first([
+        'SELECT role, permissions FROM system_auth.role_permissions WHERE resource = ${lit(resource)} ALLOW FILTERING',
+      ]);
+      return [
+        for (final r in rows)
+          for (final perm in _jsonStrings(r['permissions'])) ObjectGrant(who(rowText(r, 'role')!), g(perm, false)),
+      ];
+    case DbFamily.bigquery:
+      final project = table.catalog == null ? '' : '${d.quoteIdent(table.catalog!)}.';
+      final where = 'WHERE object_schema = ${lit(table.schema ?? '')} AND object_name = ${lit(table.object!)}';
+      final rows = await q.first([
+        for (final region in const [
+          'region-eu',
+          'region-us',
+          'region-europe-west8',
+          'region-europe-west1',
+          'region-us-central1',
+        ])
+          'SELECT privilege_type, grantee FROM $project`$region`.INFORMATION_SCHEMA.OBJECT_PRIVILEGES $where',
+      ]);
+      return [
+        for (final r in rows)
+          ObjectGrant(
+            PrincipalDef(
+              name: rowText(r, 'grantee')!,
+              kind: (rowText(r, 'grantee') ?? '').startsWith('group:') ? PrincipalKind.group : PrincipalKind.user,
+            ),
+            GrantDef(
+              privilege: rowText(r, 'privilege_type')!,
+              target: table.target,
+              catalog: table.catalog,
+              schema: table.schema,
+              object: table.object,
+            ),
+          ),
+      ];
     default:
       return const [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// NoSQL helpers
+// ---------------------------------------------------------------------------
+
+extension on GrantDef {
+  GrantDef withPrivilege(String privilege) => GrantDef(
+    privilege: privilege,
+    target: target,
+    catalog: catalog,
+    schema: schema,
+    object: object,
+    isFunction: isFunction,
+  );
+}
+
+/// A set / list cell (JSON text or a Dart list) as strings.
+List<String> _jsonStrings(Object? v) {
+  Object? list = v;
+  if (v is String) {
+    try {
+      list = jsonDecode(v);
+    } catch (_) {
+      return const [];
+    }
+  }
+  return list is List ? [for (final x in list) '$x'] : const [];
+}
+
+/// Cassandra resource `data`, `data/ks`, `data/ks/table` as a privilege
+/// template (null for roles, functions…).
+GrantDef? _cassandraTarget(String resource) {
+  final parts = resource.split('/');
+  if (parts.first != 'data') return null;
+  return switch (parts.length) {
+    1 => const GrantDef(privilege: '', target: GrantTarget.system),
+    2 => GrantDef(privilege: '', target: GrantTarget.database, catalog: parts[1]),
+    _ => GrantDef(privilege: '', target: GrantTarget.table, catalog: parts[1], object: parts[2]),
+  };
+}
+
+/// One line of ACL LIST: `user alice on #<hash> ~app:* &* +@read`.
+PrincipalDef? parseAclUser(String line) {
+  final t = line.trim().split(RegExp(r'\s+'));
+  if (t.length < 2 || t.first != 'user') return null;
+  var locked = false;
+  final rules = <String>[];
+  for (final x in t.skip(2)) {
+    if (x == 'on') continue;
+    if (x == 'off') {
+      locked = true;
+    } else if (x.startsWith('#') || x.startsWith('>') || x == 'nopass' || x == 'resetpass' || x == 'sanitize-payload') {
+      continue;
+    } else {
+      rules.add(x);
+    }
+  }
+  return PrincipalDef(name: t[1], kind: PrincipalKind.user, locked: locked, aclRules: rules.join(' '));
+}
+
+/// The value of [key] in the key / value rows of a MongoDB command reply.
+Object? _replyValue(List<CatalogRow> rows, String key) {
+  for (final r in rows) {
+    if (rowText(r, 'key') == key) {
+      final v = r['value'];
+      if (v is String) {
+        try {
+          return parseMongoValue(v);
+        } catch (_) {
+          return v;
+        }
+      }
+      return v;
+    }
+  }
+  return null;
+}
+
+String _mongoCmd(String db, String doc) => '${const MongoDdl().db(db)}.runCommand($doc)';
+
+Future<List<Map>> _mongoUsers(CatalogQueries q) async {
+  final rows = await q.first([_mongoCmd('admin', '{usersInfo: {forAllDBs: true}}')]);
+  final users = _replyValue(rows, 'users');
+  return [
+    if (users is List)
+      for (final u in users)
+        if (u is Map) u,
+  ];
+}
+
+Future<List<String>> _mongoDatabases(CatalogQueries q) async {
+  final rows = await q.first(['show dbs']);
+  return [for (final r in rows) ?rowText(r, 'name')];
+}
+
+Future<List<Map>> _mongoRoles(CatalogQueries q) async {
+  final out = <Map>[];
+  for (final db in (await _mongoDatabases(q)).take(40)) {
+    try {
+      final rows = await q.first([_mongoCmd(db, '{rolesInfo: 1, showPrivileges: true}')]);
+      final roles = _replyValue(rows, 'roles');
+      if (roles is List) out.addAll(roles.whereType<Map>());
+    } catch (_) {}
+  }
+  return out;
+}
+
+/// MongoDB users of every database and the custom roles.
+Future<List<PrincipalDef>> readMongoPrincipals(CatalogQueries q) async => [
+  for (final u in await _mongoUsers(q))
+    PrincipalDef(name: '${u['user']}', kind: PrincipalKind.user, host: '${u['db']}'),
+  for (final r in await _mongoRoles(q))
+    PrincipalDef(name: '${r['role']}', kind: PrincipalKind.role, host: '${r['db']}', builtIn: r['isBuiltin'] == true),
+];
+
+Future<List<RoleMembership>> readMongoMemberships(CatalogQueries q) async {
+  List<RoleMembership> of(Map p, String nameKey) => [
+    for (final r in (p['roles'] as List?) ?? const [])
+      if (r is Map) RoleMembership('${r['role']}', '${p[nameKey]}', roleHost: '${r['db']}', memberHost: '${p['db']}'),
+  ];
+  return [
+    for (final u in await _mongoUsers(q)) ...of(u, 'user'),
+    for (final r in await _mongoRoles(q)) ...of(r, 'role'),
+  ];
+}
+
+/// Privileges of the custom role [p].
+Future<List<GrantDef>> readMongoRoleGrants(CatalogQueries q, PrincipalDef p) async {
+  final rows = await q.first([
+    _mongoCmd(p.host ?? 'admin', '{rolesInfo: ${jsonEncode(p.dbName)}, showPrivileges: true}'),
+  ]);
+  final roles = _replyValue(rows, 'roles');
+  final role = roles is List && roles.isNotEmpty && roles.first is Map ? roles.first as Map : const {};
+  return [
+    for (final priv in (role['privileges'] as List?) ?? const [])
+      if (priv is Map)
+        for (final action in (priv['actions'] as List?) ?? const [])
+          () {
+            final res = (priv['resource'] as Map?) ?? const {};
+            if (res['cluster'] == true) return GrantDef(privilege: '$action', target: GrantTarget.system);
+            final coll = '${res['collection'] ?? ''}';
+            return GrantDef(
+              privilege: '$action',
+              target: coll.isEmpty ? GrantTarget.database : GrantTarget.table,
+              catalog: '${res['db'] ?? ''}',
+              object: coll.isEmpty ? null : coll,
+            );
+          }(),
+  ];
+}
+
+/// Built-in MongoDB roles offered as memberships, per database.
+List<(String, String)> mongoBuiltinRoles(Iterable<String> databases) => [
+  for (final r in mongoAdminRoles) (r, 'admin'),
+  for (final db in {'admin', ...databases})
+    for (final r in mongoDatabaseRoles) (r, db),
+];

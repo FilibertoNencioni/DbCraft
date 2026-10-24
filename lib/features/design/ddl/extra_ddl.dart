@@ -5,7 +5,9 @@
 import '../../../services/sql_dialect.dart';
 import '../capabilities.dart';
 import '../model/extra_defs.dart';
+import '../model/nosql_defs.dart';
 import 'code_ddl.dart';
+import 'nosql_ddl.dart';
 
 class ExtraDdl {
   ExtraDdl(this.dialect) : caps = DesignCapabilities.of(dialect);
@@ -561,6 +563,7 @@ class ExtraDdl {
     WarehouseDef w => createWarehouse(w),
     StageDef s => createStage(s),
     FileFormatDef f => createFileFormat(f),
+    UdtDef u => CassandraDdl(dialect).createType(u),
     _ => const [],
   };
 
@@ -575,6 +578,7 @@ class ExtraDdl {
     (WarehouseDef a, WarehouseDef b) => alterWarehouse(a, b),
     (StageDef a, StageDef b) => alterStage(a, b),
     (FileFormatDef a, FileFormatDef b) => alterFileFormat(a, b),
+    (UdtDef a, UdtDef b) => CassandraDdl(dialect).alterType(a, b),
     _ => const [],
   };
 
@@ -590,6 +594,7 @@ class ExtraDdl {
     WarehouseDef w => dropWarehouse(w),
     StageDef s => dropStage(s),
     FileFormatDef f => dropFileFormat(f),
+    UdtDef u => CassandraDdl(dialect).dropType(u.keyspace, u.name),
     _ => const [],
   };
 

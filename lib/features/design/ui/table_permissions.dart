@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../model/db_objects.dart';
+import '../../../services/sql_dialect.dart';
 import '../../../state/db_connection.dart';
 import '../../../ui/navigator/nav_nodes.dart' show principalIcon;
 import '../../../ui/widgets/common.dart';
@@ -115,6 +116,19 @@ class _TablePermissionsPageState extends State<TablePermissionsPage> {
 
   Future<void> _add() async {
     final present = {for (final r in _rows) r.working.key};
+    if (dc.dialect.family == DbFamily.bigquery) {
+      final id = await promptText(
+        context,
+        'Aggiungi un\'identità',
+        label: 'user:nome@dominio.it, group:…, serviceAccount:…, domain:…',
+      );
+      final v = id?.trim() ?? '';
+      if (v.isEmpty || !v.contains(':') || !mounted) return;
+      final p = PrincipalDef(name: v, kind: v.startsWith('group:') ? PrincipalKind.group : PrincipalKind.user);
+      if (present.contains(p.key)) return;
+      setState(() => _rows.add(_session(p, const [])));
+      return;
+    }
     final p = await showListPicker<PrincipalDef>(
       context,
       title: 'Aggiungi un assegnatario',

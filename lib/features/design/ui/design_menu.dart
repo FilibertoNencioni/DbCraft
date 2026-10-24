@@ -20,7 +20,7 @@ MenuEntry<void> _item(String label, VoidCallback? action, {bool destructive = fa
     MenuEntry(label, onSelected: action, enabled: action != null, destructive: destructive);
 
 /// Whether the design tools apply to [dc] (SQL, connected).
-bool designAvailable(DbConnection dc) => dc.isConnected && dc.dialect.isSql;
+bool designAvailable(DbConnection dc) => dc.isConnected && sqlDesign(dc.dialect);
 
 /// "Crea ▸" submenu for [table]; [only] limits it to some kinds (null in
 /// the set: an index).

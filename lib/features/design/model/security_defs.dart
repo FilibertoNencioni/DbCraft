@@ -67,6 +67,9 @@ enum PrincipalAttr {
   mustChangePassword,
   comment,
   rename,
+
+  /// Redis ACL rules (keys, channels, commands).
+  aclRules,
 }
 
 class PrincipalDef {
@@ -96,6 +99,7 @@ class PrincipalDef {
     this.comment,
     this.originalName,
     this.builtIn = false,
+    this.aclRules,
   });
 
   final String name;
@@ -148,6 +152,9 @@ class PrincipalDef {
   /// Created by the DBMS (fixed roles, sys…): not editable.
   final bool builtIn;
 
+  /// Redis ACL rules: `~app:* &* +@read -flushall`.
+  final String? aclRules;
+
   String get dbName => originalName ?? name;
 
   /// Identity in lists (MySQL accounts are user@host).
@@ -181,6 +188,7 @@ class PrincipalDef {
     bool? mustChangePassword,
     Object? comment = _unset,
     Object? originalName = _unset,
+    Object? aclRules = _unset,
   }) => PrincipalDef(
     name: name ?? this.name,
     kind: kind ?? this.kind,
@@ -207,6 +215,7 @@ class PrincipalDef {
     comment: comment == _unset ? this.comment : comment as String?,
     originalName: originalName == _unset ? this.originalName : originalName as String?,
     builtIn: builtIn,
+    aclRules: aclRules == _unset ? this.aclRules : aclRules as String?,
   );
 }
 

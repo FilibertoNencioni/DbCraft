@@ -179,8 +179,11 @@ void main() {
       expect(generic.has(DesignFeature.createTable), isTrue);
       expect(generic.has(DesignFeature.users), isFalse);
       expect(generic.reason(DesignFeature.users), contains('non riconosciuto'));
+      // Native drivers: only their own tools (phase 9).
       final mongo = DesignCapabilities.of(SqlDialect(dbmsName: 'MongoDB'));
-      expect(mongo.features, isEmpty);
+      expect(mongo.has(DesignFeature.createTable), isTrue);
+      expect(mongo.has(DesignFeature.sequences), isFalse);
+      expect(mongo.reason(DesignFeature.sequences), contains('MongoDB'));
     });
   });
 

@@ -6,6 +6,7 @@ import '../../../model/db_objects.dart';
 import '../../../services/sql_dialect.dart';
 import '../model/extra_defs.dart';
 import 'design_catalog.dart';
+import 'nosql.dart';
 import 'table_extras.dart';
 
 /// Objects of [kind] in [catalog].[schema] (or of [table]).
@@ -208,6 +209,8 @@ Future<List<ExtraObjectDef>> readExtras(
             comment: rowText(r, 'comment'),
           ),
       ];
+    case ExtraKind.userTypes:
+      return readUserTypes(q, catalog ?? schema ?? '');
     case ExtraKind.fileFormats:
       final rows = await q.first(['SHOW FILE FORMATS IN SCHEMA ${d.qualified(null, catalog, schema ?? '')}']);
       return [

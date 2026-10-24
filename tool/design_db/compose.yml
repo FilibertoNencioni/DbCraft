@@ -107,3 +107,45 @@ services:
       test: ["CMD-SHELL", "su - db2inst1 -c 'db2 connect to dbcraft' >/dev/null"]
       interval: 10s
       retries: 90
+
+  # NoSQL (phase 9): native drivers, no ODBC driver needed.
+  mongo:
+    image: mongo:8.0.4
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: dbcraft
+      MONGO_INITDB_ROOT_PASSWORD: DbCraft_Test1
+    ports: ["57017:27017"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet -u dbcraft -p DbCraft_Test1 --eval \"db.adminCommand('ping')\""]
+      interval: 2s
+      retries: 60
+
+  cassandra:
+    image: cassandra:5.0.2
+    # Password authentication and authorization (roles and grants), and
+    # materialized views, are off by default.
+    entrypoint:
+      - bash
+      - -c
+      - >-
+        sed -i -e 's/^authenticator: .*/authenticator: PasswordAuthenticator/'
+        -e 's/^authorizer: .*/authorizer: CassandraAuthorizer/'
+        -e 's/^materialized_views_enabled: .*/materialized_views_enabled: true/'
+        /etc/cassandra/cassandra.yaml && exec docker-entrypoint.sh cassandra -f
+    environment:
+      MAX_HEAP_SIZE: 768M
+      HEAP_NEWSIZE: 128M
+    ports: ["59042:9042"]
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -u cassandra -p cassandra -e 'describe keyspaces' >/dev/null"]
+      interval: 5s
+      retries: 90
+
+  redis:
+    image: redis:7.4.1
+    command: ["redis-server", "--requirepass", "DbCraft_Test1"]
+    ports: ["56379:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a DbCraft_Test1 ping | grep PONG"]
+      interval: 2s
+      retries: 30

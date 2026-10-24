@@ -94,7 +94,8 @@ class ConnectionNode extends NavNode {
 }
 
 /// Whether [dc] has users and roles to manage.
-bool hasSecurity(DbConnection dc) => dc.dialect.isSql && SecurityDdl.forFamily(dc.dialect).kinds.isNotEmpty;
+bool hasSecurity(DbConnection dc) =>
+    dc.dialect.family != DbFamily.bigquery && SecurityDdl.forFamily(dc.dialect).kinds.isNotEmpty;
 
 List<NavNode> objectFolders(DbConnection dc, String? catalog, String? schema) => [
   ObjectFolderNode(dc, catalog, schema, ObjectKind.tables),
@@ -603,6 +604,7 @@ IconData extraIcon(ExtraKind k) => switch (k) {
   ExtraKind.fileFormats => AppIcons.document,
   ExtraKind.policies => AppIcons.security,
   ExtraKind.exclusions => AppIcons.block,
+  ExtraKind.userTypes => AppIcons.category,
 };
 
 /// Folder of DBMS specific objects of [kind] (in a schema, at the

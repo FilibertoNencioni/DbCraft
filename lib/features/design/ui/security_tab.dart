@@ -59,6 +59,12 @@ class SecurityTab extends FeatureTab {
   SecurityDdl get ddl => SecurityDdl.forFamily(dc.dialect);
 
   List<PrincipalDef> principals = const [];
+
+  /// MongoDB databases (where users authenticate and roles live).
+  List<String> databases = const [];
+
+  /// Redis keeps the users in an ACL file: scripts end with ACL SAVE.
+  bool aclFile = false;
   Object? loadError;
   bool loading = false;
 
@@ -91,12 +97,23 @@ class SecurityTab extends FeatureTab {
     try {
       principals = await cat.principals(catalog: catalog);
       loadError = null;
+      if (dc.dialect.family == DbFamily.mongodb) databases = await dc.metadata!.catalogs();
+      if (dc.dialect.family == DbFamily.redis) aclFile = await _aclFile(cat);
     } catch (e) {
       principals = const [];
       loadError = e;
     }
     loading = false;
     notifyListeners();
+  }
+
+  Future<bool> _aclFile(DesignCatalog cat) async {
+    try {
+      final rows = await cat.queries.rows('CONFIG GET aclfile');
+      return rows.any((r) => r.values.any((v) => v != null && '$v'.trim().isNotEmpty && '$v' != 'aclfile'));
+    } catch (_) {
+      return false;
+    }
   }
 
   /// The listed principal with [key].
@@ -119,6 +136,7 @@ class SecurityTab extends FeatureTab {
   void _setDesign(PrincipalDesign? d) {
     design?.removeListener(notifyListeners);
     design?.dispose();
+    if (d != null && aclFile) d.trailing = const ['ACL SAVE'];
     design = d;
     d?.addListener(notifyListeners);
     notifyListeners();
@@ -222,7 +240,7 @@ class SecurityTab extends FeatureTab {
       dc: dc,
       title: 'Elimina ${p.display}',
       script: DdlScript(
-        ddl.dropPrincipal(p, cascade: chosen.contains('cascade')),
+        [...ddl.dropPrincipal(p, cascade: chosen.contains('cascade')), if (aclFile) 'ACL SAVE'],
         scope: SchemaScope.security(catalog),
         catalog: p.kind == PrincipalKind.login ? null : catalog,
       ),
@@ -654,7 +672,21 @@ class _GeneralPageState extends State<_GeneralPage> {
                               d.update(p.copyWith(name: v.trim(), originalName: d.isNew ? null : d.original!.dbName)),
                         ),
                       ),
-                      if (has(PrincipalAttr.host))
+                      if (has(PrincipalAttr.host) && family == DbFamily.mongodb)
+                        FormRow(
+                          label: 'Database',
+                          help: p.kind == PrincipalKind.user
+                              ? 'Database in cui l\'utente si autentica'
+                              : 'Database in cui è definito il ruolo',
+                          child: ComboField(
+                            controller: _field('host', p.host),
+                            enabled: on && d.isNew,
+                            options: () => widget.tab.databases,
+                            onChanged: (v) => d.update(p.copyWith(host: _opt(v) ?? 'admin')),
+                            onSelected: (v) => d.update(p.copyWith(host: _opt(v) ?? 'admin')),
+                          ),
+                        )
+                      else if (has(PrincipalAttr.host))
                         text(
                           'Host',
                           'host',
@@ -733,6 +765,28 @@ class _GeneralPageState extends State<_GeneralPage> {
                             (v) => p.copyWith(validUntil: v),
                             hint: 'AAAA-MM-GG',
                           ),
+                      ],
+                    ),
+                  ],
+                  if (has(PrincipalAttr.aclRules)) ...[
+                    const SizedBox(height: Gap.lg),
+                    FormGroup(
+                      title: 'Regole ACL',
+                      footer:
+                          'Chiavi ~schema, canali &schema, comandi e categorie +@read -flushall. '
+                          'Salvando, chiavi, canali e comandi vengono sostituiti; le password restano.',
+                      children: [
+                        FormRow(
+                          label: 'Regole',
+                          child: MacTextField(
+                            controller: _field('acl', p.aclRules),
+                            enabled: on,
+                            mono: true,
+                            maxLines: 4,
+                            hint: '~app:* &* +@read +@write',
+                            onChanged: (v) => d.update(p.copyWith(aclRules: _opt(v))),
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -834,6 +888,7 @@ class _GeneralPageState extends State<_GeneralPage> {
       PrincipalAttr.passwordExpired,
       PrincipalAttr.mustChangePassword,
       PrincipalAttr.validUntil,
+      PrincipalAttr.aclRules,
     }.contains(x),
   );
 }
@@ -861,6 +916,11 @@ class _RolesPage extends StatelessWidget {
         for (final r in tab.principals)
           if (r.kind == PrincipalKind.role && r.key != (design.original?.key ?? '')) (r.name, r.host, false),
     ];
+    if (tab.dc.dialect.family == DbFamily.mongodb && !login) {
+      for (final (r, db) in mongoBuiltinRoles(tab.databases)) {
+        if (!roles.any((x) => x.$1 == r && x.$2 == db)) roles.add((r, db, false));
+      }
+    }
     // Memberships of roles not listed (not readable) stay visible.
     for (final m in design.roles) {
       if (!roles.any((r) => r.$1.toLowerCase() == m.role.toLowerCase() && r.$3 == m.serverRole)) {

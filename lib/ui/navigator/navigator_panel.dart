@@ -19,6 +19,7 @@ import '../../features/design/ui/design_menu.dart';
 import '../../features/design/ui/object_actions.dart' as objects;
 import '../../features/design/ui/security_tab.dart';
 import '../../features/design/ui/extra_objects.dart' as extras;
+import '../../features/design/ui/nosql_actions.dart' as nosql;
 import '../../features/design/ddl/security/security_ddl.dart';
 import '../../features/design/model/security_defs.dart';
 import '../../features/design/ui/view_editor.dart';
@@ -466,7 +467,10 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               () => app.openFeatureTab<PerformanceDashboardTab>(PerformanceDashboardTab(d), match: (t) => t.dc == d),
             ),
           _item('Informazioni connessione', d.isConnected ? () => app.openConnectionInfo(d) : null),
-          if (designAvailable(d) && !simple && hasSecurity(d))
+          if (nosql.nosqlDesign(d) && !simple) ...[const MenuEntry.divider(), ...nosql.nosqlConnectionMenu(context, d)],
+          if ((designAvailable(d) || nosql.nosqlDesign(d) || d.dialect.family == DbFamily.redis) &&
+              !simple &&
+              hasSecurity(d))
             _item('Utenti e ruoli…', () => openSecurity(context, d)),
           if (designAvailable(d) && !simple) ...[
             const MenuEntry.divider(),
@@ -516,6 +520,10 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               () => app.openFeatureTab(SchemaCompareTab(source: dc, sourceCatalog: c.catalog)),
             ),
           if (designAvailable(dc) && !simple) ...[const MenuEntry.divider(), ...databaseMenu(context, dc, c.catalog)],
+          if (nosql.nosqlDesign(dc) && !simple) ...[
+            const MenuEntry.divider(),
+            ...nosql.nosqlCatalogMenu(context, dc, c.catalog),
+          ],
           const MenuEntry.divider(),
           _item('Copia nome', () => Clipboard.setData(ClipboardData(text: c.catalog))),
           _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
@@ -588,13 +596,17 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
                   : () => gen(DdlBuilder(d).tableScript),
             ),
           ],
-          if (tb.isView && d.isSql && !simple) ...[
+          if (tb.isView && sqlDesign(d) && !simple) ...[
             const MenuEntry.divider(),
             _item('Modifica definizione', dc.config.readOnly ? null : () => app.openTable(dc, tb, page: 8)),
             if (_materialized(tb) && DesignCapabilities.of(d).has(DesignFeature.materializedViews))
               _item('Aggiorna i dati della vista', dc.config.readOnly ? null : () => _refreshMaterialized(dc, tb)),
           ],
-          if (!tb.isView && d.isSql && !simple) ...[
+          if (nosql.nosqlDesign(dc) && !simple) ...[
+            const MenuEntry.divider(),
+            ...nosql.nosqlTableMenu(context, dc, tb),
+          ],
+          if (!tb.isView && sqlDesign(d) && !simple) ...[
             const MenuEntry.divider(),
             _item('Modifica struttura', dc.config.readOnly ? null : () => app.openTable(dc, tb, page: 2)),
             createConstraintMenu(context, dc, tb),
@@ -708,10 +720,18 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
             const MenuEntry.divider(),
           ]);
         }
+        if (p.part == TablePart.indexes && nosql.nosqlDesign(dc!) && !simple && !p.table.isView) {
+          items.addAll([
+            _item('Nuovo indice…', dc.config.readOnly ? null : () => nosql.createNosqlIndex(context, dc, p.table)),
+            const MenuEntry.divider(),
+          ]);
+        }
         if (designAvailable(dc!) && !simple && partKinds(p.part).isNotEmpty) {
           items.addAll([createConstraintMenu(context, dc, p.table, only: partKinds(p.part)), const MenuEntry.divider()]);
         }
         items.add(_item('Aggiorna', () => _refresh(n), shortcut: _refreshKey));
+      case ConstraintNode k when k.definition is IndexDef && nosql.nosqlDesign(dc!) && !simple && k.name != null:
+        items.addAll(nosql.nosqlIndexMenu(context, dc, k.table, k.name!));
       case ConstraintNode k:
         if (simple || !designAvailable(dc!)) {
           if (k.name != null) items.add(_item('Copia nome', () => Clipboard.setData(ClipboardData(text: k.name!))));
@@ -747,6 +767,13 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               'Nuova vista…',
               dc.config.readOnly ? null : () => app.openNewView(dc, catalog: f.catalog, schema: f.schema),
             ),
+            const MenuEntry.divider(),
+          ]);
+        }
+        final nosqlFolder = f.kind == ObjectKind.tables || f.kind == ObjectKind.views;
+        if (nosqlFolder && nosql.nosqlDesign(dc!) && f.catalog != null && !simple) {
+          items.addAll([
+            ...nosql.nosqlFolderMenu(context, dc, f.catalog!, views: f.kind == ObjectKind.views),
             const MenuEntry.divider(),
           ]);
         }

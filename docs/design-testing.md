@@ -62,12 +62,14 @@ MySQL 8.4 usa `caching_sha2_password`: serve MariaDB Connector/ODBC 3.1.11 o suc
 
 ```sh
 flutter test integration_test/design_db_test.dart -d macos \
-  --dart-define=DESIGN_TARGETS=sqlite,pg,mssql,mysql,mariadb,oracle,firebird
+  --dart-define=DESIGN_TARGETS=sqlite,pg,mssql,mysql,mariadb,oracle,firebird,mongo,cassandra,redis
 ```
 
 - **Target di default.** Senza `DESIGN_TARGETS` gira solo `sqlite`, su un file temporaneo e senza bisogno di server. Il driver SQLite ODBC si cerca in `/opt/homebrew/lib/libsqlite3odbc.dylib`; un percorso diverso si passa con `--dart-define=SQLITE_ODBC=…`.
 - **Connessioni.** Le stringhe di connessione predefinite corrispondono al compose. Per cambiarne una si usa `--dart-define=DESIGN_<TARGET>='Driver=…;…'` (per esempio `DESIGN_ORACLE`).
 - **Snowflake.** Gira solo con `DESIGN_SNOWFLAKE`, una stringa di connessione a un account di prova.
+- **NoSQL.** `mongo`, `cassandra` e `redis` usano i driver nativi dell'app (nessun driver ODBC): bastano i container del compose, con autenticazione attiva (`docker compose -f tool/design_db/compose.yml up -d --wait mongo cassandra redis`). Cassandra impiega circa un minuto a partire; il compose abilita autenticazione, permessi e viste materializzate. Provano collezioni, indici e viste MongoDB; keyspace, tabelle, indici, tipi e viste materializzate Cassandra; utenti, ruoli e permessi delle tre basi dati (per Redis gli utenti ACL).
+- **BigQuery.** Non ha un emulatore con DDL e permessi: il suo SQL è verificato solo dai test unitari.
 - **Oggetti temporanei.** Ogni test crea oggetti con il prefisso `dbc_` e li elimina alla fine, anche quando fallisce.
 - **Oggetti specifici.** Il round-trip "DBMS specific objects" prova sinonimi (SQL Server, Oracle), domini (PostgreSQL, Firebird), tipi enumerati (PostgreSQL) ed eventi (MySQL, MariaDB): li crea, li rilegge, li modifica e verifica che la rilettura non produca altre modifiche. Estensioni, policy, vincoli di esclusione, package e oggetti Snowflake sono coperti dai test unitari.
 - **Sicurezza.** Il round-trip di utenti e ruoli crea un ruolo, un utente (su SQL Server anche il login) con un permesso e l'appartenenza al ruolo, li rilegge, cambia permessi e ruoli e li elimina. Serve un utente amministratore: con privilegi minori il test fallisce alla creazione. Le password passano per `runScript`, come nel foglio dello script: mai nella cronologia.
