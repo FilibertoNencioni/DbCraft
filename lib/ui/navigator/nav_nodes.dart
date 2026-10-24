@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../features/design/capabilities.dart';
 import '../../features/design/catalog/design_catalog.dart';
 import '../../features/design/ddl/security/security_ddl.dart';
+import '../../features/design/model/extra_defs.dart';
 import '../../features/design/model/object_defs.dart';
 import '../../features/design/model/security_defs.dart';
 import '../../features/schema/schema_model.dart';
@@ -71,7 +72,10 @@ class ConnectionNode extends NavNode {
   @override
   Future<List<NavNode>> load() async {
     final md = dc.metadata!;
-    final security = [if (hasSecurity(dc)) SecurityNode(dc, server: dc.dialect.family == DbFamily.sqlServer)];
+    final security = [
+      for (final k in extraKinds(dc, ExtraLevel.connection)) ExtraFolderNode(dc, k),
+      if (hasSecurity(dc)) SecurityNode(dc, server: dc.dialect.family == DbFamily.sqlServer),
+    ];
     if (md.supportsCatalogs) {
       final cats = await md.catalogs();
       if (cats.isNotEmpty) {
@@ -99,7 +103,18 @@ List<NavNode> objectFolders(DbConnection dc, String? catalog, String? schema) =>
   if (dc.metadata?.supportsProcedures ?? true) ObjectFolderNode(dc, catalog, schema, ObjectKind.procedures),
   if (dc.dialect.isSql && DesignCapabilities.of(dc.dialect).has(DesignFeature.sequences))
     ObjectFolderNode(dc, catalog, schema, ObjectKind.sequences),
+  for (final k in extraKinds(dc, ExtraLevel.schema)) ExtraFolderNode(dc, k, catalog: catalog, schema: schema),
 ];
+
+/// DBMS specific object kinds of [dc] listed at [level].
+List<ExtraKind> extraKinds(DbConnection dc, ExtraLevel level) {
+  if (!dc.dialect.isSql) return const [];
+  final caps = DesignCapabilities.of(dc.dialect);
+  return [
+    for (final k in ExtraKind.values)
+      if (k.level == level && caps.has(extraFeature(k))) k,
+  ];
+}
 
 /// Schemas of [catalog]: the ODBC list plus, where the design catalog
 /// reads them, the empty ones ODBC leaves out (SQL Server lists only the
@@ -257,6 +272,8 @@ class TableNode extends NavNode {
     if (!table.isView) TablePartNode(connection!, table, TablePart.indexes),
     if (connection!.dialect.isSql && DesignCapabilities.of(connection!.dialect).has(DesignFeature.triggers))
       TablePartNode(connection!, table, TablePart.triggers),
+    if (!table.isView)
+      for (final k in extraKinds(connection!, ExtraLevel.table)) ExtraFolderNode(connection!, k, table: table),
   ];
 }
 
@@ -574,6 +591,79 @@ extension on String {
   String? get nullIfEmpty => isEmpty ? null : this;
 }
 
+IconData extraIcon(ExtraKind k) => switch (k) {
+  ExtraKind.extensions => AppIcons.extension,
+  ExtraKind.enumTypes => AppIcons.category,
+  ExtraKind.domains => AppIcons.shortText,
+  ExtraKind.synonyms => AppIcons.link,
+  ExtraKind.packages => AppIcons.archive,
+  ExtraKind.events => AppIcons.timer,
+  ExtraKind.warehouses => AppIcons.memory,
+  ExtraKind.stages => AppIcons.upload,
+  ExtraKind.fileFormats => AppIcons.document,
+  ExtraKind.policies => AppIcons.security,
+  ExtraKind.exclusions => AppIcons.block,
+};
+
+/// Folder of DBMS specific objects of [kind] (in a schema, at the
+/// connection, or of [table]).
+class ExtraFolderNode extends NavNode {
+  ExtraFolderNode(DbConnection super.connection, this.kind, {this.catalog, this.schema, this.table});
+  final ExtraKind kind;
+  final String? catalog;
+  final String? schema;
+  final DbTable? table;
+
+  String? get objectCatalog => table?.catalog ?? catalog;
+  String? get objectSchema => table?.schema ?? schema;
+
+  @override
+  String get label => kind.label;
+  @override
+  String? get detail => children == null ? null : '${children!.length}';
+  @override
+  IconData get icon => AppIcons.folder;
+  @override
+  String get key =>
+      'extra:${connection!.config.id}:${kind.name}:${catalog ?? ''}:${schema ?? ''}:${table?.key ?? ''}';
+
+  @override
+  Future<List<NavNode>> load() async {
+    final cat = DesignCatalog.of(connection!);
+    if (cat == null) return const [];
+    final objects = await cat.extras(kind, catalog: catalog, schema: schema, table: table);
+    return [for (final o in objects) ExtraObjectNode(connection!, kind, o, table: table)];
+  }
+}
+
+class ExtraObjectNode extends NavNode {
+  ExtraObjectNode(DbConnection super.connection, this.kind, this.object, {this.table});
+  final ExtraKind kind;
+  final ExtraObjectDef object;
+  final DbTable? table;
+
+  @override
+  String get label => object.name;
+  @override
+  String? get detail {
+    final d = object.detail;
+    return d == null || d.isEmpty ? null : d;
+  }
+
+  @override
+  IconData get icon => extraIcon(kind);
+  @override
+  bool get expandable => false;
+  @override
+  bool get filterable => true;
+  @override
+  String get key =>
+      'xobj:${connection!.config.id}:${kind.name}:${object.catalog ?? ''}:${object.schema ?? ''}:'
+      '${table?.key ?? ''}:${object.name}';
+  @override
+  Future<List<NavNode>> load() async => [];
+}
+
 class LeafNode extends NavNode {
   LeafNode(
     DbConnection super.connection,
@@ -651,6 +741,14 @@ List<NavNode> nodesForSchemaChanges(NavNode root, List<SchemaScope> scopes) {
       final hit = switch (ch) {
         CatalogNode c => catalogs.any((s) => s.covers(c.catalog, null)),
         ObjectFolderNode f => objects.any((s) => s.covers(f.catalog, f.schema)),
+        ExtraFolderNode f when f.kind.level == ExtraLevel.connection => objects.any(
+          (s) => s.catalog == null && s.schema == null,
+        ),
+        ExtraFolderNode f => objects.any(
+          (s) => f.table == null
+              ? s.covers(f.catalog, f.schema)
+              : s.coversObject(f.objectCatalog, f.objectSchema, f.table!.name),
+        ),
         SecurityNode f => security.any((s) => s.catalog == null || f.catalog == null || s.catalog == f.catalog),
         _ => false,
       };

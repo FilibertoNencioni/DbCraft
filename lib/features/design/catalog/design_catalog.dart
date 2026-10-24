@@ -14,10 +14,12 @@ import '../../../services/metadata_service.dart';
 import '../../../services/sql_dialect.dart';
 import '../../../state/db_connection.dart';
 import '../../schema/schema_model.dart';
+import '../model/extra_defs.dart';
 import '../model/object_defs.dart';
 import '../model/security_defs.dart';
 import 'code.dart';
 import 'databases.dart';
+import 'extras.dart';
 import 'db2.dart';
 import 'firebird.dart';
 import 'mssql.dart';
@@ -254,6 +256,24 @@ class DesignCatalog {
     );
     return readObjectGrants(queries, dialect, target, known);
   });
+
+  /// DBMS specific objects of [kind] in [catalog].[schema] (or of [table]).
+  Future<List<ExtraObjectDef>> extras(ExtraKind kind, {String? catalog, String? schema, DbTable? table}) =>
+      metadata.cached(
+        'design:extra:${kind.name}:${catalog ?? ''}:${schema ?? ''}:${table?.key ?? ''}',
+        () => readExtras(queries, dialect, kind, catalog: catalog, schema: schema, table: table),
+      );
+
+  Future<PackageSource?> packageSource(PackageDef p) async {
+    final r = await metadata.cached<Object>(
+      'design:pkg:${p.schema ?? ''}:${p.name}',
+      () async => await readPackageSource(queries, dialect, p) ?? false,
+    );
+    return r is PackageSource ? r : null;
+  }
+
+  Future<RowSecurity> rowSecurity(DbTable t) =>
+      metadata.cached('design:rls:${t.key}', () => readRowSecurity(queries, t));
 
   /// Cached rows of the first working alternative.
   Future<List<CatalogRow>> cachedRows(String key, List<String> alternatives, {List<Object?> params = const []}) =>

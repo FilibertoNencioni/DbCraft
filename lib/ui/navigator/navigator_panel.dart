@@ -18,6 +18,7 @@ import '../../features/design/ui/design_actions.dart' as design;
 import '../../features/design/ui/design_menu.dart';
 import '../../features/design/ui/object_actions.dart' as objects;
 import '../../features/design/ui/security_tab.dart';
+import '../../features/design/ui/extra_objects.dart' as extras;
 import '../../features/design/ddl/security/security_ddl.dart';
 import '../../features/design/model/security_defs.dart';
 import '../../features/design/ui/view_editor.dart';
@@ -226,7 +227,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           (n.kind == ObjectKind.system || n.kind == ObjectKind.procedures || n.kind == ObjectKind.sequences)) {
         return;
       }
-      if (simple && n is SecurityNode) return;
+      if (simple && (n is SecurityNode || n is ExtraFolderNode)) return;
       out.add(_VisibleNode(n, depth));
       if (simple && n is TableNode) return;
       if (n.expanded && n.children != null) {
@@ -257,6 +258,8 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         objects.editSequence(context, q.connection!, q.sequence);
       case TriggerNode t when !app.settings.simpleMode:
         objects.editTrigger(context, t.connection!, t.table, t.trigger);
+      case ExtraObjectNode x when !app.settings.simpleMode:
+        extras.editExtra(context, x.connection!, x.kind, x.object, table: x.table);
       case PrincipalNode p when !app.settings.simpleMode:
         openSecurity(context, p.connection!, catalog: p.catalog, select: p.principal);
       default:
@@ -757,6 +760,13 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           ]);
         }
         items.add(_item('Aggiorna', () => _refresh(n), shortcut: _refreshKey));
+      case ExtraFolderNode f:
+        items.addAll([
+          if (!simple) ...extras.extraFolderMenu(context, f),
+          _item('Aggiorna', () => _refresh(n), shortcut: _refreshKey),
+        ]);
+      case ExtraObjectNode x:
+        if (!simple) items.addAll(extras.extraObjectMenu(context, x));
       case SecurityNode sec:
         items.addAll([
           ..._newPrincipalItems(context, dc!, sec.kinds, sec.catalog),

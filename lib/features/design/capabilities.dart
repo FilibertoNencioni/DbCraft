@@ -7,6 +7,7 @@
 // An unknown server version counts as a current one.
 
 import '../../services/sql_dialect.dart';
+import 'model/extra_defs.dart';
 
 enum DesignFeature {
   // Databases and schemas
@@ -56,6 +57,21 @@ enum DesignFeature {
   sequences,
   triggers,
   routines,
+
+  // DBMS specific objects
+  extensions,
+  enumTypes,
+  domains,
+
+  /// Row level security policies.
+  rowSecurity,
+  exclusionConstraints,
+  synonyms,
+  packages,
+  events,
+  warehouses,
+  stages,
+  fileFormats,
 
   // Security
   users,
@@ -235,6 +251,27 @@ class DesignCapabilities {
           out[f] = 'Strumenti di design non ancora disponibili per $name';
         }
     }
+    // Objects only some DBMS have.
+    final f = d.family;
+    final pg = f == DbFamily.postgres;
+    final sf = f == DbFamily.snowflake;
+    final only = <DesignFeature, bool>{
+      DesignFeature.extensions: pg,
+      DesignFeature.enumTypes: pg,
+      DesignFeature.domains: pg || f == DbFamily.firebird,
+      DesignFeature.rowSecurity: pg,
+      DesignFeature.exclusionConstraints: pg,
+      DesignFeature.synonyms: f == DbFamily.sqlServer || f == DbFamily.oracle,
+      DesignFeature.packages: f == DbFamily.oracle,
+      DesignFeature.events: f == DbFamily.mysql,
+      DesignFeature.warehouses: sf,
+      DesignFeature.stages: sf,
+      DesignFeature.fileFormats: sf,
+    };
+    for (final e in only.entries) {
+      if (!e.value) out.putIfAbsent(e.key, () => '$name non ha questo tipo di oggetto');
+    }
+    if (pg) needs(DesignFeature.rowSecurity, atLeast(9, 5), '9.5');
     return out;
   }
 
@@ -267,3 +304,18 @@ class DesignCapabilities {
     DbFamily.generic => d.dbmsName.isEmpty ? 'Questo DBMS' : d.dbmsName,
   };
 }
+
+/// The feature that offers objects of [k].
+DesignFeature extraFeature(ExtraKind k) => switch (k) {
+  ExtraKind.extensions => DesignFeature.extensions,
+  ExtraKind.enumTypes => DesignFeature.enumTypes,
+  ExtraKind.domains => DesignFeature.domains,
+  ExtraKind.synonyms => DesignFeature.synonyms,
+  ExtraKind.packages => DesignFeature.packages,
+  ExtraKind.events => DesignFeature.events,
+  ExtraKind.warehouses => DesignFeature.warehouses,
+  ExtraKind.stages => DesignFeature.stages,
+  ExtraKind.fileFormats => DesignFeature.fileFormats,
+  ExtraKind.policies => DesignFeature.rowSecurity,
+  ExtraKind.exclusions => DesignFeature.exclusionConstraints,
+};

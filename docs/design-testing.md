@@ -69,6 +69,7 @@ flutter test integration_test/design_db_test.dart -d macos \
 - **Connessioni.** Le stringhe di connessione predefinite corrispondono al compose. Per cambiarne una si usa `--dart-define=DESIGN_<TARGET>='Driver=…;…'` (per esempio `DESIGN_ORACLE`).
 - **Snowflake.** Gira solo con `DESIGN_SNOWFLAKE`, una stringa di connessione a un account di prova.
 - **Oggetti temporanei.** Ogni test crea oggetti con il prefisso `dbc_` e li elimina alla fine, anche quando fallisce.
+- **Oggetti specifici.** Il round-trip "DBMS specific objects" prova sinonimi (SQL Server, Oracle), domini (PostgreSQL, Firebird), tipi enumerati (PostgreSQL) ed eventi (MySQL, MariaDB): li crea, li rilegge, li modifica e verifica che la rilettura non produca altre modifiche. Estensioni, policy, vincoli di esclusione, package e oggetti Snowflake sono coperti dai test unitari.
 - **Sicurezza.** Il round-trip di utenti e ruoli crea un ruolo, un utente (su SQL Server anche il login) con un permesso e l'appartenenza al ruolo, li rilegge, cambia permessi e ruoli e li elimina. Serve un utente amministratore: con privilegi minori il test fallisce alla creazione. Le password passano per `runScript`, come nel foglio dello script: mai nella cronologia.
 
 ### Come si scrive un round-trip

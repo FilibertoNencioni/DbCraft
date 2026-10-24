@@ -19,6 +19,8 @@ import 'dart:io';
 import 'package:dbcraft/features/design/capabilities.dart';
 import 'package:dbcraft/features/design/catalog/design_catalog.dart';
 import 'package:dbcraft/features/design/ddl/code_ddl.dart';
+import 'package:dbcraft/features/design/ddl/extra_ddl.dart';
+import 'package:dbcraft/features/design/model/extra_defs.dart';
 import 'package:dbcraft/features/design/ddl/object_ddl.dart';
 import 'package:dbcraft/features/design/ddl/security/security_ddl.dart';
 import 'package:dbcraft/features/design/ddl_script.dart';
@@ -551,6 +553,136 @@ void main() {
         }
         final left = await cat.principals(catalog: catalog);
         expect(left.where((p) => p.name.toLowerCase().contains('dbc_') && p.name.endsWith('$suffix')), isEmpty);
+      });
+      test('DBMS specific objects round trip', () async {
+        final d = dc.dialect;
+        final caps = DesignCapabilities.of(d);
+        final ddl = ExtraDdl(d);
+        final cat = DesignCatalog.of(dc)!;
+        final family = d.family;
+        String up(String s) => family == DbFamily.oracle || family == DbFamily.firebird ? s.toUpperCase() : s;
+        final catalog = family == DbFamily.sqlServer || family == DbFamily.mysql ? dc.mainCatalog : null;
+
+        if (caps.has(DesignFeature.synonyms)) {
+          final b = DdlBuilder(d);
+          final table = TableDef(
+            name: up('dbc_syn_t_$suffix'),
+            columns: const [ColumnDef(name: 'id', type: 'integer', nullable: false)],
+          );
+          await run(dc, b.createTable(table));
+          final t = (await dc.metadata!.findTable(null, null, table.name))!;
+          final syn = SynonymDef(
+            name: up('dbc_syn_$suffix'),
+            catalog: catalog,
+            schema: t.schema,
+            targetSchema: t.schema,
+            targetObject: t.name,
+          );
+          try {
+            await run(dc, ddl.createSynonym(syn));
+            var read = (await cat.extras(
+              ExtraKind.synonyms,
+              catalog: catalog,
+              schema: t.schema,
+            )).whereType<SynonymDef>().firstWhere((x) => x.name == syn.name);
+            expect(read.targetObject, t.name);
+            // Point it elsewhere (the object need not exist).
+            final moved = SynonymDef(
+              name: syn.name,
+              catalog: catalog,
+              schema: t.schema,
+              targetSchema: t.schema,
+              targetObject: up('altrove'),
+            );
+            await run(dc, ddl.alterSynonym(read, moved));
+            read = (await cat.extras(
+              ExtraKind.synonyms,
+              catalog: catalog,
+              schema: t.schema,
+            )).whereType<SynonymDef>().firstWhere((x) => x.name == syn.name);
+            expect(read.targetObject, up('altrove'));
+            expect(ddl.alterSynonym(read, moved), isEmpty, reason: 'read back as written');
+            await run(dc, ddl.dropSynonym(read));
+            expect(
+              (await cat.extras(
+                ExtraKind.synonyms,
+                catalog: catalog,
+                schema: t.schema,
+              )).where((x) => x.name == syn.name),
+              isEmpty,
+            );
+          } finally {
+            await run(dc, b.dropTable(table));
+          }
+        }
+
+        if (caps.has(DesignFeature.domains)) {
+          final schema = family == DbFamily.postgres ? 'public' : null;
+          final dom = DomainDef(
+            name: up('dbc_dom_$suffix'),
+            schema: schema,
+            baseType: family == DbFamily.firebird ? 'INTEGER' : 'integer',
+            notNull: true,
+            defaultValue: '0',
+            checks: [DomainCheck('VALUE >= 0', name: family == DbFamily.postgres ? 'dbc_dom_ck_$suffix' : null)],
+          );
+          await run(dc, ddl.createDomain(dom));
+          try {
+            final read = (await cat.extras(
+              ExtraKind.domains,
+              schema: schema,
+            )).whereType<DomainDef>().firstWhere((x) => x.name == dom.name);
+            expect(read.notNull, isTrue);
+            expect(read.checks, hasLength(1));
+            final changed = DomainDef(name: dom.name, schema: schema, baseType: read.baseType, defaultValue: '1');
+            await run(dc, ddl.alterDomain(read, changed));
+            final again = (await cat.extras(
+              ExtraKind.domains,
+              schema: schema,
+            )).whereType<DomainDef>().firstWhere((x) => x.name == dom.name);
+            expect(again.notNull, isFalse);
+            expect(again.checks, isEmpty);
+          } finally {
+            await run(dc, ddl.dropDomain(dom));
+          }
+        }
+
+        if (caps.has(DesignFeature.enumTypes)) {
+          final e = EnumTypeDef(name: 'dbc_enum_$suffix', schema: 'public', values: const ['a', 'c']);
+          await run(dc, ddl.createEnum(e));
+          try {
+            await run(dc, ddl.alterEnum(e, EnumTypeDef(name: e.name, schema: 'public', values: const ['a', 'b', 'c'])));
+            final read = (await cat.extras(
+              ExtraKind.enumTypes,
+              schema: 'public',
+            )).whereType<EnumTypeDef>().firstWhere((x) => x.name == e.name);
+            expect(read.values, ['a', 'b', 'c']);
+          } finally {
+            await run(dc, ddl.dropEnum(e));
+          }
+        }
+
+        if (caps.has(DesignFeature.events)) {
+          final ev = EventDef(
+            name: 'dbc_ev_$suffix',
+            catalog: catalog,
+            every: 1,
+            unit: 'DAY',
+            status: EventStatus.disabled,
+            body: 'DO 1',
+          );
+          await run(dc, ddl.createEvent(ev));
+          try {
+            final read = (await cat.extras(
+              ExtraKind.events,
+              catalog: catalog,
+            )).whereType<EventDef>().firstWhere((x) => x.name == ev.name);
+            expect(read.status, EventStatus.disabled);
+            expect(ddl.alterEvent(read, ev), isEmpty, reason: 'read back as written');
+          } finally {
+            await run(dc, ddl.dropEvent(ev));
+          }
+        }
       });
     });
   }

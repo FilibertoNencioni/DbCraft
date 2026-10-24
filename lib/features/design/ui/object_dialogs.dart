@@ -11,8 +11,8 @@ import '../model/object_defs.dart';
 String? _text(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
 
 /// Live script preview under the form of a sheet.
-class _ScriptPreview extends StatelessWidget {
-  const _ScriptPreview(this.statements);
+class ScriptPreview extends StatelessWidget {
+  const ScriptPreview(this.statements, {super.key});
   final List<String> statements;
 
   @override
@@ -262,7 +262,7 @@ class _DatabaseDialogState extends State<_DatabaseDialog> {
                   ),
               ],
             ),
-            _ScriptPreview(_statements),
+            ScriptPreview(_statements),
           ],
         ),
       ),
@@ -411,7 +411,7 @@ class _SchemaDialogState extends State<_SchemaDialog> {
               ),
             ],
           ),
-          _ScriptPreview(_statements),
+          ScriptPreview(_statements),
         ],
       ),
       leading: [if (_error != null) Flexible(child: StatusLine(_error!, kind: StatusKind.danger))],
@@ -712,7 +712,7 @@ class _SequenceDialogState extends State<_SequenceDialog> {
                   ),
               ],
             ),
-            _ScriptPreview(_statements),
+            ScriptPreview(_statements),
           ],
         ),
       ),
