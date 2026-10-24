@@ -59,6 +59,12 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   // Shown in the context menu; the bindings live in the shell and below.
   static const _refreshKey = SingleActivator(LogicalKeyboardKey.f5);
   static const _editKey = SingleActivator(LogicalKeyboardKey.f4);
+  static final _createKey = SingleActivator(
+    LogicalKeyboardKey.keyN,
+    meta: Platform.isMacOS,
+    control: !Platform.isMacOS,
+    alt: true,
+  );
   static final _newEditorKey =
       SingleActivator(LogicalKeyboardKey.bracketRight, meta: Platform.isMacOS, control: !Platform.isMacOS);
   final Map<String, NavNode> _cache = {};
@@ -326,6 +332,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
                       const SingleActivator(LogicalKeyboardKey.f5): () {
                         if (_selected != null) _refresh(_selected!);
                       },
+                      _createKey: _createInContext,
                     },
                     child: SourceList(
                       focusNode: _focus,
@@ -440,6 +447,35 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   }
 
   Future<void> _contextMenu(BuildContext context, NavNode n, Offset pos) async {
+    final items = _withCreateShortcut(_menuItems(context, n));
+    if (items.isEmpty) return;
+    await showMacMenu<void>(context, position: pos, entries: items);
+  }
+
+  /// The first "Nuovo… / Nuova…" entry of a node menu: what ⌥⌘N creates.
+  int _createIndex(List<MenuEntry<void>> items) =>
+      items.indexWhere(
+        (e) => e.enabled && e.onSelected != null && e.label.startsWith('Nuov') && !e.label.startsWith('Nuovo editor'),
+      );
+
+  List<MenuEntry<void>> _withCreateShortcut(List<MenuEntry<void>> items) {
+    final i = _createIndex(items);
+    if (i < 0) return items;
+    final e = items[i];
+    return [...items]..[i] = MenuEntry(e.label, onSelected: e.onSelected, enabled: e.enabled, shortcut: _createKey);
+  }
+
+  /// ⌥⌘N: creates an object where the selected node is (a table in a
+  /// schema, a user under Sicurezza…).
+  void _createInContext() {
+    final n = _selected;
+    if (n == null) return;
+    final items = _menuItems(context, n);
+    final i = _createIndex(items);
+    if (i >= 0) items[i].onSelected!();
+  }
+
+  List<MenuEntry<void>> _menuItems(BuildContext context, NavNode n) {
     final app = AppScope.read(context);
     final items = <MenuEntry<void>>[];
     final dc = n.connection;
@@ -835,8 +871,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       default:
         break;
     }
-    if (items.isEmpty) return;
-    await showMacMenu<void>(context, position: pos, entries: items);
+    return items;
   }
 
   Future<void> _countRows(DbConnection dc, DbTable t) async {

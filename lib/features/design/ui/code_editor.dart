@@ -130,6 +130,10 @@ class CodeEditorTab extends FeatureTab {
     );
   }
 
+  @override
+  String? get saveLabel => isDirty && !dc.config.readOnly ? (isNew ? 'Crea $_name' : 'Salva $_name') : null;
+
+  @override
   Future<void> save(BuildContext context) async {
     final family = dc.dialect.family;
     final ok = await showDdlScriptDialog(

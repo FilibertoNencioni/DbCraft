@@ -38,6 +38,12 @@ abstract class FeatureTab extends EditorTab {
   /// Return false to keep the tab open (e.g. unsaved work the user did not
   /// want to discard). Called before the tab is closed.
   Future<bool> canClose(BuildContext context) async => true;
+
+  /// Label of File ▸ Salva (⌘S) for this editor; null: nothing to save.
+  String? get saveLabel => null;
+
+  /// Runs File ▸ Salva.
+  Future<void> save(BuildContext context) async {}
 }
 
 // ---------------------------------------------------------------------------

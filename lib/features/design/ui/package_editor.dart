@@ -85,6 +85,11 @@ class PackageEditorTab extends FeatureTab {
       ExtraDdl(dc.dialect)
           .savePackage(schema, declaredName, PackageSource(spec.text, body.text), hadBody: package?.hasBody ?? false);
 
+  @override
+  String? get saveLabel =>
+      isDirty && !dc.config.readOnly ? (isNew ? 'Crea il package $_name' : 'Salva il package $_name') : null;
+
+  @override
   Future<void> save(BuildContext context) async {
     final ok = await showDdlScriptDialog(
       context,
@@ -194,12 +199,7 @@ class _PackageViewState extends State<_PackageView> {
     final ro = tab.dc.config.readOnly;
     final mac = Theme.of(context).platform == TargetPlatform.macOS;
     final save = SingleActivator(LogicalKeyboardKey.keyS, meta: mac, control: !mac);
-    return CallbackShortcuts(
-      bindings: {
-        save: () {
-          if (!ro && tab.isDirty) tab.save(context);
-        },
-      },
+    return SizedBox.expand(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

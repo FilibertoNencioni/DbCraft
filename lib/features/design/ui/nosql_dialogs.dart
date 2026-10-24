@@ -831,7 +831,8 @@ class _CqlTableDialogState extends State<_CqlTableDialog> {
                 : EditableRowMark.none,
             onAdd: _add,
             addLabel: 'Aggiungi colonna',
-            onRemove: (r) => _locked(r) ? null : _remove(r),
+            onRemove: _remove,
+            canRemove: (r) => !_locked(r),
             cellBuilder: (context, r, c) {
               final locked =
                   _locked(r) ||
@@ -1132,7 +1133,8 @@ class _UdtDialogState extends State<_UdtDialog> {
             mark: (r) => i != null && r >= old ? EditableRowMark.added : EditableRowMark.none,
             onAdd: () => setState(() => _fields.add(['', 'text'])),
             addLabel: 'Aggiungi campo',
-            onRemove: (r) => r < old ? null : setState(() => _fields.remove(r)),
+            onRemove: (r) => setState(() => _fields.remove(r)),
+            canRemove: (r) => r >= old,
             cellBuilder: (context, r, col) => col == 0
                 ? MacTextField(controller: _fields.rows[r].$2[0], small: true, onChanged: (_) => changed())
                 : ComboField(

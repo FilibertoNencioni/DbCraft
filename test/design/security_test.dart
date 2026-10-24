@@ -1,6 +1,8 @@
 // Phase 7: users, roles and privileges (DDL per DBMS, edit session,
 // catalog readers, password protection).
 
+import 'dart:io';
+
 import 'package:dbcraft/features/design/catalog/design_catalog.dart';
 import 'package:dbcraft/features/design/catalog/security.dart';
 import 'package:dbcraft/features/design/ddl/security/security_ddl.dart';
@@ -11,6 +13,10 @@ import 'package:dbcraft/features/design/ui/table_permissions.dart';
 import 'package:dbcraft/model/db_objects.dart';
 import 'package:dbcraft/state/app_state.dart';
 import 'package:dbcraft/ui/navigator/nav_nodes.dart';
+import 'package:dbcraft/ui/navigator/navigator_panel.dart';
+import 'package:dbcraft/features/design/ui/code_editor.dart';
+import 'package:dbcraft/features/design/model/object_defs.dart';
+import 'package:flutter/services.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:dbcraft/features/schema/ddl_builder.dart';
@@ -1197,6 +1203,63 @@ void main() {
       final dc = scriptedConnection(ScriptedSession(), dbmsName: 'Microsoft SQL Server', dbmsVersion: '16.00.4135');
       expect(SecurityNode(dc, server: true).kinds, [PrincipalKind.login]);
       expect(SecurityNode(dc, catalog: 'vendite').kinds, [PrincipalKind.user, PrincipalKind.role]);
+    });
+  });
+  group('shortcuts', () {
+    testWidgets('⌘S: the editors of the design tools say what they save', (tester) async {
+      final dc = scriptedConnection(ScriptedSession());
+      final code = CodeEditorTab.routine(dc, kind: RoutineKind.procedure, schema: 'app', name: 'chiudi');
+      addTearDown(code.dispose);
+      expect(code.saveLabel, 'Crea chiudi');
+      final tab = SecurityTab(scriptedConnection(ScriptedSession()));
+      addTearDown(tab.dispose);
+      expect(tab.saveLabel, isNull, reason: 'nothing selected');
+    });
+
+    testWidgets('⌥⌘N in the navigator creates in the selected node', (tester) async {
+      tester.view.physicalSize = const Size(600, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final app = await testApp(tester);
+      final s = ScriptedSession()
+        ..on(
+          'FROM pg_roles r ORDER',
+          Rows(
+            ['rolname', 'rolcanlogin'],
+            [
+              ['mario', true],
+            ],
+          ),
+        );
+      final dc = scriptedConnection(s);
+      app.connections.add(dc);
+      await tester.pumpWidget(
+        AppScope(
+          state: app,
+          child: MaterialApp(
+            theme: buildTheme(Brightness.light),
+            home: const Scaffold(body: NavigatorPanel()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prova'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sicurezza'));
+      await tester.pumpAndSettle();
+      // The navigator binds ⌥⌘N on macOS, Ctrl+Alt+N elsewhere (host platform).
+      final mac = Platform.isMacOS;
+      await tester.sendKeyDownEvent(mac ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.alt);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.alt);
+      await tester.sendKeyUpEvent(mac ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control);
+      await tester.pumpAndSettle();
+      final tab = app.tabs.whereType<SecurityTab>().single;
+      expect(tab.design?.isNew, isTrue);
+      expect(tab.design?.working.kind, PrincipalKind.user);
     });
   });
 }

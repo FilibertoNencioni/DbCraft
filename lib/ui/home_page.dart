@@ -163,6 +163,7 @@ class _HomePageState extends State<HomePage> {
     final connected = dc?.isConnected ?? false;
     final sql = _sqlTab(app);
     final table = app.currentTab is TableEditorTab ? app.currentTab as TableEditorTab : null;
+    final feature = app.currentTab is FeatureTab ? app.currentTab as FeatureTab : null;
     VoidCallback? sqlCmd(SqlCommand cmd) => sql == null ? null : () => SqlEditorView.dispatch(sql, cmd);
     return [
       _MenuSpec('File', [
@@ -171,12 +172,16 @@ class _HomePageState extends State<HomePage> {
         _MenuAction('Apri script SQL…', () => openScriptFile(context), _a(LogicalKeyboardKey.keyO)),
         const _MenuDivider(),
         _MenuAction(
-          table == null
+          feature != null
+              ? (feature.saveLabel ?? 'Salva')
+              : table == null
               ? 'Salva script'
               : table.designDirty
               ? 'Salva struttura della tabella'
               : 'Salva modifiche ai dati',
-          table != null
+          feature != null
+              ? (feature.saveLabel == null ? null : () => feature.save(context))
+              : table != null
               ? (table.designDirty
                     ? () => table.viewDesign != null ? saveViewDesign(context, table) : saveTableDesign(context, table)
                     : (table.dataDirty ? () => _saveTableData(table) : null))

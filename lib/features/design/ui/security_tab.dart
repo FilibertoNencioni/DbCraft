@@ -200,6 +200,14 @@ class SecurityTab extends FeatureTab {
     await load();
   }
 
+  @override
+  String? get saveLabel {
+    final d = design;
+    if (d == null || !d.isDirty || d.errors.isNotEmpty || dc.config.readOnly || d.readOnly) return null;
+    return d.isNew ? 'Crea ${d.working.display}' : 'Salva ${d.working.display}';
+  }
+
+  @override
   Future<void> save(BuildContext context) async {
     final d = design;
     if (d == null || d.errors.isNotEmpty) return;
@@ -306,14 +314,7 @@ class _SecurityViewState extends State<_SecurityView> {
 
   @override
   Widget build(BuildContext context) {
-    final mac = Theme.of(context).platform == TargetPlatform.macOS;
-    return CallbackShortcuts(
-      bindings: {
-        SingleActivator(LogicalKeyboardKey.keyS, meta: mac, control: !mac): () {
-          final d = tab.design;
-          if (d != null && d.isDirty && d.errors.isEmpty && !tab.dc.config.readOnly) tab.save(context);
-        },
-      },
+    return SizedBox.expand(
       child: SplitView(
         initialFraction: 0.26,
         minFirst: 220,
@@ -726,11 +727,18 @@ class _GeneralPageState extends State<_GeneralPage> {
                       footer: 'La password non viene salvata né registrata nella cronologia: nello script compare come ••••••.',
                       children: [
                         FormRow(
-                          label: d.isNew ? 'Password' : 'Nuova password',
+                          label: d.isNew
+                              ? 'Password'
+                              : (family == DbFamily.redis ? 'Aggiungi password' : 'Nuova password'),
+                          help: family == DbFamily.redis && !d.isNew
+                              ? 'Redis aggiunge la password a quelle già valide per l\'utente'
+                              : null,
                           child: SecureField(
                             controller: _password,
                             enabled: on,
-                            hint: d.isNew ? null : 'Lascia vuoto per non cambiarla',
+                            hint: d.isNew
+                                ? null
+                                : (family == DbFamily.redis ? 'Vuoto: nessuna' : 'Lascia vuoto per non cambiarla'),
                             onChanged: (_) => _syncPassword(),
                           ),
                         ),

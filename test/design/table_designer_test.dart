@@ -10,6 +10,9 @@ import 'package:dbcraft/state/editor_tabs.dart';
 import 'package:dbcraft/ui/editors/table_editor_view.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
+
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -203,6 +206,31 @@ void main() {
       await tester.tap(find.byTooltip('Sposta su').first);
       await tester.pump();
       expect(rows, ['a', 'c', 'nuova'], reason: 'the first row cannot move up');
+    });
+
+    testWidgets('rows and cells are announced to assistive technologies', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildTheme(Brightness.light),
+          home: Scaffold(
+            body: EditableGrid(
+              columns: const [EditableGridColumn('Nome'), EditableGridColumn('Tipo')],
+              rowCount: 2,
+              selected: 1,
+              mark: (i) => i == 1 ? EditableRowMark.added : EditableRowMark.none,
+              onRemove: (_) {},
+              cellBuilder: (context, r, c) => Text('r$r c$c'),
+            ),
+          ),
+        ),
+      );
+      expect(find.bySemanticsLabel('Tabella modificabile, 2 righe'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp(r'^Riga 1 di 2')), findsOneWidget);
+      final second = tester.getSemantics(find.bySemanticsLabel(RegExp(r'^Riga 2 di 2, nuova')));
+      expect(second.flagsCollection.isSelected, Tristate.isTrue);
+      expect(find.bySemanticsLabel(RegExp(r'^Tipo')), findsNWidgets(2));
+      semantics.dispose();
     });
   });
 

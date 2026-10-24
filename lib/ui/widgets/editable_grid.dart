@@ -39,6 +39,7 @@ class EditableGrid extends StatefulWidget {
     this.onAdd,
     this.addLabel = 'Aggiungi',
     this.onRemove,
+    this.canRemove,
     this.onMove,
     this.removeTooltip = 'Elimina la riga',
     this.emptyText = 'Nessuna riga',
@@ -57,6 +58,9 @@ class EditableGrid extends StatefulWidget {
   final VoidCallback? onAdd;
   final String addLabel;
   final ValueChanged<int>? onRemove;
+
+  /// Rows that cannot be removed (their ⊖ is disabled); null: all can.
+  final bool Function(int row)? canRemove;
 
   /// Moves a row from the first index to the second.
   final void Function(int from, int to)? onMove;
@@ -92,7 +96,9 @@ class _EditableGridState extends State<EditableGrid> {
     widget.onSelect?.call(to);
   }
 
-  Widget _cell(EditableGridColumn col, Widget child) {
+  /// A cell, announced with its column name by assistive technologies.
+  Widget _cell(EditableGridColumn col, Widget child, {bool body = false}) {
+    if (body) child = Semantics(container: true, label: col.label, child: child);
     final aligned = col.center ? Center(child: child) : child;
     return col.width != null ? SizedBox(width: col.width, child: aligned) : Expanded(flex: col.flex, child: aligned);
   }
@@ -141,50 +147,61 @@ class _EditableGridState extends State<EditableGrid> {
         onTapDown: (_) {
           if (!selected) widget.onSelect?.call(r);
         },
-        child: Container(
-          height: _rowHeight,
-          color: selected ? c.selection.withValues(alpha: Tint.regular) : (r.isOdd ? c.zebra : null),
-          child: Row(
-            children: [
-              Container(width: _markWidth, height: _rowHeight, color: markColor),
-              const SizedBox(width: Gap.xs),
-              for (final (i, col) in widget.columns.indexed) ...[
-                if (i > 0) const SizedBox(width: Gap.xs),
-                _cell(col, widget.cellBuilder(context, r, i)),
-              ],
-              if (widget.onRemove != null || widget.onMove != null)
-                SizedBox(
-                  width: _actionsWidth,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (widget.onMove != null) ...[
-                        ToolButton(
-                          icon: AppIcons.arrowUp,
-                          extent: 18,
-                          tooltip: 'Sposta su',
-                          onPressed: r == 0 ? null : () => widget.onMove!(r, r - 1),
-                        ),
-                        ToolButton(
-                          icon: AppIcons.arrowDown,
-                          extent: 18,
-                          tooltip: 'Sposta giù',
-                          onPressed: r == widget.rowCount - 1 ? null : () => widget.onMove!(r, r + 1),
-                        ),
-                      ],
-                      if (widget.onRemove != null)
-                        ToolButton(
-                          icon: AppIcons.removeCircle,
-                          extent: 18,
-                          color: c.danger,
-                          tooltip: widget.removeTooltip,
-                          onPressed: () => widget.onRemove!(r),
-                        ),
-                    ],
-                  ),
+        child: Semantics(
+          container: true,
+          selected: selected,
+          label: [
+            'Riga ${r + 1} di ${widget.rowCount}',
+            if (mark == EditableRowMark.added) 'nuova',
+            if (mark == EditableRowMark.changed) 'modificata',
+          ].join(', '),
+          child: Container(
+            height: _rowHeight,
+            color: selected ? c.selection.withValues(alpha: Tint.regular) : (r.isOdd ? c.zebra : null),
+            child: Row(
+              children: [
+                ExcludeSemantics(
+                  child: Container(width: _markWidth, height: _rowHeight, color: markColor),
                 ),
-              const SizedBox(width: Gap.xs),
-            ],
+                const SizedBox(width: Gap.xs),
+                for (final (i, col) in widget.columns.indexed) ...[
+                  if (i > 0) const SizedBox(width: Gap.xs),
+                  _cell(col, widget.cellBuilder(context, r, i), body: true),
+                ],
+                if (widget.onRemove != null || widget.onMove != null)
+                  SizedBox(
+                    width: _actionsWidth,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (widget.onMove != null) ...[
+                          ToolButton(
+                            icon: AppIcons.arrowUp,
+                            extent: 18,
+                            tooltip: 'Sposta su',
+                            onPressed: r == 0 ? null : () => widget.onMove!(r, r - 1),
+                          ),
+                          ToolButton(
+                            icon: AppIcons.arrowDown,
+                            extent: 18,
+                            tooltip: 'Sposta giù',
+                            onPressed: r == widget.rowCount - 1 ? null : () => widget.onMove!(r, r + 1),
+                          ),
+                        ],
+                        if (widget.onRemove != null)
+                          ToolButton(
+                            icon: AppIcons.removeCircle,
+                            extent: 18,
+                            color: c.danger,
+                            tooltip: widget.removeTooltip,
+                            onPressed: widget.canRemove?.call(r) ?? true ? () => widget.onRemove!(r) : null,
+                          ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(width: Gap.xs),
+              ],
+            ),
           ),
         ),
       ),
@@ -209,50 +226,56 @@ class _EditableGridState extends State<EditableGrid> {
           final s = widget.selected;
           if (s != null &&
               widget.onRemove != null &&
+              (widget.canRemove?.call(s) ?? true) &&
               (e.logicalKey == LogicalKeyboardKey.backspace || e.logicalKey == LogicalKeyboardKey.delete)) {
             widget.onRemove!(s);
             return KeyEventResult.handled;
           }
           return KeyEventResult.ignored;
         },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(context),
-            Flexible(
-              child: InsetBox(
-                child: widget.rowCount == 0
-                    ? Padding(
-                        padding: const EdgeInsets.all(Gap.md),
-                        child: Text(widget.emptyText, style: uiText(TypeSize.small, color: c.textTertiary)),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: widget.rowCount,
-                        itemExtent: _rowHeight,
-                        itemBuilder: _row,
+        child: Semantics(
+          container: true,
+          explicitChildNodes: true,
+          label: 'Tabella modificabile, ${widget.rowCount} ${widget.rowCount == 1 ? 'riga' : 'righe'}',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ExcludeSemantics(child: _header(context)),
+              Flexible(
+                child: InsetBox(
+                  child: widget.rowCount == 0
+                      ? Padding(
+                          padding: const EdgeInsets.all(Gap.md),
+                          child: Text(widget.emptyText, style: uiText(TypeSize.small, color: c.textTertiary)),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: widget.rowCount,
+                          itemExtent: _rowHeight,
+                          itemBuilder: _row,
+                        ),
+                ),
+              ),
+              if (widget.onAdd != null || widget.trailing.isNotEmpty) ...[
+                const SizedBox(height: Gap.xs),
+                Row(
+                  children: [
+                    if (widget.onAdd != null)
+                      ToolButton(
+                        icon: AppIcons.add,
+                        label: widget.addLabel,
+                        tooltip: widget.addLabel,
+                        onPressed: () {
+                          widget.onAdd!();
+                          _focus.requestFocus();
+                        },
                       ),
-              ),
-            ),
-            if (widget.onAdd != null || widget.trailing.isNotEmpty) ...[
-              const SizedBox(height: Gap.xs),
-              Row(
-                children: [
-                  if (widget.onAdd != null)
-                    ToolButton(
-                      icon: AppIcons.add,
-                      label: widget.addLabel,
-                      tooltip: widget.addLabel,
-                      onPressed: () {
-                        widget.onAdd!();
-                        _focus.requestFocus();
-                      },
-                    ),
-                  ...widget.trailing,
-                ],
-              ),
+                    ...widget.trailing,
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
