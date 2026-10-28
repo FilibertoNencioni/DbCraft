@@ -1,18 +1,18 @@
-// Cloud Explorer cases of the test matrix (CLD-01…CLD-07) against local
+// Storage panel cases of the test matrix (CLD-01…CLD-07) against local
 // emulators: S3 (RustFS) and Azure Blob Storage (Azurite).
 //
-//   flutter test integration_test/matrix/cloud_test.dart -d macos \
+//   flutter test integration_test/matrix/storage_test.dart -d macos \
 //     --dart-define=TARGET=s3 --dart-define=REPO=$PWD --dart-define=SHOT_DIR=$PWD/build/matrix
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:dbcraft/cloud/cloud_accounts.dart';
-import 'package:dbcraft/cloud/storage/cloud_storage.dart';
-import 'package:dbcraft/cloud/ui/cloud_actions.dart';
-import 'package:dbcraft/cloud/ui/cloud_browser_tab.dart';
 import 'package:dbcraft/state/editor_tabs.dart';
+import 'package:dbcraft/storage/backends/object_storage.dart';
+import 'package:dbcraft/storage/storage_accounts.dart';
+import 'package:dbcraft/storage/ui/storage_actions.dart';
+import 'package:dbcraft/storage/ui/storage_browser_tab.dart';
 import 'package:dbcraft/ui/home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,24 +24,24 @@ import 'harness.dart';
 const _bucket = 'dbcraft-test';
 const _azuriteKey = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==';
 
-(CloudAccount, Map<String, String>) account({bool wrong = false}) => switch (target) {
+(StorageAccount, Map<String, String>) account({bool wrong = false}) => switch (target) {
   's3' => (
-    CloudAccount(
+    StorageAccount(
       name: wrong ? 'S3 sbagliato' : 'RustFS locale',
-      provider: CloudProvider.aws,
-      authKind: CloudAuthKind.awsKeys,
-      fields: {CloudField.accessKeyId: 'dbcraft', CloudField.region: 'us-east-1', CloudField.endpoint: 'http://127.0.0.1:59000', CloudField.pathStyle: 'true'},
+      provider: StorageProvider.aws,
+      authKind: StorageAuthKind.awsKeys,
+      fields: {StorageField.accessKeyId: 'dbcraft', StorageField.region: 'us-east-1', StorageField.endpoint: 'http://127.0.0.1:59000', StorageField.pathStyle: 'true'},
     ),
-    {CloudSecret.secretAccessKey: wrong ? 'sbagliata' : 'DbCraft_Test1'},
+    {StorageSecret.secretAccessKey: wrong ? 'sbagliata' : 'DbCraft_Test1'},
   ),
   _ => (
-    CloudAccount(
+    StorageAccount(
       name: wrong ? 'Azure sbagliato' : 'Azurite locale',
-      provider: CloudProvider.azure,
-      authKind: CloudAuthKind.azureSharedKey,
-      fields: {CloudField.storageAccount: 'devstoreaccount1', CloudField.endpoint: 'http://127.0.0.1:60000/devstoreaccount1'},
+      provider: StorageProvider.azure,
+      authKind: StorageAuthKind.azureSharedKey,
+      fields: {StorageField.storageAccount: 'devstoreaccount1', StorageField.endpoint: 'http://127.0.0.1:60000/devstoreaccount1'},
     ),
-    {CloudSecret.accountKey: wrong ? 'c2JhZ2xpYXRh' : _azuriteKey},
+    {StorageSecret.accountKey: wrong ? 'c2JhZ2xpYXRh' : _azuriteKey},
   ),
 };
 
@@ -50,31 +50,31 @@ Future<String> sha(File f) async => (await sha256.bind(f.openRead()).first).toSt
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  matrixTest('cloud', (tester) async {
+  matrixTest('storage', (tester) async {
     final app = await startApp(tester);
     BuildContext ctx() => tester.element(find.byType(HomePage));
-    final store = CloudAccountsStore.of(app);
+    final store = StorageAccountsStore.of(app);
     final (acc, secrets) = account();
-    late CloudStorage s;
+    late ObjectStorage s;
     final dir = Directory('$outDir/files')..createSync(recursive: true);
     final run = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
     final prefix = 'run_$run/';
 
     await check(tester, 'CLD-01', () async {
       await store.add(acc, secrets);
-      s = await createCloudStorage(acc, secrets);
+      s = await createObjectStorage(acc, secrets);
       final buckets = await s.listBuckets();
       record('CLD-01/buckets', Outcome.ok, buckets.map((b) => b.name).join(', '));
       expect(buckets.map((b) => b.name), contains(_bucket));
       await tester.tap(find.byTooltip('Storage').first);
       await settle(tester, 1500);
       await shot(tester, 'cld01_panel');
-      final json = File('${app.workspace.root.path}/cloud_accounts.json').readAsStringSync();
-      expect(json.contains(secrets.values.first), isFalse, reason: 'segreto in chiaro in cloud_accounts.json');
+      final json = File('${app.workspace.root.path}/storage_accounts.json').readAsStringSync();
+      expect(json.contains(secrets.values.first), isFalse, reason: 'segreto in chiaro in storage_accounts.json');
     });
 
     await check(tester, 'CLD-02', () async {
-      unawaited(cloudNewFolder(ctx(), s, _bucket, prefix));
+      unawaited(storageNewFolder(ctx(), s, _bucket, prefix));
       await waitFor(tester, find.text('Nome della cartella'));
       await tester.enterText(find.byType(EditableText).last, 'cartella con spazi àè');
       await tester.tap(find.text('OK').last);
@@ -82,7 +82,7 @@ void main() {
       final page = await s.list(_bucket, prefix: prefix);
       record('CLD-02/list', Outcome.ok, '${page.folders.map((o) => o.key)} ${page.files.map((o) => o.key)}');
       expect(page.folders.any((p) => p.key.contains('cartella con spazi àè')), isTrue);
-      app.openFeatureTab(CloudBrowserTab(store: store, account: acc, bucket: _bucket, prefix: prefix));
+      app.openFeatureTab(StorageBrowserTab(store: store, account: acc, bucket: _bucket, prefix: prefix));
       await settle(tester, 2500);
       await shot(tester, 'cld02_browser');
     });
@@ -101,7 +101,7 @@ void main() {
 
     await check(tester, 'CLD-03', () async {
       final sw = Stopwatch()..start();
-      final ok = cloudUploadPaths(ctx(), s, _bucket, prefix, [small.path, big.path, sql.path]);
+      final ok = storageUploadPaths(ctx(), s, _bucket, prefix, [small.path, big.path, sql.path]);
       while (sw.elapsed.inSeconds < 300) {
         await tester.pump(const Duration(milliseconds: 200));
         if (sw.elapsed.inMilliseconds > 1500 && sw.elapsed.inMilliseconds < 1800) await shot(tester, 'cld03_uploading');
@@ -147,7 +147,7 @@ void main() {
 
     await check(tester, 'CLD-06', () async {
       final o = await s.stat(_bucket, '${prefix}query.sql');
-      await cloudOpenInEditor(ctx(), acc, s, o);
+      await storageOpenInEditor(ctx(), acc, s, o);
       await settle(tester, 2000);
       await shot(tester, 'cld06_editor');
       final tab = app.tabs.whereType<SqlEditorTab>().last;
@@ -156,7 +156,7 @@ void main() {
 
     await check(tester, 'CLD-04', () async {
       final o = await s.stat(_bucket, '${prefix}query.sql');
-      unawaited(cloudRename(ctx(), s, o));
+      unawaited(storageRename(ctx(), s, o));
       await settle(tester, 1000);
       await tester.enterText(find.byType(EditableText).last, 'rinominato.sql');
       await tester.tap(find.text('OK').last);
@@ -167,7 +167,7 @@ void main() {
       expect(keys, contains('${prefix}rinominato.sql'));
       expect(keys, isNot(contains('${prefix}query.sql')));
       final all = await s.listAll(_bucket, prefix);
-      unawaited(cloudDelete(ctx(), s, all));
+      unawaited(storageDelete(ctx(), s, all));
       await settle(tester, 1000);
       await shot(tester, 'cld04_delete_confirm');
       for (final label in ['Elimina', 'OK', 'Continua']) {
@@ -185,7 +185,7 @@ void main() {
       final (bad, badSecrets) = account(wrong: true);
       Object? error;
       try {
-        final b = await createCloudStorage(bad, badSecrets);
+        final b = await createObjectStorage(bad, badSecrets);
         await b.listBuckets();
       } catch (e) {
         error = e;

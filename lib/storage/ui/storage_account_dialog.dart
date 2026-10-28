@@ -5,66 +5,66 @@ import 'dart:async';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../../cloud/auth/aws_auth.dart';
+import '../../cloud/cloud_common.dart';
 import '../../state/app_state.dart';
 import '../../ui/widgets/common.dart';
-import '../auth/aws_auth.dart';
-import '../cloud_accounts.dart';
-import '../cloud_common.dart';
+import '../storage_accounts.dart';
 
 /// Shows the account sheet and saves the result in the workspace store.
 /// Returns the saved account, or null when cancelled.
-Future<CloudAccount?> showCloudAccountDialog(BuildContext context, {CloudAccount? existing}) {
-  final store = CloudAccountsStore.of(AppScope.read(context));
-  return showSheet<CloudAccount>(
+Future<StorageAccount?> showStorageAccountDialog(BuildContext context, {StorageAccount? existing}) {
+  final store = StorageAccountsStore.of(AppScope.read(context));
+  return showSheet<StorageAccount>(
     context,
-    builder: (_) => _CloudAccountDialog(store: store, existing: existing),
+    builder: (_) => _StorageAccountDialog(store: store, existing: existing),
   );
 }
 
-IconData cloudProviderIcon(CloudProvider p) => switch (p) {
-  CloudProvider.aws => AppIcons.cloud,
-  CloudProvider.azure => AppIcons.cloud,
-  CloudProvider.gcp => AppIcons.cloud,
+IconData storageProviderIcon(StorageProvider p) => switch (p) {
+  StorageProvider.aws => AppIcons.storage,
+  StorageProvider.azure => AppIcons.storage,
+  StorageProvider.gcp => AppIcons.storage,
 };
 
-Color cloudProviderColor(CloudProvider p) => switch (p) {
-  CloudProvider.aws => const Color(0xFFFF9900),
-  CloudProvider.azure => const Color(0xFF0078D4),
-  CloudProvider.gcp => const Color(0xFF4285F4),
+Color storageProviderColor(StorageProvider p) => switch (p) {
+  StorageProvider.aws => const Color(0xFFFF9900),
+  StorageProvider.azure => const Color(0xFF0078D4),
+  StorageProvider.gcp => const Color(0xFF4285F4),
 };
 
-String _authHelp(CloudAuthKind k) => switch (k) {
-  CloudAuthKind.awsKeys => 'Le chiavi vengono salvate cifrate nel vault di DbCraft.',
-  CloudAuthKind.awsProfile =>
+String _authHelp(StorageAuthKind k) => switch (k) {
+  StorageAuthKind.awsKeys => 'Le chiavi vengono salvate cifrate nel vault di DbCraft.',
+  StorageAuthKind.awsProfile =>
     'Usa ~/.aws/credentials e ~/.aws/config: chiavi, credential_process, assume role e SSO (con AWS CLI v2).',
-  CloudAuthKind.awsDefault =>
+  StorageAuthKind.awsDefault =>
     'Variabili AWS_ACCESS_KEY_ID/AWS_PROFILE, profilo "default", credenziali del container o dell\'istanza EC2.',
-  CloudAuthKind.azureCli => 'Usa il token di "az login". Ruolo richiesto: Storage Blob Data Reader o superiore.',
-  CloudAuthKind.azureSharedKey => 'Chiave di accesso dello storage account (Chiavi di accesso nel portale).',
-  CloudAuthKind.azureSas => 'Token SAS a livello di account o di container (sp con almeno r e l).',
-  CloudAuthKind.azureConnectionString => 'DefaultEndpointsProtocol=https;AccountName=…;AccountKey=… oppure SAS.',
-  CloudAuthKind.azureServicePrincipal =>
+  StorageAuthKind.azureCli => 'Usa il token di "az login". Ruolo richiesto: Storage Blob Data Reader o superiore.',
+  StorageAuthKind.azureSharedKey => 'Chiave di accesso dello storage account (Chiavi di accesso nel portale).',
+  StorageAuthKind.azureSas => 'Token SAS a livello di account o di container (sp con almeno r e l).',
+  StorageAuthKind.azureConnectionString => 'DefaultEndpointsProtocol=https;AccountName=…;AccountKey=… oppure SAS.',
+  StorageAuthKind.azureServicePrincipal =>
     'App registrata in Entra ID con un ruolo Storage Blob Data sullo storage account.',
-  CloudAuthKind.azureManagedIdentity => 'Disponibile solo quando DbCraft è in esecuzione su una risorsa Azure.',
-  CloudAuthKind.gcpServiceAccount => 'File JSON scaricato dalla console (IAM › Service account › Chiavi).',
-  CloudAuthKind.gcpDefault =>
+  StorageAuthKind.azureManagedIdentity => 'Disponibile solo quando DbCraft è in esecuzione su una risorsa Azure.',
+  StorageAuthKind.gcpServiceAccount => 'File JSON scaricato dalla console (IAM › Service account › Chiavi).',
+  StorageAuthKind.gcpDefault =>
     'GOOGLE_APPLICATION_CREDENTIALS, "gcloud auth application-default login", gcloud CLI o server dei metadati.',
-  CloudAuthKind.gcpToken => 'Token OAuth2 temporaneo (es. gcloud auth print-access-token): scade dopo un\'ora.',
+  StorageAuthKind.gcpToken => 'Token OAuth2 temporaneo (es. gcloud auth print-access-token): scade dopo un\'ora.',
 };
 
-class _CloudAccountDialog extends StatefulWidget {
-  const _CloudAccountDialog({required this.store, this.existing});
-  final CloudAccountsStore store;
-  final CloudAccount? existing;
+class _StorageAccountDialog extends StatefulWidget {
+  const _StorageAccountDialog({required this.store, this.existing});
+  final StorageAccountsStore store;
+  final StorageAccount? existing;
 
   @override
-  State<_CloudAccountDialog> createState() => _CloudAccountDialogState();
+  State<_StorageAccountDialog> createState() => _StorageAccountDialogState();
 }
 
-class _CloudAccountDialogState extends State<_CloudAccountDialog> {
-  late final CloudAccount _a =
+class _StorageAccountDialogState extends State<_StorageAccountDialog> {
+  late final StorageAccount _a =
       widget.existing?.copy() ??
-      CloudAccount(name: '', provider: CloudProvider.aws, authKind: CloudAuthKind.awsProfile);
+      StorageAccount(name: '', provider: StorageProvider.aws, authKind: StorageAuthKind.awsProfile);
   final _name = TextEditingController();
   final Map<String, TextEditingController> _fields = {};
   final Map<String, TextEditingController> _secrets = {};
@@ -97,57 +97,57 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
   TextEditingController _s(String k) => _secrets.putIfAbsent(k, TextEditingController.new);
 
   String _autoName() {
-    final f = _f(_a.provider == CloudProvider.azure ? CloudField.storageAccount : CloudField.project).text.trim();
+    final f = _f(_a.provider == StorageProvider.azure ? StorageField.storageAccount : StorageField.project).text.trim();
     return switch (_a.provider) {
-      CloudProvider.aws =>
-        _f(CloudField.endpoint).text.trim().isNotEmpty
-            ? 'S3 ${Uri.tryParse(_f(CloudField.endpoint).text.trim())?.host ?? ''}'.trim()
-            : 'AWS ${_a.authKind == CloudAuthKind.awsProfile ? (_f(CloudField.profile).text.trim().isEmpty ? 'default' : _f(CloudField.profile).text.trim()) : ''}'
+      StorageProvider.aws =>
+        _f(StorageField.endpoint).text.trim().isNotEmpty
+            ? 'S3 ${Uri.tryParse(_f(StorageField.endpoint).text.trim())?.host ?? ''}'.trim()
+            : 'AWS ${_a.authKind == StorageAuthKind.awsProfile ? (_f(StorageField.profile).text.trim().isEmpty ? 'default' : _f(StorageField.profile).text.trim()) : ''}'
                   .trim(),
-      CloudProvider.azure => f.isEmpty ? 'Azure Storage' : f,
-      CloudProvider.gcp => f.isEmpty ? 'Google Cloud Storage' : 'GCS $f',
+      StorageProvider.azure => f.isEmpty ? 'Azure Storage' : f,
+      StorageProvider.gcp => f.isEmpty ? 'Google Cloud Storage' : 'GCS $f',
     };
   }
 
   /// Fields relevant to the selected provider / method.
   List<String> get _fieldKeys => switch (_a.authKind) {
-    CloudAuthKind.awsKeys => [CloudField.accessKeyId, CloudField.region, CloudField.endpoint, CloudField.pathStyle],
-    CloudAuthKind.awsProfile => [CloudField.profile, CloudField.region, CloudField.endpoint, CloudField.pathStyle],
-    CloudAuthKind.awsDefault => [CloudField.region, CloudField.endpoint, CloudField.pathStyle],
-    CloudAuthKind.azureCli => [CloudField.storageAccount, CloudField.tenantId, CloudField.endpointSuffix],
-    CloudAuthKind.azureSharedKey || CloudAuthKind.azureSas => [CloudField.storageAccount, CloudField.endpointSuffix],
-    CloudAuthKind.azureConnectionString => const [],
-    CloudAuthKind.azureServicePrincipal => [
-      CloudField.storageAccount,
-      CloudField.tenantId,
-      CloudField.clientId,
-      CloudField.endpointSuffix,
+    StorageAuthKind.awsKeys => [StorageField.accessKeyId, StorageField.region, StorageField.endpoint, StorageField.pathStyle],
+    StorageAuthKind.awsProfile => [StorageField.profile, StorageField.region, StorageField.endpoint, StorageField.pathStyle],
+    StorageAuthKind.awsDefault => [StorageField.region, StorageField.endpoint, StorageField.pathStyle],
+    StorageAuthKind.azureCli => [StorageField.storageAccount, StorageField.tenantId, StorageField.endpointSuffix],
+    StorageAuthKind.azureSharedKey || StorageAuthKind.azureSas => [StorageField.storageAccount, StorageField.endpointSuffix],
+    StorageAuthKind.azureConnectionString => const [],
+    StorageAuthKind.azureServicePrincipal => [
+      StorageField.storageAccount,
+      StorageField.tenantId,
+      StorageField.clientId,
+      StorageField.endpointSuffix,
     ],
-    CloudAuthKind.azureManagedIdentity => [CloudField.storageAccount, CloudField.clientId, CloudField.endpointSuffix],
-    CloudAuthKind.gcpServiceAccount => [CloudField.keyFile, CloudField.project],
-    CloudAuthKind.gcpDefault || CloudAuthKind.gcpToken => [CloudField.project],
+    StorageAuthKind.azureManagedIdentity => [StorageField.storageAccount, StorageField.clientId, StorageField.endpointSuffix],
+    StorageAuthKind.gcpServiceAccount => [StorageField.keyFile, StorageField.project],
+    StorageAuthKind.gcpDefault || StorageAuthKind.gcpToken => [StorageField.project],
   };
 
   List<String> get _secretKeys => switch (_a.authKind) {
-    CloudAuthKind.awsKeys => [CloudSecret.secretAccessKey, CloudSecret.sessionToken],
-    CloudAuthKind.azureSharedKey => [CloudSecret.accountKey],
-    CloudAuthKind.azureSas => [CloudSecret.sas],
-    CloudAuthKind.azureConnectionString => [CloudSecret.connectionString],
-    CloudAuthKind.azureServicePrincipal => [CloudSecret.clientSecret],
-    CloudAuthKind.gcpServiceAccount => [CloudSecret.keyJson],
-    CloudAuthKind.gcpToken => [CloudSecret.token],
+    StorageAuthKind.awsKeys => [StorageSecret.secretAccessKey, StorageSecret.sessionToken],
+    StorageAuthKind.azureSharedKey => [StorageSecret.accountKey],
+    StorageAuthKind.azureSas => [StorageSecret.sas],
+    StorageAuthKind.azureConnectionString => [StorageSecret.connectionString],
+    StorageAuthKind.azureServicePrincipal => [StorageSecret.clientSecret],
+    StorageAuthKind.gcpServiceAccount => [StorageSecret.keyJson],
+    StorageAuthKind.gcpToken => [StorageSecret.token],
     _ => const [],
   };
 
-  (CloudAccount, Map<String, String>) _collect() {
-    final a = CloudAccount(
+  (StorageAccount, Map<String, String>) _collect() {
+    final a = StorageAccount(
       id: _a.id,
       name: _name.text.trim().isEmpty ? _autoName() : _name.text.trim(),
       provider: _a.provider,
       authKind: _a.authKind,
       fields: {
         for (final k in _fieldKeys)
-          if (k == CloudField.pathStyle) k: _a.pathStyle ? 'true' : '' else k: _f(k).text.trim(),
+          if (k == StorageField.pathStyle) k: _a.pathStyle ? 'true' : '' else k: _f(k).text.trim(),
       },
     );
     final secrets = {for (final k in _secretKeys) k: _s(k).text.trim()};
@@ -162,12 +162,12 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
     });
     try {
       final (a, secrets) = _collect();
-      final storage = await createCloudStorage(a, secrets);
+      final storage = await createObjectStorage(a, secrets);
       final buckets = await storage.listBuckets().timeout(const Duration(seconds: 45));
       final term = a.provider.bucketTerm.toLowerCase();
       _testOk = buckets.isEmpty
           ? 'Accesso riuscito: nessun $term'
-          : 'Accesso riuscito: ${buckets.length} ${buckets.length == 1 ? term : (a.provider == CloudProvider.azure ? 'container' : 'bucket')}';
+          : 'Accesso riuscito: ${buckets.length} ${buckets.length == 1 ? term : (a.provider == StorageProvider.azure ? 'container' : 'bucket')}';
     } on TimeoutException {
       _testError = CloudException('Nessuna risposta entro 45 secondi.');
     } catch (e) {
@@ -213,18 +213,18 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
                 label: 'Provider',
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Segmented<CloudProvider>(
+                  child: Segmented<StorageProvider>(
                     value: _a.provider,
                     items: const [
-                      (CloudProvider.aws, 'AWS', null),
-                      (CloudProvider.azure, 'Azure', null),
-                      (CloudProvider.gcp, 'Google Cloud', null),
+                      (StorageProvider.aws, 'AWS', null),
+                      (StorageProvider.azure, 'Azure', null),
+                      (StorageProvider.gcp, 'Google Cloud', null),
                     ],
                     onChanged: widget.existing != null
                         ? (_) {}
                         : (p) => setState(() {
                             _a.provider = p;
-                            _a.authKind = CloudAuthKind.forProvider(p).first;
+                            _a.authKind = StorageAuthKind.forProvider(p).first;
                             _testOk = null;
                             _testError = null;
                           }),
@@ -239,9 +239,9 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
             children: [
               FormRow(
                 label: 'Metodo',
-                child: SelectField<CloudAuthKind>(
+                child: SelectField<StorageAuthKind>(
                   value: _a.authKind,
-                  items: [for (final k in CloudAuthKind.forProvider(_a.provider)) (k, k.label, null)],
+                  items: [for (final k in StorageAuthKind.forProvider(_a.provider)) (k, k.label, null)],
                   onChanged: (k) => setState(() {
                     _a.authKind = k;
                     _testOk = null;
@@ -255,8 +255,8 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
           ),
           if (_fieldKeys.any((k) => !_isAuthField(k)))
             FormGroup(
-              title: _a.provider == CloudProvider.aws ? 'Endpoint' : 'Risorsa',
-              footer: _a.provider == CloudProvider.aws
+              title: _a.provider == StorageProvider.aws ? 'Endpoint' : 'Risorsa',
+              footer: _a.provider == StorageProvider.aws
                   ? 'Lascia vuoto l\'endpoint per Amazon S3; per MinIO, Cloudflare R2, Wasabi… indica l\'URL '
                         'del servizio e di solito attiva lo stile path.'
                   : null,
@@ -268,11 +268,11 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
   }
 
   bool _isAuthField(String k) => const {
-    CloudField.accessKeyId,
-    CloudField.profile,
-    CloudField.tenantId,
-    CloudField.clientId,
-    CloudField.keyFile,
+    StorageField.accessKeyId,
+    StorageField.profile,
+    StorageField.tenantId,
+    StorageField.clientId,
+    StorageField.keyFile,
   }.contains(k);
 
   Widget _status() {
@@ -299,7 +299,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
 
   Widget _fieldRow(String k) {
     switch (k) {
-      case CloudField.pathStyle:
+      case StorageField.pathStyle:
         return FormRow(
           label: 'Stile path',
           help: 'bucket nel percorso dell\'URL',
@@ -307,11 +307,11 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
             alignment: Alignment.centerLeft,
             child: DbSwitch(
               value: _a.pathStyle,
-              onChanged: (v) => setState(() => _a.fields[CloudField.pathStyle] = v ? 'true' : ''),
+              onChanged: (v) => setState(() => _a.fields[StorageField.pathStyle] = v ? 'true' : ''),
             ),
           ),
         );
-      case CloudField.profile:
+      case StorageField.profile:
         return FormRow(
           label: 'Profilo',
           child: _profiles.isEmpty
@@ -323,7 +323,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
                   onChanged: (_) => _clearTest(),
                 ),
         );
-      case CloudField.keyFile:
+      case StorageField.keyFile:
         return FormRow(
           label: 'File chiave JSON',
           child: PathField(
@@ -342,28 +342,28 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
         );
     }
     final (label, hint, help) = switch (k) {
-      CloudField.accessKeyId => ('Access key ID', 'AKIA…', null),
-      CloudField.region => ('Regione', 'eu-west-1 (vuoto = dal profilo)', null),
-      CloudField.endpoint => (
+      StorageField.accessKeyId => ('Access key ID', 'AKIA…', null),
+      StorageField.region => ('Regione', 'eu-west-1 (vuoto = dal profilo)', null),
+      StorageField.endpoint => (
         'Endpoint',
-        _a.provider == CloudProvider.aws ? 'https://s3.example.com (facoltativo)' : 'https://… (facoltativo)',
+        _a.provider == StorageProvider.aws ? 'https://s3.example.com (facoltativo)' : 'https://… (facoltativo)',
         null,
       ),
-      CloudField.storageAccount => ('Storage account', 'nomeaccount', null),
-      CloudField.endpointSuffix => ('Suffisso endpoint', 'core.windows.net', 'cloud sovrani'),
-      CloudField.tenantId => (
+      StorageField.storageAccount => ('Storage account', 'nomeaccount', null),
+      StorageField.endpointSuffix => ('Suffisso endpoint', 'core.windows.net', 'cloud sovrani'),
+      StorageField.tenantId => (
         'Tenant ID',
-        _a.authKind == CloudAuthKind.azureCli ? 'Facoltativo' : '00000000-0000-…',
+        _a.authKind == StorageAuthKind.azureCli ? 'Facoltativo' : '00000000-0000-…',
         null,
       ),
-      CloudField.clientId => (
+      StorageField.clientId => (
         'Client ID',
-        _a.authKind == CloudAuthKind.azureManagedIdentity ? 'Solo identità assegnate dall\'utente' : 'ID applicazione',
+        _a.authKind == StorageAuthKind.azureManagedIdentity ? 'Solo identità assegnate dall\'utente' : 'ID applicazione',
         null,
       ),
-      CloudField.project => (
+      StorageField.project => (
         'Progetto',
-        _a.authKind == CloudAuthKind.gcpServiceAccount ? 'Vuoto = progetto della chiave' : 'ID progetto',
+        _a.authKind == StorageAuthKind.gcpServiceAccount ? 'Vuoto = progetto della chiave' : 'ID progetto',
         null,
       ),
       _ => (k, '', null),
@@ -373,14 +373,14 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
 
   Widget _secretRow(String k) {
     final (label, hint, multiline) = switch (k) {
-      CloudSecret.secretAccessKey => ('Secret access key', '', false),
-      CloudSecret.sessionToken => ('Session token', 'Facoltativo (credenziali temporanee)', false),
-      CloudSecret.accountKey => ('Chiave account', 'Base64', false),
-      CloudSecret.sas => ('Token SAS', 'sv=…&ss=b&srt=…&sp=rl&sig=…', false),
-      CloudSecret.connectionString => ('Stringa di connessione', 'DefaultEndpointsProtocol=https;AccountName=…', true),
-      CloudSecret.clientSecret => ('Client secret', '', false),
-      CloudSecret.keyJson => ('Oppure JSON', 'Incolla o scegli il file della chiave (salvata nel vault)', true),
-      CloudSecret.token => ('Access token', 'ya29.…', false),
+      StorageSecret.secretAccessKey => ('Secret access key', '', false),
+      StorageSecret.sessionToken => ('Session token', 'Facoltativo (credenziali temporanee)', false),
+      StorageSecret.accountKey => ('Chiave account', 'Base64', false),
+      StorageSecret.sas => ('Token SAS', 'sv=…&ss=b&srt=…&sp=rl&sig=…', false),
+      StorageSecret.connectionString => ('Stringa di connessione', 'DefaultEndpointsProtocol=https;AccountName=…', true),
+      StorageSecret.clientSecret => ('Client secret', '', false),
+      StorageSecret.keyJson => ('Oppure JSON', 'Incolla o scegli il file della chiave (salvata nel vault)', true),
+      StorageSecret.token => ('Access token', 'ya29.…', false),
       _ => (k, '', false),
     };
     // Multi-line secrets stay on one masked line until revealed, then grow to four.
@@ -391,7 +391,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
         hint: hint,
         maxLines: multiline ? 4 : 1,
         onChanged: (_) => _clearTest(),
-        onChoose: k == CloudSecret.keyJson ? () => _loadSecret(k) : null,
+        onChoose: k == StorageSecret.keyJson ? () => _loadSecret(k) : null,
         chooseTooltip: 'Carica il contenuto da un file .json',
       ),
     );

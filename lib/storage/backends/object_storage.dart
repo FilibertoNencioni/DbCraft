@@ -7,14 +7,14 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-import '../cloud_common.dart';
+import '../../cloud/cloud_common.dart';
 
-enum CloudProvider {
+enum StorageProvider {
   aws('Amazon Web Services', 'Amazon S3', 'Bucket', 's3'),
   azure('Microsoft Azure', 'Azure Blob Storage', 'Container', 'https'),
   gcp('Google Cloud', 'Google Cloud Storage', 'Bucket', 'gs');
 
-  const CloudProvider(this.label, this.storageLabel, this.bucketTerm, this.scheme);
+  const StorageProvider(this.label, this.storageLabel, this.bucketTerm, this.scheme);
   final String label;
   final String storageLabel;
 
@@ -23,8 +23,8 @@ enum CloudProvider {
   final String scheme;
 }
 
-class CloudBucket {
-  const CloudBucket(this.name, {this.region, this.created, this.storageClass});
+class StorageBucket {
+  const StorageBucket(this.name, {this.region, this.created, this.storageClass});
   final String name;
 
   /// Region / location (null when the provider does not expose it).
@@ -34,8 +34,8 @@ class CloudBucket {
 }
 
 /// A file or a "folder" (common prefix ending with `/`).
-class CloudObject {
-  const CloudObject({
+class StorageObject {
+  const StorageObject({
     required this.bucket,
     required this.key,
     this.isFolder = false,
@@ -79,24 +79,24 @@ class CloudObject {
 }
 
 /// One page of a listing.
-class CloudListPage {
-  const CloudListPage({this.folders = const [], this.files = const [], this.continuation});
-  final List<CloudObject> folders;
-  final List<CloudObject> files;
+class StorageListPage {
+  const StorageListPage({this.folders = const [], this.files = const [], this.continuation});
+  final List<StorageObject> folders;
+  final List<StorageObject> files;
 
   /// Token for the next page, null when the listing is complete.
   final String? continuation;
 }
 
-abstract class CloudStorage {
-  CloudProvider get provider;
+abstract class ObjectStorage {
+  StorageProvider get provider;
 
   /// Lists buckets / containers (with their region when available).
-  Future<List<CloudBucket>> listBuckets();
+  Future<List<StorageBucket>> listBuckets();
 
   /// Lists [prefix] with the `/` delimiter (one level) or recursively when
   /// [delimiter] is null.
-  Future<CloudListPage> list(
+  Future<StorageListPage> list(
     String bucket, {
     String prefix = '',
     String? delimiter = '/',
@@ -104,7 +104,7 @@ abstract class CloudStorage {
     int maxResults = 1000,
   });
 
-  Future<CloudObject> stat(String bucket, String key);
+  Future<StorageObject> stat(String bucket, String key);
 
   /// Streams the object to [target] (written to a `.part` file first).
   Future<void> download(String bucket, String key, File target, {ProgressCallback? onProgress, CancelToken? cancel});
@@ -148,8 +148,8 @@ abstract class CloudStorage {
       decodeUtf8Prefix(await readBytes(bucket, key, maxBytes: maxBytes));
 
   /// Every object under [prefix] (recursive).
-  Future<List<CloudObject>> listAll(String bucket, String prefix, {CancelToken? cancel}) async {
-    final out = <CloudObject>[];
+  Future<List<StorageObject>> listAll(String bucket, String prefix, {CancelToken? cancel}) async {
+    final out = <StorageObject>[];
     String? token;
     do {
       cancel?.throwIfCancelled();

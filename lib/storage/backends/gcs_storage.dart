@@ -8,13 +8,13 @@ import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
-import '../auth/gcp_auth.dart';
-import '../cloud_common.dart';
-import 'cloud_storage.dart';
+import '../../cloud/auth/gcp_auth.dart';
+import '../../cloud/cloud_common.dart';
+import 'object_storage.dart';
 
 const _api = 'https://storage.googleapis.com';
 
-CloudObject _gcsObject(String bucket, Map j) => CloudObject(
+StorageObject _gcsObject(String bucket, Map j) => StorageObject(
   bucket: bucket,
   key: j['name'] as String? ?? '',
   size: int.tryParse('${j['size']}') ?? -1,
@@ -32,21 +32,21 @@ CloudObject _gcsObject(String bucket, Map j) => CloudObject(
 );
 
 /// objects.list response → folders, files and next page token.
-CloudListPage parseGcsList(String json, String bucket) {
+StorageListPage parseGcsList(String json, String bucket) {
   final j = jsonDecode(json) as Map;
-  final files = <CloudObject>[];
+  final files = <StorageObject>[];
   for (final o in (j['items'] as List?) ?? const []) {
     final obj = _gcsObject(bucket, o as Map);
     if (obj.key.endsWith('/')) continue;
     files.add(obj);
   }
   final folders = [
-    for (final p in (j['prefixes'] as List?) ?? const []) CloudObject(bucket: bucket, key: '$p', isFolder: true),
+    for (final p in (j['prefixes'] as List?) ?? const []) StorageObject(bucket: bucket, key: '$p', isFolder: true),
   ];
-  return CloudListPage(folders: folders, files: files, continuation: j['nextPageToken'] as String?);
+  return StorageListPage(folders: folders, files: files, continuation: j['nextPageToken'] as String?);
 }
 
-class GcsStorage extends CloudStorage {
+class GcsStorage extends ObjectStorage {
   GcsStorage({required this.credential, String? project})
     : _project = project == null || project.trim().isEmpty ? null : project.trim();
 
@@ -57,7 +57,7 @@ class GcsStorage extends CloudStorage {
   static const _chunk = 16 * 1024 * 1024; // multiple of 256 KiB
 
   @override
-  CloudProvider get provider => CloudProvider.gcp;
+  StorageProvider get provider => StorageProvider.gcp;
 
   @override
   bool get canShare => credential.signer != null || credential is GcpDefaultCredential;
@@ -95,9 +95,9 @@ class GcsStorage extends CloudStorage {
   }
 
   @override
-  Future<List<CloudBucket>> listBuckets() async {
+  Future<List<StorageBucket>> listBuckets() async {
     final project = await _projectId();
-    final out = <CloudBucket>[];
+    final out = <StorageBucket>[];
     String? token;
     do {
       final r = await _json(
@@ -110,7 +110,7 @@ class GcsStorage extends CloudStorage {
       for (final b in (j['items'] as List?) ?? const []) {
         final m = b as Map;
         out.add(
-          CloudBucket(
+          StorageBucket(
             m['name'] as String,
             region: (m['location'] as String?)?.toLowerCase(),
             created: DateTime.tryParse('${m['timeCreated']}'),
@@ -124,7 +124,7 @@ class GcsStorage extends CloudStorage {
   }
 
   @override
-  Future<CloudListPage> list(
+  Future<StorageListPage> list(
     String bucket, {
     String prefix = '',
     String? delimiter = '/',
@@ -143,7 +143,7 @@ class GcsStorage extends CloudStorage {
       operation: 'Elenco oggetti',
     );
     final page = parseGcsList(r.text, bucket);
-    return CloudListPage(
+    return StorageListPage(
       folders: page.folders.where((f) => f.key != prefix).toList(),
       files: page.files,
       continuation: page.continuation,
@@ -151,10 +151,10 @@ class GcsStorage extends CloudStorage {
   }
 
   @override
-  Future<CloudObject> stat(String bucket, String key) async {
+  Future<StorageObject> stat(String bucket, String key) async {
     final r = await _json('GET', '/storage/v1/b/${_o(bucket)}/o/${_o(key)}', operation: 'Proprietà oggetto');
     final o = _gcsObject(bucket, jsonDecode(r.text) as Map);
-    return CloudObject(
+    return StorageObject(
       bucket: bucket,
       key: key,
       isFolder: key.endsWith('/'),

@@ -1,4 +1,4 @@
-// Object actions shared by the Cloud Explorer panel and the bucket browser:
+// Object actions shared by the Storage panel and the bucket browser:
 // transfers, share links, properties, open in the SQL editor, CSV import.
 import 'dart:io';
 
@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import '../../cloud/cloud_common.dart';
 import '../../model/db_objects.dart';
 import '../../state/app_state.dart';
 import '../../state/db_connection.dart';
@@ -14,26 +15,25 @@ import '../../state/editor_tabs.dart';
 import '../../ui/actions.dart';
 import '../../ui/dialogs/import_dialog.dart';
 import '../../ui/widgets/common.dart';
-import '../cloud_accounts.dart';
-import '../cloud_common.dart';
-import '../storage/cloud_storage.dart';
-import 'cloud_transfers.dart';
+import '../backends/object_storage.dart';
+import '../storage_accounts.dart';
+import 'storage_transfers.dart';
 
 /// Extensions opened as text in the SQL editor.
-const cloudTextExtensions = {'sql', 'txt', 'json', 'ddl', 'pgsql', 'psql', 'md', 'log', 'yaml', 'yml', 'xml'};
+const storageTextExtensions = {'sql', 'txt', 'json', 'ddl', 'pgsql', 'psql', 'md', 'log', 'yaml', 'yml', 'xml'};
 
 /// Extensions accepted by the CSV import.
-const cloudCsvExtensions = {'csv', 'tsv'};
+const storageCsvExtensions = {'csv', 'tsv'};
 
-/// Local mirror path of an object (`<workspace>/cloud/<account>/<bucket>/<key>`).
-File cloudLocalCopy(AppState app, CloudAccount a, String bucket, String key) =>
-    File(p.joinAll([app.workspace.root.path, 'cloud', a.id, bucket, ...key.split('/').where((e) => e.isNotEmpty)]));
+/// Local mirror path of an object (`<workspace>/storage/<account>/<bucket>/<key>`).
+File storageLocalCopy(AppState app, StorageAccount a, String bucket, String key) =>
+    File(p.joinAll([app.workspace.root.path, StorageAccountsStore.localCopiesDir, a.id, bucket, ...key.split('/').where((e) => e.isNotEmpty)]));
 
-Future<void> cloudDownload(BuildContext context, CloudStorage s, CloudObject o) async {
+Future<void> storageDownload(BuildContext context, ObjectStorage s, StorageObject o) async {
   final loc = await getSaveLocation(suggestedName: o.name);
   if (loc == null) return;
   final target = File(loc.path);
-  final ok = await CloudTransfers.instance.run(
+  final ok = await StorageTransfers.instance.run(
     o.name,
     upload: false,
     total: o.size,
@@ -43,11 +43,11 @@ Future<void> cloudDownload(BuildContext context, CloudStorage s, CloudObject o) 
 }
 
 /// Downloads every object under a folder into a local directory.
-Future<void> cloudDownloadFolder(BuildContext context, CloudStorage s, String bucket, String prefix) async {
+Future<void> storageDownloadFolder(BuildContext context, ObjectStorage s, String bucket, String prefix) async {
   final dir = await getDirectoryPath(confirmButtonText: 'Scarica qui');
   if (dir == null) return;
-  final name = prefix.isEmpty ? bucket : CloudObject(bucket: bucket, key: prefix).name;
-  final ok = await CloudTransfers.instance.run(
+  final name = prefix.isEmpty ? bucket : StorageObject(bucket: bucket, key: prefix).name;
+  final ok = await StorageTransfers.instance.run(
     '$name/',
     upload: false,
     body: (t) async {
@@ -69,15 +69,15 @@ Future<void> cloudDownloadFolder(BuildContext context, CloudStorage s, String bu
 
 /// Asks for local files and uploads them under [prefix]. Returns true when
 /// at least one file was uploaded.
-Future<bool> cloudUploadFiles(BuildContext context, CloudStorage s, String bucket, String prefix) async {
+Future<bool> storageUploadFiles(BuildContext context, ObjectStorage s, String bucket, String prefix) async {
   final files = await openFiles();
   if (files.isEmpty || !context.mounted) return false;
-  return cloudUploadPaths(context, s, bucket, prefix, files.map((f) => f.path).toList());
+  return storageUploadPaths(context, s, bucket, prefix, files.map((f) => f.path).toList());
 }
 
-Future<bool> cloudUploadPaths(
+Future<bool> storageUploadPaths(
   BuildContext context,
-  CloudStorage s,
+  ObjectStorage s,
   String bucket,
   String prefix,
   List<String> paths,
@@ -87,7 +87,7 @@ Future<bool> cloudUploadPaths(
       () async {
         final f = File(path);
         final key = '$prefix${p.basename(path)}';
-        return CloudTransfers.instance.run(
+        return StorageTransfers.instance.run(
           p.basename(path),
           upload: true,
           total: await f.length(),
@@ -100,19 +100,19 @@ Future<bool> cloudUploadPaths(
   return n > 0;
 }
 
-Future<bool> cloudNewFolder(BuildContext context, CloudStorage s, String bucket, String prefix) async {
+Future<bool> storageNewFolder(BuildContext context, ObjectStorage s, String bucket, String prefix) async {
   final name = await promptText(context, 'Nuova cartella', label: 'Nome della cartella');
   if (name == null || name.trim().isEmpty || !context.mounted) return false;
   final clean = name.trim().replaceAll(RegExp(r'^/+|/+$'), '');
   return guarded(context, () => s.createFolder(bucket, '$prefix$clean/'), title: 'Creazione cartella non riuscita');
 }
 
-Future<bool> cloudRename(BuildContext context, CloudStorage s, CloudObject o) async {
+Future<bool> storageRename(BuildContext context, ObjectStorage s, StorageObject o) async {
   final name = await promptText(context, o.isFolder ? 'Rinomina cartella' : 'Rinomina file', initial: o.name);
   if (name == null || name.trim().isEmpty || name.trim() == o.name || !context.mounted) return false;
   final newKey = '${o.parent}${name.trim()}${o.isFolder ? '/' : ''}';
   if (o.isFolder) {
-    return CloudTransfers.instance.run(
+    return StorageTransfers.instance.run(
       'Rinomina ${o.name}',
       upload: true,
       body: (t) {
@@ -123,7 +123,7 @@ Future<bool> cloudRename(BuildContext context, CloudStorage s, CloudObject o) as
   return guarded(context, () => s.rename(o.bucket, o.key, newKey), title: 'Rinomina non riuscita');
 }
 
-Future<bool> cloudDelete(BuildContext context, CloudStorage s, List<CloudObject> objects) async {
+Future<bool> storageDelete(BuildContext context, ObjectStorage s, List<StorageObject> objects) async {
   if (objects.isEmpty) return false;
   final what = objects.length == 1
       ? (objects.first.isFolder
@@ -145,14 +145,14 @@ Future<bool> cloudDelete(BuildContext context, CloudStorage s, List<CloudObject>
   }, title: 'Eliminazione non riuscita');
 }
 
-Future<void> cloudCopyUri(BuildContext context, CloudStorage s, String bucket, String key) async {
+Future<void> storageCopyUri(BuildContext context, ObjectStorage s, String bucket, String key) async {
   final u = s.uri(bucket, key);
   await Clipboard.setData(ClipboardData(text: u));
   if (context.mounted) showToast(context, 'Copiato: $u');
 }
 
 /// Asks the expiry, creates a temporary link and copies it.
-Future<void> cloudShareLink(BuildContext context, CloudStorage s, CloudObject o) async {
+Future<void> storageShareLink(BuildContext context, ObjectStorage s, StorageObject o) async {
   final expiry = await showSheet<Duration>(context, size: SheetSize.small, builder: (_) => _ExpiryDialog(name: o.name));
   if (expiry == null || !context.mounted) return;
   await guarded(context, () async {
@@ -212,8 +212,8 @@ class _ExpiryDialogState extends State<_ExpiryDialog> {
 }
 
 /// Properties sheet of an object or a bucket.
-Future<void> cloudProperties(BuildContext context, CloudStorage s, CloudObject o) async {
-  CloudObject? info;
+Future<void> storageProperties(BuildContext context, ObjectStorage s, StorageObject o) async {
+  StorageObject? info;
   await guarded(context, () async {
     info = o.isFolder ? o : await s.stat(o.bucket, o.key);
   }, title: 'Proprietà non disponibili');
@@ -253,7 +253,7 @@ Future<void> cloudProperties(BuildContext context, CloudStorage s, CloudObject o
 
 /// Downloads a text object into the workspace mirror and opens it in a SQL
 /// editor bound to the active connection.
-Future<void> cloudOpenInEditor(BuildContext context, CloudAccount a, CloudStorage s, CloudObject o) async {
+Future<void> storageOpenInEditor(BuildContext context, StorageAccount a, ObjectStorage s, StorageObject o) async {
   final app = AppScope.read(context);
   if (o.size > 20 * 1024 * 1024) {
     final ok = await confirmDialog(
@@ -263,14 +263,14 @@ Future<void> cloudOpenInEditor(BuildContext context, CloudAccount a, CloudStorag
     );
     if (!ok || !context.mounted) return;
   }
-  final local = cloudLocalCopy(app, a, o.bucket, o.key);
+  final local = storageLocalCopy(app, a, o.bucket, o.key);
   for (final t in app.tabs) {
     if (t is SqlEditorTab && t.file?.path == local.path) {
       app.activate(t);
       return;
     }
   }
-  final ok = await CloudTransfers.instance.run(
+  final ok = await StorageTransfers.instance.run(
     o.name,
     upload: false,
     total: o.size,
@@ -282,14 +282,14 @@ Future<void> cloudOpenInEditor(BuildContext context, CloudAccount a, CloudStorag
 }
 
 /// Uploads the local copy (edited in the SQL editor) back to the object.
-Future<bool> cloudSaveLocalCopy(BuildContext context, CloudAccount a, CloudStorage s, CloudObject o) async {
+Future<bool> storageSaveLocalCopy(BuildContext context, StorageAccount a, ObjectStorage s, StorageObject o) async {
   final app = AppScope.read(context);
-  final local = cloudLocalCopy(app, a, o.bucket, o.key);
+  final local = storageLocalCopy(app, a, o.bucket, o.key);
   for (final t in app.tabs) {
     if (t is SqlEditorTab && t.file?.path == local.path) await t.save();
   }
   if (!await local.exists()) return false;
-  final ok = await CloudTransfers.instance.run(
+  final ok = await StorageTransfers.instance.run(
     o.name,
     upload: true,
     total: await local.length(),
@@ -301,7 +301,7 @@ Future<bool> cloudSaveLocalCopy(BuildContext context, CloudAccount a, CloudStora
 
 /// CSV → table: downloads the file to a temporary folder, asks the target
 /// table of the active connection and opens the import dialog.
-Future<void> cloudImportCsv(BuildContext context, CloudStorage s, CloudObject o) async {
+Future<void> storageImportCsv(BuildContext context, ObjectStorage s, StorageObject o) async {
   final app = AppScope.read(context);
   final dc = app.activeConnection ?? await _pickConnection(context, app);
   if (dc == null || !context.mounted) return;
@@ -312,9 +312,9 @@ Future<void> cloudImportCsv(BuildContext context, CloudStorage s, CloudObject o)
   }
   final table = await _pickTable(context, dc);
   if (table == null || !context.mounted) return;
-  final tmp = await Directory.systemTemp.createTemp('dbcraft-cloud-');
+  final tmp = await Directory.systemTemp.createTemp('dbcraft-storage-');
   final local = File(p.join(tmp.path, o.name));
-  final ok = await CloudTransfers.instance.run(
+  final ok = await StorageTransfers.instance.run(
     o.name,
     upload: false,
     total: o.size,

@@ -90,8 +90,9 @@ abstract final class AppIcons {
   static const IconData paste = IconData(0xe196, fontFamily: 'PhosphorRegular'); // clipboard
   static const IconData empty = IconData(0xe4aa, fontFamily: 'PhosphorRegular'); // tray
 
-  // Cloud
+  // Cloud and object storage
   static const IconData cloud = IconData(0xe1aa, fontFamily: 'PhosphorRegular'); // cloud
+  static const IconData storage = IconData(0xe29e, fontFamily: 'PhosphorRegular'); // hardDrive
   static const IconData cloudUpload = IconData(0xe1ae, fontFamily: 'PhosphorRegular'); // cloudArrowUp
   static const IconData cloudOff = IconData(0xe1b6, fontFamily: 'PhosphorRegular'); // cloudSlash
   static const IconData cloudSync = IconData(0xe1b0, fontFamily: 'PhosphorRegular'); // cloudCheck
@@ -193,7 +194,7 @@ abstract final class AppIcons {
   // Selected navigator tabs (Fill of the sidebar glyphs)
   static const IconData databaseFill = IconData(0xe1de, fontFamily: 'PhosphorFill'); // database
   static const IconData documentFill = IconData(0xe23a, fontFamily: 'PhosphorFill'); // fileText
-  static const IconData cloudFill = IconData(0xe1aa, fontFamily: 'PhosphorFill'); // cloud
+  static const IconData storageFill = IconData(0xe29e, fontFamily: 'PhosphorFill'); // hardDrive
   static const IconData gitFill = IconData(0xe278, fontFamily: 'PhosphorFill'); // gitBranch
 
   /// Every icon by name (control gallery).
@@ -274,6 +275,7 @@ abstract final class AppIcons {
     'paste': paste,
     'empty': empty,
     'cloud': cloud,
+    'storage': storage,
     'cloudUpload': cloudUpload,
     'cloudOff': cloudOff,
     'cloudSync': cloudSync,
@@ -365,7 +367,7 @@ abstract final class AppIcons {
     'dot': dot,
     'databaseFill': databaseFill,
     'documentFill': documentFill,
-    'cloudFill': cloudFill,
+    'storageFill': storageFill,
     'gitFill': gitFill,
   };
 }

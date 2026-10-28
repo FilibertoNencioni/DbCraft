@@ -7,19 +7,20 @@ import 'package:dbcraft/cloud/auth/aws_auth.dart';
 import 'package:dbcraft/cloud/auth/azure_auth.dart';
 import 'package:dbcraft/cloud/auth/gcp_auth.dart';
 import 'package:dbcraft/cloud/auth/token_cache.dart';
-import 'package:dbcraft/cloud/cloud_accounts.dart';
 import 'package:dbcraft/cloud/cloud_common.dart';
-import 'package:dbcraft/cloud/storage/azure_blob_storage.dart';
-import 'package:dbcraft/cloud/storage/gcs_storage.dart';
-import 'package:dbcraft/cloud/storage/s3_storage.dart';
-import 'package:dbcraft/cloud/ui/cloud_account_dialog.dart';
-import 'package:dbcraft/cloud/ui/cloud_explorer_panel.dart';
 import 'package:dbcraft/drivers/bigquery/bigquery_driver.dart';
 import 'package:dbcraft/drivers/bigquery/bigquery_values.dart';
+import 'package:dbcraft/odbc/odbc_ffi.dart';
+import 'package:dbcraft/services/vault.dart';
 import 'package:dbcraft/state/app_state.dart';
+import 'package:dbcraft/storage/backends/azure_blob_storage.dart';
+import 'package:dbcraft/storage/backends/gcs_storage.dart';
+import 'package:dbcraft/storage/backends/s3_storage.dart';
+import 'package:dbcraft/storage/storage_accounts.dart';
+import 'package:dbcraft/storage/ui/storage_account_dialog.dart';
+import 'package:dbcraft/storage/ui/storage_panel.dart';
 import 'package:dbcraft/ui/theme/app_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:dbcraft/odbc/odbc_ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:pointycastle/asn1.dart';
@@ -408,31 +409,46 @@ void main() {
     expect(calls, 1);
   });
 
-  group('Cloud accounts', () {
+  group('Storage accounts', () {
     test('JSON round trip without secrets', () {
-      final a = CloudAccount(
+      final a = StorageAccount(
         name: 'Produzione',
-        provider: CloudProvider.aws,
-        authKind: CloudAuthKind.awsProfile,
-        fields: {CloudField.profile: 'prod', CloudField.region: 'eu-west-1', CloudField.endpoint: ''},
+        provider: StorageProvider.aws,
+        authKind: StorageAuthKind.awsProfile,
+        fields: {StorageField.profile: 'prod', StorageField.region: 'eu-west-1', StorageField.endpoint: ''},
       );
       final text = jsonEncode(a.toJson());
       expect(text, isNot(contains('endpoint')));
-      final b = CloudAccount.fromJson((jsonDecode(text) as Map).cast<String, Object?>());
+      final b = StorageAccount.fromJson((jsonDecode(text) as Map).cast<String, Object?>());
       expect(b.id, a.id);
       expect(b.name, 'Produzione');
-      expect(b.provider, CloudProvider.aws);
-      expect(b.authKind, CloudAuthKind.awsProfile);
-      expect(b.field(CloudField.profile), 'prod');
+      expect(b.provider, StorageProvider.aws);
+      expect(b.authKind, StorageAuthKind.awsProfile);
+      expect(b.field(StorageField.profile), 'prod');
       expect(b.subtitle, 'eu-west-1 · profilo prod');
-      final unknown = CloudAccount.fromJson({'id': 'x', 'name': 'n', 'provider': 'gcp', 'auth': 'nope'});
-      expect(unknown.authKind.provider, CloudProvider.gcp);
+      final unknown = StorageAccount.fromJson({'id': 'x', 'name': 'n', 'provider': 'gcp', 'auth': 'nope'});
+      expect(unknown.authKind.provider, StorageProvider.gcp);
     });
 
     test('auth kinds per provider', () {
-      for (final p in CloudProvider.values) {
-        expect(CloudAuthKind.forProvider(p), isNotEmpty);
+      for (final p in StorageProvider.values) {
+        expect(StorageAuthKind.forProvider(p), isNotEmpty);
       }
+    });
+
+    test('cloud_accounts.json and cloud/ of older versions are moved', () async {
+      final dir = await Directory.systemTemp.createTemp('dbcraft_storage');
+      addTearDown(() => dir.delete(recursive: true));
+      final a = StorageAccount(name: 'Azurite', provider: StorageProvider.azure, authKind: StorageAuthKind.azureSas);
+      await File('${dir.path}/cloud_accounts.json').writeAsString(jsonEncode({'version': 1, 'accounts': [a.toJson()]}));
+      await File('${dir.path}/cloud/${a.id}/c/x.sql').create(recursive: true);
+      final store = StorageAccountsStore(dir, await Vault.open(dir));
+      await store.load();
+      expect(store.accounts.single.name, 'Azurite');
+      expect(File('${dir.path}/cloud_accounts.json').existsSync(), isFalse);
+      expect(File('${dir.path}/storage_accounts.json').existsSync(), isTrue);
+      expect(File('${dir.path}/storage/${a.id}/c/x.sql').existsSync(), isTrue);
+      expect(Directory('${dir.path}/cloud').existsSync(), isFalse);
     });
   });
 
@@ -533,16 +549,16 @@ void main() {
     });
   });
 
-  group('Cloud UI', () {
+  group('Storage UI', () {
     testWidgets('explorer empty state, account dialog and store persistence', (tester) async {
       tester.view.physicalSize = const Size(1400, 1000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      final dir = Directory.systemTemp.createTempSync('dbcraft-cloud-test-');
+      final dir = Directory.systemTemp.createTempSync('dbcraft-storage-test-');
       addTearDown(() => dir.deleteSync(recursive: true));
       final app = (await tester.runAsync(() => AppState.load(workspaceDir: dir)))!;
       final store = (await tester.runAsync(() async {
-        final s = CloudAccountsStore.of(app);
+        final s = StorageAccountsStore.of(app);
         while (!s.isLoaded) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
         }
@@ -553,7 +569,7 @@ void main() {
           state: app,
           child: MaterialApp(
             theme: buildTheme(Brightness.light),
-            home: const Scaffold(body: SizedBox(width: 300, child: CloudExplorerPanel())),
+            home: const Scaffold(body: SizedBox(width: 300, child: StoragePanel())),
           ),
         ),
       );
@@ -577,21 +593,21 @@ void main() {
 
       await tester.runAsync(
         () => store.add(
-          CloudAccount(
+          StorageAccount(
             name: 'Archivio',
-            provider: CloudProvider.aws,
-            authKind: CloudAuthKind.awsKeys,
-            fields: {CloudField.accessKeyId: 'AKIDEXAMPLE', CloudField.region: 'eu-west-1'},
+            provider: StorageProvider.aws,
+            authKind: StorageAuthKind.awsKeys,
+            fields: {StorageField.accessKeyId: 'AKIDEXAMPLE', StorageField.region: 'eu-west-1'},
           ),
-          {CloudSecret.secretAccessKey: 'secret'},
+          {StorageSecret.secretAccessKey: 'secret'},
         ),
       );
       await tester.pump();
       expect(find.text('Archivio'), findsOneWidget);
-      final saved = File('${dir.path}/cloud_accounts.json').readAsStringSync();
+      final saved = File('${dir.path}/storage_accounts.json').readAsStringSync();
       expect(saved, contains('AKIDEXAMPLE'));
       expect(saved, isNot(contains('"secret"')));
-      expect(store.secrets(store.accounts.single)[CloudSecret.secretAccessKey], 'secret');
+      expect(store.secrets(store.accounts.single)[StorageSecret.secretAccessKey], 'secret');
       await tester.runAsync(() => store.remove(store.accounts.single));
       await tester.pump();
       expect(find.text('Nessun account storage'), findsOneWidget);
@@ -604,6 +620,6 @@ void main() {
     expect(bigQueryDriver.usesUser, isFalse);
     expect(bigQueryDriver.usesPassword, isFalse);
     expect(bigQueryDriver.databaseLabel, 'Progetto');
-    expect(cloudProviderColor(CloudProvider.gcp), isNotNull);
+    expect(storageProviderColor(StorageProvider.gcp), isNotNull);
   });
 }

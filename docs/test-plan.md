@@ -36,7 +36,7 @@ flutter test integration_test/matrix/<suite>_test.dart -d macos \
   --dart-define=TARGET=<sqlite|pg|mysql|mariadb|mssql|mongo|redis|cassandra|s3|azure|app|cross> \
   --dart-define=REPO=$PWD --dart-define=SHOT_DIR=$PWD/build/matrix/<suite>
 ```
-Suite: `driver_install`, `core`, `conn`, `objects`, `design`, `security`, `pro`, `nosql`, `cloud`, `appwide`, `cross`.
+Suite: `driver_install`, `core`, `conn`, `objects`, `design`, `security`, `pro`, `nosql`, `storage`, `appwide`, `cross`.
 Screenshot e risultati in `build/matrix/<suite>/<target>/` (`results.jsonl` + PNG); matrice degli esiti con `python3 -I tool/test_matrix/summary.py build/matrix`.
 
 ---

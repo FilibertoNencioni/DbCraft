@@ -70,7 +70,8 @@ lib/
 │   └── odbc_types.dart      ResultPage, ColumnInfo, OdbcException…
 ├── drivers/                 DbSession (interfaccia comune), driver integrati MongoDB,
 │                            Redis, Cassandra, BigQuery, factory delle sessioni
-├── cloud/                   Credenziali AWS/Azure/GCP, storage S3/Blob/GCS, pannello Storage
+├── cloud/                   Credenziali AWS/Azure/GCP (storage e autenticazione dei database)
+├── storage/                 Pannello Storage: account, backend S3/Blob/GCS, interfaccia
 ├── features/                ai, git, query_builder, charts, schema (DDL/ERD/confronto),
 │                            design (design e amministrazione: capability per DBMS,
 │                            generatori DDL, lettura dei cataloghi, designer, sicurezza),

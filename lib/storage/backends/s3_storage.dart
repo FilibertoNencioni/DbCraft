@@ -11,9 +11,9 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
-import '../auth/aws_auth.dart';
-import '../cloud_common.dart';
-import 'cloud_storage.dart';
+import '../../cloud/auth/aws_auth.dart';
+import '../../cloud/cloud_common.dart';
+import 'object_storage.dart';
 
 // ---------------------------------------------------------------------------
 // XML parsing (pure, unit tested)
@@ -27,28 +27,28 @@ String? _unquote(String? etag) =>
     etag == null ? null : (etag.startsWith('"') && etag.endsWith('"') ? etag.substring(1, etag.length - 1) : etag);
 
 /// ListAllMyBucketsResult → buckets and continuation token.
-(List<CloudBucket>, String?) parseS3Buckets(String xml) {
+(List<StorageBucket>, String?) parseS3Buckets(String xml) {
   final doc = XmlDocument.parse(xml);
   final buckets = [
     for (final b in doc.findAllElements('Bucket'))
-      CloudBucket(_text(b, 'Name') ?? '', region: _text(b, 'BucketRegion'), created: _date(_text(b, 'CreationDate'))),
+      StorageBucket(_text(b, 'Name') ?? '', region: _text(b, 'BucketRegion'), created: _date(_text(b, 'CreationDate'))),
   ];
   final token = doc.findAllElements('ContinuationToken').firstOrNull?.innerText;
   return (buckets, token == null || token.isEmpty ? null : token);
 }
 
 /// ListBucketResult (ListObjectsV2) → folders, files and next token.
-CloudListPage parseS3ListObjects(String xml, String bucket) {
+StorageListPage parseS3ListObjects(String xml, String bucket) {
   final doc = XmlDocument.parse(xml);
   final root = doc.rootElement;
   final prefix = _text(root, 'Prefix') ?? '';
-  final files = <CloudObject>[];
+  final files = <StorageObject>[];
   for (final c in root.findElements('Contents')) {
     final key = _text(c, 'Key') ?? '';
     // The folder marker itself is not shown inside the folder.
     if (key == prefix && key.endsWith('/')) continue;
     files.add(
-      CloudObject(
+      StorageObject(
         bucket: bucket,
         key: key,
         isFolder: key.endsWith('/'),
@@ -61,11 +61,11 @@ CloudListPage parseS3ListObjects(String xml, String bucket) {
   }
   final folders = [
     for (final p in root.findElements('CommonPrefixes'))
-      CloudObject(bucket: bucket, key: _text(p, 'Prefix') ?? '', isFolder: true),
+      StorageObject(bucket: bucket, key: _text(p, 'Prefix') ?? '', isFolder: true),
   ];
   final truncated = _text(root, 'IsTruncated') == 'true';
   final next = _text(root, 'NextContinuationToken');
-  return CloudListPage(
+  return StorageListPage(
     folders: folders,
     files: files.where((f) => !f.isFolder).toList(),
     continuation: truncated && next != null && next.isNotEmpty ? next : null,
@@ -74,7 +74,7 @@ CloudListPage parseS3ListObjects(String xml, String bucket) {
 
 // ---------------------------------------------------------------------------
 
-class S3Storage extends CloudStorage {
+class S3Storage extends ObjectStorage {
   S3Storage({required this.auth, String? region, String? endpoint, this.pathStyle = false})
     : _region = region == null || region.trim().isEmpty ? null : region.trim(),
       endpoint = endpoint == null || endpoint.trim().isEmpty ? null : _normalizeEndpoint(endpoint.trim());
@@ -101,7 +101,7 @@ class S3Storage extends CloudStorage {
   }
 
   @override
-  CloudProvider get provider => CloudProvider.aws;
+  StorageProvider get provider => StorageProvider.aws;
 
   Future<String> _defaultRegion() async => _region ??= await auth.profileRegion() ?? 'us-east-1';
 
@@ -198,9 +198,9 @@ class S3Storage extends CloudStorage {
   }
 
   @override
-  Future<List<CloudBucket>> listBuckets() async {
+  Future<List<StorageBucket>> listBuckets() async {
     final region = await _defaultRegion();
-    final out = <CloudBucket>[];
+    final out = <StorageBucket>[];
     String? token;
     do {
       final r = await _request(
@@ -219,18 +219,18 @@ class S3Storage extends CloudStorage {
       if (b.region != null) _bucketRegions[b.name] = b.region!;
     }
     if (endpoint != null) {
-      return [for (final b in out) CloudBucket(b.name, region: b.region ?? region, created: b.created)];
+      return [for (final b in out) StorageBucket(b.name, region: b.region ?? region, created: b.created)];
     }
     // Older responses carry no region: discover it (in parallel, best effort).
     final missing = out.where((b) => b.region == null).toList();
     if (missing.isNotEmpty) {
       await Future.wait(missing.map((b) => regionOf(b.name).then((_) {}, onError: (_) {})));
     }
-    return [for (final b in out) CloudBucket(b.name, region: _bucketRegions[b.name], created: b.created)];
+    return [for (final b in out) StorageBucket(b.name, region: _bucketRegions[b.name], created: b.created)];
   }
 
   @override
-  Future<CloudListPage> list(
+  Future<StorageListPage> list(
     String bucket, {
     String prefix = '',
     String? delimiter = '/',
@@ -254,10 +254,10 @@ class S3Storage extends CloudStorage {
   }
 
   @override
-  Future<CloudObject> stat(String bucket, String key) async {
+  Future<StorageObject> stat(String bucket, String key) async {
     final r = await _request('HEAD', bucket, key, operation: 'HeadObject');
     final h = r.headers;
-    return CloudObject(
+    return StorageObject(
       bucket: bucket,
       key: key,
       isFolder: key.endsWith('/'),

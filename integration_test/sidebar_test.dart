@@ -77,7 +77,7 @@ void main() {
         {'id': 'demo', 'name': 'Demo SQLite', 'mode': 'dsn', 'dsn': 'demo', 'type': 'development'},
       ]),
     );
-    File('${ws.path}/cloud_accounts.json').writeAsStringSync(
+    File('${ws.path}/storage_accounts.json').writeAsStringSync(
       jsonEncode({
         'accounts': [
           {

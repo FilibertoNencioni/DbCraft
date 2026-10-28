@@ -1,18 +1,18 @@
-// Cloud Explorer (DBeaver Ultimate "Cloud Explorer"): accounts → buckets /
+// Storage panel (DBeaver Ultimate "Cloud Explorer"): accounts → buckets /
 // containers (with region) → folders → files, browsed like a file system,
 // with transfers, share links and SQL editor / CSV import integration.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../cloud/cloud_common.dart';
 import '../../state/app_state.dart';
 import '../../ui/widgets/common.dart';
-import '../cloud_accounts.dart';
-import '../cloud_common.dart';
-import '../storage/cloud_storage.dart';
-import 'cloud_account_dialog.dart';
-import 'cloud_actions.dart';
-import 'cloud_browser_tab.dart';
-import 'cloud_transfers.dart';
+import '../backends/object_storage.dart';
+import '../storage_accounts.dart';
+import 'storage_account_dialog.dart';
+import 'storage_actions.dart';
+import 'storage_browser_tab.dart';
+import 'storage_transfers.dart';
 
 enum _Kind { account, bucket, folder, file, more }
 
@@ -20,12 +20,12 @@ class _Node {
   _Node(this.kind, this.account, {this.bucket, this.prefix = '', this.object, this.region, this.parent, this.token});
 
   final _Kind kind;
-  final CloudAccount account;
+  final StorageAccount account;
   final String? bucket;
 
   /// Folder prefix (with trailing `/`) for buckets and folders.
   final String prefix;
-  final CloudObject? object;
+  final StorageObject? object;
   final String? region;
   final _Node? parent;
 
@@ -47,15 +47,15 @@ class _Node {
   };
 
   /// The object this node stands for (buckets as the root folder).
-  CloudObject get asObject => object ?? CloudObject(bucket: bucket!, key: prefix, isFolder: true);
+  StorageObject get asObject => object ?? StorageObject(bucket: bucket!, key: prefix, isFolder: true);
 }
 
 /// Left sidebar panel. Hook it as a third sidebar tab ("Storage").
-class CloudExplorerPanel extends StatefulWidget {
-  const CloudExplorerPanel({super.key});
+class StoragePanel extends StatefulWidget {
+  const StoragePanel({super.key});
 
   @override
-  State<CloudExplorerPanel> createState() => _CloudExplorerPanelState();
+  State<StoragePanel> createState() => _StoragePanelState();
 }
 
 class _VisibleNode {
@@ -64,18 +64,18 @@ class _VisibleNode {
   final int depth;
 }
 
-class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
+class _StoragePanelState extends State<StoragePanel> {
   final _filter = TextEditingController();
   final _focus = FocusNode();
   final _scroll = ScrollController();
   final Map<String, _Node> _roots = {};
   _Node? _selected;
-  CloudAccountsStore? _store;
+  StorageAccountsStore? _store;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final s = CloudAccountsStore.of(AppScope.read(context));
+    final s = StorageAccountsStore.of(AppScope.read(context));
     if (s != _store) {
       _store?.removeListener(_onStore);
       _store = s..addListener(_onStore);
@@ -109,7 +109,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
     return out;
   }
 
-  Future<CloudStorage> _storage(_Node n) => _store!.storage(n.account);
+  Future<ObjectStorage> _storage(_Node n) => _store!.storage(n.account);
 
   Future<List<_Node>> _load(_Node n, {String? token}) async {
     final s = await _storage(n);
@@ -211,7 +211,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
   // -------------------------------------------------------------------------
 
   Future<void> _newAccount() async {
-    final a = await showCloudAccountDialog(context);
+    final a = await showStorageAccountDialog(context);
     if (a != null && mounted) {
       final n = _rootNodes().firstWhere((e) => e.account.id == a.id);
       setState(() => _selected = n);
@@ -220,7 +220,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
   }
 
   Future<void> _editAccount(_Node n) async {
-    final a = await showCloudAccountDialog(context, existing: n.account);
+    final a = await showStorageAccountDialog(context, existing: n.account);
     if (a != null && mounted) setState(() => _selected = null);
   }
 
@@ -239,8 +239,8 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
 
   void _openBrowser(_Node n) {
     final app = AppScope.read(context);
-    final tab = CloudBrowserTab(store: _store!, account: n.account, bucket: n.bucket!, prefix: n.prefix);
-    app.openFeatureTab<CloudBrowserTab>(
+    final tab = StorageBrowserTab(store: _store!, account: n.account, bucket: n.bucket!, prefix: n.prefix);
+    app.openFeatureTab<StorageBrowserTab>(
       tab,
       match: (t) => t.account.id == n.account.id && t.bucket == n.bucket && t.prefix == n.prefix,
     );
@@ -255,18 +255,18 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
         final o = n.object!;
         final s = await _storage(n);
         if (!mounted) return;
-        if (cloudTextExtensions.contains(o.extension)) {
-          await cloudOpenInEditor(context, n.account, s, o);
+        if (storageTextExtensions.contains(o.extension)) {
+          await storageOpenInEditor(context, n.account, s, o);
         } else {
-          await cloudProperties(context, s, o);
+          await storageProperties(context, s, o);
         }
       default:
         _toggle(n);
     }
   }
 
-  Future<void> _withStorage(_Node n, Future<bool?> Function(CloudStorage s) action, {_Node? refresh}) async {
-    CloudStorage? s;
+  Future<void> _withStorage(_Node n, Future<bool?> Function(ObjectStorage s) action, {_Node? refresh}) async {
+    ObjectStorage? s;
     final ok = await guarded(context, () async => s = await _storage(n));
     if (!ok || !mounted) return;
     final changed = await action(s!);
@@ -324,7 +324,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
               ? const SizedBox.shrink()
               : roots.isEmpty
               ? EmptyState(
-                  icon: AppIcons.cloud,
+                  icon: AppIcons.storage,
                   title: 'Nessun account storage',
                   message:
                       'Aggiungi un account Amazon S3 (o compatibile, come MinIO), Azure Blob Storage (anche '
@@ -354,17 +354,17 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
                   ),
                 ),
         ),
-        const CloudTransfersView(),
+        const StorageTransfersView(),
       ],
     );
   }
 
   IconData _icon(_Node n) => switch (n.kind) {
-    _Kind.account => cloudProviderIcon(n.account.provider),
+    _Kind.account => storageProviderIcon(n.account.provider),
     _Kind.bucket => AppIcons.archive,
     _Kind.folder => n.expanded ? AppIcons.folderOpen : AppIcons.folder,
     _Kind.more => AppIcons.more,
-    _Kind.file => cloudFileIcon(n.object!.extension),
+    _Kind.file => storageFileIcon(n.object!.extension),
   };
 
   Widget _row(BuildContext context, _VisibleNode v) {
@@ -380,7 +380,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
       title: n.label,
       icon: _icon(n),
       iconColor: switch (n.kind) {
-        _Kind.account => cloudProviderColor(n.account.provider),
+        _Kind.account => storageProviderColor(n.account.provider),
         _Kind.bucket || _Kind.folder => c.textSecondary,
         _ => c.textTertiary,
       },
@@ -449,12 +449,12 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
         items.addAll([
           _item('Apri nel browser', () => _openBrowser(n)),
           _divider,
-          _item('Nuova cartella…', () => _withStorage(n, (s) => cloudNewFolder(context, s, n.bucket!, n.prefix))),
-          _item('Carica file…', () => _withStorage(n, (s) => cloudUploadFiles(context, s, n.bucket!, n.prefix))),
+          _item('Nuova cartella…', () => _withStorage(n, (s) => storageNewFolder(context, s, n.bucket!, n.prefix))),
+          _item('Carica file…', () => _withStorage(n, (s) => storageUploadFiles(context, s, n.bucket!, n.prefix))),
           _item(
             'Scarica…',
             () => _withStorage(n, (s) async {
-              await cloudDownloadFolder(context, s, n.bucket!, n.prefix);
+              await storageDownloadFolder(context, s, n.bucket!, n.prefix);
               return false;
             }),
           ),
@@ -462,13 +462,13 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
           _item(
             'Copia URI',
             () => _withStorage(n, (s) async {
-              await cloudCopyUri(context, s, n.bucket!, n.prefix);
+              await storageCopyUri(context, s, n.bucket!, n.prefix);
               return false;
             }),
           ),
           if (n.kind == _Kind.folder) ...[
-            _item('Rinomina…', () => _withStorage(n, (s) => cloudRename(context, s, o), refresh: n.parent)),
-            _item('Elimina…', () => _withStorage(n, (s) => cloudDelete(context, s, [o]), refresh: n.parent)),
+            _item('Rinomina…', () => _withStorage(n, (s) => storageRename(context, s, o), refresh: n.parent)),
+            _item('Elimina…', () => _withStorage(n, (s) => storageDelete(context, s, [o]), refresh: n.parent)),
           ],
           if (n.kind == _Kind.bucket) _item('Proprietà', () => _bucketProperties(n)),
           _item('Aggiorna', () => _refresh(n), shortcut: _f5),
@@ -476,60 +476,60 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
       case _Kind.file:
         final o = n.object!;
         final ext = o.extension;
-        final local = cloudLocalCopy(app, n.account, o.bucket, o.key);
+        final local = storageLocalCopy(app, n.account, o.bucket, o.key);
         final hasLocal = local.existsSync();
         items.addAll([
-          if (cloudTextExtensions.contains(ext))
+          if (storageTextExtensions.contains(ext))
             _item(
               'Apri nell\'editor SQL',
               () => _withStorage(n, (s) async {
-                await cloudOpenInEditor(context, n.account, s, o);
+                await storageOpenInEditor(context, n.account, s, o);
                 return false;
               }),
             ),
           if (hasLocal)
             _item(
               'Salva nello storage la copia locale',
-              () => _withStorage(n, (s) => cloudSaveLocalCopy(context, n.account, s, o), refresh: n.parent),
+              () => _withStorage(n, (s) => storageSaveLocalCopy(context, n.account, s, o), refresh: n.parent),
             ),
-          if (cloudCsvExtensions.contains(ext))
+          if (storageCsvExtensions.contains(ext))
             _item(
               'Importa in tabella…',
               () => _withStorage(n, (s) async {
-                await cloudImportCsv(context, s, o);
+                await storageImportCsv(context, s, o);
                 return false;
               }),
             ),
-          if (cloudTextExtensions.contains(ext) || cloudCsvExtensions.contains(ext) || hasLocal) _divider,
+          if (storageTextExtensions.contains(ext) || storageCsvExtensions.contains(ext) || hasLocal) _divider,
           _item(
             'Scarica…',
             () => _withStorage(n, (s) async {
-              await cloudDownload(context, s, o);
+              await storageDownload(context, s, o);
               return false;
             }),
           ),
           _item(
             'Copia link di condivisione…',
             () => _withStorage(n, (s) async {
-              await cloudShareLink(context, s, o);
+              await storageShareLink(context, s, o);
               return false;
             }),
           ),
           _item(
             'Copia URI',
             () => _withStorage(n, (s) async {
-              await cloudCopyUri(context, s, o.bucket, o.key);
+              await storageCopyUri(context, s, o.bucket, o.key);
               return false;
             }),
           ),
           _divider,
-          _item('Rinomina…', () => _withStorage(n, (s) => cloudRename(context, s, o), refresh: n.parent)),
-          _item('Elimina…', () => _withStorage(n, (s) => cloudDelete(context, s, [o]), refresh: n.parent)),
+          _item('Rinomina…', () => _withStorage(n, (s) => storageRename(context, s, o), refresh: n.parent)),
+          _item('Elimina…', () => _withStorage(n, (s) => storageDelete(context, s, [o]), refresh: n.parent)),
           _divider,
           _item(
             'Proprietà',
             () => _withStorage(n, (s) async {
-              await cloudProperties(context, s, o);
+              await storageProperties(context, s, o);
               return false;
             }),
           ),
@@ -563,7 +563,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
   }
 }
 
-IconData cloudFileIcon(String ext) => switch (ext) {
+IconData storageFileIcon(String ext) => switch (ext) {
   'sql' || 'ddl' || 'pgsql' || 'psql' => AppIcons.document,
   'csv' || 'tsv' || 'xlsx' || 'parquet' || 'avro' => AppIcons.table,
   'json' || 'jsonl' || 'ndjson' || 'xml' || 'yaml' || 'yml' => AppIcons.json,

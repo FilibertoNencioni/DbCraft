@@ -6,15 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
-import '../odbc/odbc_types.dart';
-import '../cloud/ui/cloud_account_dialog.dart';
-import '../cloud/ui/cloud_explorer_panel.dart';
 import '../features/ai/ai.dart';
 import '../features/data_compare/data_compare_tab.dart';
 import '../features/design/capabilities.dart';
 import '../features/design/ui/object_actions.dart' as objects;
 import '../features/design/ui/security_tab.dart';
-import 'navigator/nav_nodes.dart' show hasSecurity;
 import '../features/design/ui/table_designer.dart';
 import '../features/design/ui/view_editor.dart';
 import '../features/git/git.dart';
@@ -22,15 +18,19 @@ import '../features/performance/perf_dashboard.dart';
 import '../features/query_builder/query_builder_tab.dart';
 import '../features/schema/schema_compare_view.dart';
 import '../model/connection_config.dart';
+import '../odbc/odbc_types.dart';
 import '../state/app_state.dart';
 import '../state/db_connection.dart';
 import '../state/editor_tabs.dart';
+import '../storage/ui/storage_account_dialog.dart';
+import '../storage/ui/storage_panel.dart';
 import 'actions.dart';
 import 'dev/control_gallery.dart';
 import 'dialogs/app_dialogs.dart';
 import 'editors/misc_views.dart';
 import 'editors/sql_editor_view.dart';
 import 'editors/table_editor_view.dart';
+import 'navigator/nav_nodes.dart' show hasSecurity;
 import 'navigator/navigator_panel.dart';
 import 'platform/window_bridge.dart';
 import 'widgets/common.dart';
@@ -227,7 +227,7 @@ class _HomePageState extends State<HomePage> {
             _showSidebar = true;
             _leftTab = 2;
           });
-          showCloudAccountDialog(context);
+          showStorageAccountDialog(context);
         }, null),
         const _MenuDivider(),
         _MenuAction(
@@ -473,7 +473,7 @@ class _HomePageState extends State<HomePage> {
           items: const [
             SidebarTab(0, 'Database', AppIcons.database, selectedIcon: AppIcons.databaseFill),
             SidebarTab(1, 'Script', AppIcons.document, selectedIcon: AppIcons.documentFill),
-            SidebarTab(2, 'Storage', AppIcons.cloud, selectedIcon: AppIcons.cloudFill),
+            SidebarTab(2, 'Storage', AppIcons.storage, selectedIcon: AppIcons.storageFill),
             SidebarTab(3, 'Git', AppIcons.git, selectedIcon: AppIcons.gitFill),
           ],
           onChanged: (v) => setState(() => _leftTab = v),
@@ -482,7 +482,7 @@ class _HomePageState extends State<HomePage> {
           child: IndexedStack(index: _leftTab, children: [
             const NavigatorPanel(),
             _ScriptsPanel(revision: '${app.tabs.length}:${app.scriptsRevision}'),
-            const CloudExplorerPanel(),
+            const StoragePanel(),
             GitPanel(onWorkspaceChanged: app.reloadWorkspace),
           ]),
         ),

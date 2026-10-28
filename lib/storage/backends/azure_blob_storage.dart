@@ -9,9 +9,9 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
-import '../auth/azure_auth.dart';
-import '../cloud_common.dart';
-import 'cloud_storage.dart';
+import '../../cloud/auth/azure_auth.dart';
+import '../../cloud/cloud_common.dart';
+import 'object_storage.dart';
 
 const azureStorageScope = 'https://storage.azure.com/.default';
 const _msVersion = '2023-11-03';
@@ -28,11 +28,11 @@ DateTime? _httpDate(String? s) {
 }
 
 /// EnumerationResults of List Containers → containers and next marker.
-(List<CloudBucket>, String?) parseAzureContainers(String xml) {
+(List<StorageBucket>, String?) parseAzureContainers(String xml) {
   final root = XmlDocument.parse(xml).rootElement;
   final list = [
     for (final c in root.findAllElements('Container'))
-      CloudBucket(
+      StorageBucket(
         _text(c, 'Name') ?? '',
         created: _httpDate(c.getElement('Properties')?.getElement('Last-Modified')?.innerText),
       ),
@@ -42,23 +42,23 @@ DateTime? _httpDate(String? s) {
 }
 
 /// EnumerationResults of List Blobs → folders (BlobPrefix), files and marker.
-CloudListPage parseAzureBlobs(String xml, String container) {
+StorageListPage parseAzureBlobs(String xml, String container) {
   final root = XmlDocument.parse(xml).rootElement;
   final prefix = _text(root, 'Prefix') ?? '';
   final blobs = root.getElement('Blobs');
-  final files = <CloudObject>[];
-  final folders = <CloudObject>[];
+  final files = <StorageObject>[];
+  final folders = <StorageObject>[];
   if (blobs != null) {
     for (final b in blobs.findElements('Blob')) {
       final name = _text(b, 'Name') ?? '';
       if (name.endsWith('/')) {
-        if (name != prefix) folders.add(CloudObject(bucket: container, key: name, isFolder: true));
+        if (name != prefix) folders.add(StorageObject(bucket: container, key: name, isFolder: true));
         continue;
       }
       final p = b.getElement('Properties');
       String? prop(String n) => p == null ? null : _text(p, n);
       files.add(
-        CloudObject(
+        StorageObject(
           bucket: container,
           key: name,
           size: int.tryParse(prop('Content-Length') ?? '') ?? -1,
@@ -71,14 +71,14 @@ CloudListPage parseAzureBlobs(String xml, String container) {
     }
     for (final p in blobs.findElements('BlobPrefix')) {
       final name = _text(p, 'Name') ?? '';
-      if (!folders.any((f) => f.key == name)) folders.add(CloudObject(bucket: container, key: name, isFolder: true));
+      if (!folders.any((f) => f.key == name)) folders.add(StorageObject(bucket: container, key: name, isFolder: true));
     }
   }
   final next = _text(root, 'NextMarker');
-  return CloudListPage(folders: folders, files: files, continuation: next == null || next.isEmpty ? null : next);
+  return StorageListPage(folders: folders, files: files, continuation: next == null || next.isEmpty ? null : next);
 }
 
-class AzureBlobStorage extends CloudStorage {
+class AzureBlobStorage extends ObjectStorage {
   AzureBlobStorage({required String endpoint, required this.accountName, this.sharedKey, String? sas, this.credential})
     : endpoint = endpoint.endsWith('/') ? endpoint.substring(0, endpoint.length - 1) : endpoint,
       sas = sas == null || sas.trim().isEmpty
@@ -123,7 +123,7 @@ class AzureBlobStorage extends CloudStorage {
   static const _blockSize = 8 * 1024 * 1024;
 
   @override
-  CloudProvider get provider => CloudProvider.azure;
+  StorageProvider get provider => StorageProvider.azure;
 
   @override
   bool get canShare => sharedKey != null || credential != null || sas != null;
@@ -174,8 +174,8 @@ class AzureBlobStorage extends CloudStorage {
   }
 
   @override
-  Future<List<CloudBucket>> listBuckets() async {
-    final out = <CloudBucket>[];
+  Future<List<StorageBucket>> listBuckets() async {
+    final out = <StorageBucket>[];
     String? marker;
     do {
       final r = await _request(
@@ -193,7 +193,7 @@ class AzureBlobStorage extends CloudStorage {
   }
 
   @override
-  Future<CloudListPage> list(
+  Future<StorageListPage> list(
     String bucket, {
     String prefix = '',
     String? delimiter = '/',
@@ -218,10 +218,10 @@ class AzureBlobStorage extends CloudStorage {
   }
 
   @override
-  Future<CloudObject> stat(String bucket, String key) async {
+  Future<StorageObject> stat(String bucket, String key) async {
     final r = await _request('HEAD', bucket, key, operation: 'Proprietà blob');
     final h = r.headers;
-    return CloudObject(
+    return StorageObject(
       bucket: bucket,
       key: key,
       isFolder: key.endsWith('/'),

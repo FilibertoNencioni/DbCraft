@@ -41,7 +41,7 @@ const _allowed = <String, Map<String, String>>{
   'lib/drivers/bigquery/bigquery_driver.dart': {'literal color': 'brand color'},
   'lib/drivers/mongodb/mongo_driver.dart': {'literal color': 'brand color'},
   'lib/drivers/cassandra/cassandra_driver.dart': {'literal color': 'brand color'},
-  'lib/cloud/ui/cloud_account_dialog.dart': {'literal color': 'brand colors of the cloud providers'},
+  'lib/storage/ui/storage_account_dialog.dart': {'literal color': 'brand colors of the storage providers'},
 };
 
 /// Line comments are documentation, not UI ("Checkbox state of a table").

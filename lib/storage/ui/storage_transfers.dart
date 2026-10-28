@@ -1,15 +1,15 @@
-// Upload / download queue of the Cloud Explorer with progress and cancel.
+// Upload / download queue of the Storage panel with progress and cancel.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../cloud/cloud_common.dart';
 import '../../ui/widgets/common.dart';
-import '../cloud_common.dart';
 
 enum TransferState { running, done, failed, cancelled }
 
-class CloudTransfer extends ChangeNotifier {
-  CloudTransfer(this.label, {required this.upload, this.total = -1});
+class StorageTransfer extends ChangeNotifier {
+  StorageTransfer(this.label, {required this.upload, this.total = -1});
   final String label;
   final bool upload;
   final cancel = CancelToken();
@@ -40,11 +40,11 @@ class CloudTransfer extends ChangeNotifier {
 }
 
 /// Transfers of the session (shared by the panel and the browser tabs).
-class CloudTransfers extends ChangeNotifier {
-  CloudTransfers._();
-  static final instance = CloudTransfers._();
+class StorageTransfers extends ChangeNotifier {
+  StorageTransfers._();
+  static final instance = StorageTransfers._();
 
-  final List<CloudTransfer> items = [];
+  final List<StorageTransfer> items = [];
 
   bool get hasRunning => items.any((t) => t.state == TransferState.running);
 
@@ -53,9 +53,9 @@ class CloudTransfers extends ChangeNotifier {
     String label, {
     required bool upload,
     int total = -1,
-    required Future<void> Function(CloudTransfer t) body,
+    required Future<void> Function(StorageTransfer t) body,
   }) async {
-    final t = CloudTransfer(label, upload: upload, total: total)..addListener(notifyListeners);
+    final t = StorageTransfer(label, upload: upload, total: total)..addListener(notifyListeners);
     items.insert(0, t);
     notifyListeners();
     try {
@@ -83,14 +83,14 @@ class CloudTransfers extends ChangeNotifier {
   }
 }
 
-/// Compact transfer list shown at the bottom of the Cloud panel.
-class CloudTransfersView extends StatelessWidget {
-  const CloudTransfersView({super.key, this.maxVisible = 4});
+/// Compact transfer list shown at the bottom of the Storage panel.
+class StorageTransfersView extends StatelessWidget {
+  const StorageTransfersView({super.key, this.maxVisible = 4});
   final int maxVisible;
 
   @override
   Widget build(BuildContext context) {
-    final mgr = CloudTransfers.instance;
+    final mgr = StorageTransfers.instance;
     return ListenableBuilder(
       listenable: mgr,
       builder: (context, _) {
@@ -133,7 +133,7 @@ class CloudTransfersView extends StatelessWidget {
 
 class _TransferRow extends StatelessWidget {
   const _TransferRow(this.t);
-  final CloudTransfer t;
+  final StorageTransfer t;
 
   @override
   Widget build(BuildContext context) {

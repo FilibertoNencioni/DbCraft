@@ -1,26 +1,26 @@
 // Full-size browser of one bucket / container (editor tab): breadcrumbs,
 // table with name / size / modified / class, multi-selection and the same
-// actions as the Cloud Explorer.
+// actions as the Storage panel.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../state/editor_tabs.dart';
+import '../../cloud/cloud_common.dart';
 import '../../state/db_connection.dart';
+import '../../state/editor_tabs.dart';
 import '../../ui/widgets/common.dart';
-import '../cloud_accounts.dart';
-import '../cloud_common.dart';
-import '../storage/cloud_storage.dart';
-import 'cloud_actions.dart';
-import 'cloud_explorer_panel.dart' show cloudFileIcon;
-import 'cloud_transfers.dart';
+import '../backends/object_storage.dart';
+import '../storage_accounts.dart';
+import 'storage_actions.dart';
+import 'storage_panel.dart' show storageFileIcon;
+import 'storage_transfers.dart';
 
-class CloudBrowserTab extends FeatureTab {
-  CloudBrowserTab({required this.store, required this.account, required this.bucket, String prefix = ''})
+class StorageBrowserTab extends FeatureTab {
+  StorageBrowserTab({required this.store, required this.account, required this.bucket, String prefix = ''})
     : prefix = prefix,
       _startPrefix = prefix;
 
-  final CloudAccountsStore store;
-  final CloudAccount account;
+  final StorageAccountsStore store;
+  final StorageAccount account;
   final String bucket;
   final String _startPrefix;
 
@@ -28,37 +28,37 @@ class CloudBrowserTab extends FeatureTab {
   String prefix;
 
   // Listing kept here so it survives tab switches.
-  List<CloudObject> items = [];
+  List<StorageObject> items = [];
   String? continuation;
   bool loaded = false;
   final Set<String> selection = {};
 
   @override
-  String get title => _startPrefix.isEmpty ? bucket : '$bucket/${CloudObject(bucket: bucket, key: _startPrefix).name}';
+  String get title => _startPrefix.isEmpty ? bucket : '$bucket/${StorageObject(bucket: bucket, key: _startPrefix).name}';
 
   @override
   String get tooltip => '${account.name} · ${account.provider.storageLabel} · $bucket/$prefix';
 
   @override
-  IconData get icon => AppIcons.cloud;
+  IconData get icon => AppIcons.storage;
 
   @override
   DbConnection? get connection => null;
 
   @override
-  Widget buildView(BuildContext context) => _CloudBrowserView(key: ValueKey(id), tab: this);
+  Widget buildView(BuildContext context) => _StorageBrowserView(key: ValueKey(id), tab: this);
 }
 
-class _CloudBrowserView extends StatefulWidget {
-  const _CloudBrowserView({super.key, required this.tab});
-  final CloudBrowserTab tab;
+class _StorageBrowserView extends StatefulWidget {
+  const _StorageBrowserView({super.key, required this.tab});
+  final StorageBrowserTab tab;
 
   @override
-  State<_CloudBrowserView> createState() => _CloudBrowserViewState();
+  State<_StorageBrowserView> createState() => _StorageBrowserViewState();
 }
 
-class _CloudBrowserViewState extends State<_CloudBrowserView> {
-  CloudBrowserTab get t => widget.tab;
+class _StorageBrowserViewState extends State<_StorageBrowserView> {
+  StorageBrowserTab get t => widget.tab;
   final _filter = TextEditingController();
   bool _loading = false;
   String? _error;
@@ -77,7 +77,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     super.dispose();
   }
 
-  Future<CloudStorage> get _storage => t.store.storage(t.account);
+  Future<ObjectStorage> get _storage => t.store.storage(t.account);
 
   Future<void> _reload({bool more = false}) async {
     setState(() {
@@ -106,10 +106,10 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     _reload();
   }
 
-  List<CloudObject> get _visible {
+  List<StorageObject> get _visible {
     final f = _filter.text.trim().toLowerCase();
     final list = t.items.where((o) => f.isEmpty || o.name.toLowerCase().contains(f)).toList();
-    int cmp(CloudObject a, CloudObject b) {
+    int cmp(StorageObject a, StorageObject b) {
       if (a.isFolder != b.isFolder) return a.isFolder ? -1 : 1;
       final r = switch (_sort) {
         'size' => a.size.compareTo(b.size),
@@ -123,21 +123,21 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     return list..sort(cmp);
   }
 
-  List<CloudObject> get _selected => t.items.where((o) => t.selection.contains(o.key)).toList();
+  List<StorageObject> get _selected => t.items.where((o) => t.selection.contains(o.key)).toList();
 
-  Future<void> _act(Future<bool?> Function(CloudStorage s) f) async {
-    CloudStorage? s;
+  Future<void> _act(Future<bool?> Function(ObjectStorage s) f) async {
+    ObjectStorage? s;
     if (!await guarded(context, () async => s = await _storage) || !mounted) return;
     if (await f(s!) == true && mounted) await _reload();
   }
 
-  Future<void> _openItem(CloudObject o) async {
+  Future<void> _openItem(StorageObject o) async {
     if (o.isFolder) return _go(o.key);
     await _act((s) async {
-      if (cloudTextExtensions.contains(o.extension)) {
-        await cloudOpenInEditor(context, t.account, s, o);
+      if (storageTextExtensions.contains(o.extension)) {
+        await storageOpenInEditor(context, t.account, s, o);
       } else {
-        await cloudDownload(context, s, o);
+        await storageDownload(context, s, o);
       }
       return false;
     });
@@ -162,7 +162,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     );
   }
 
-  Widget _toolbar(List<CloudObject> sel) {
+  Widget _toolbar(List<StorageObject> sel) {
     final c = DbColors.of(context);
     final parts = t.prefix.split('/').where((e) => e.isNotEmpty).toList();
     final single = sel.length == 1 ? sel.first : null;
@@ -178,7 +178,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
         ToolButton(
           icon: AppIcons.arrowUp,
           tooltip: 'Cartella superiore',
-          onPressed: t.prefix.isEmpty ? null : () => _go(CloudObject(bucket: t.bucket, key: t.prefix).parent),
+          onPressed: t.prefix.isEmpty ? null : () => _go(StorageObject(bucket: t.bucket, key: t.prefix).parent),
         ),
         ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna (F5)', onPressed: _loading ? null : _reload),
         const ToolSeparator(),
@@ -197,12 +197,12 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
         ToolButton(
           icon: AppIcons.newFolder,
           tooltip: 'Nuova cartella',
-          onPressed: () => _act((s) => cloudNewFolder(context, s, t.bucket, t.prefix)),
+          onPressed: () => _act((s) => storageNewFolder(context, s, t.bucket, t.prefix)),
         ),
         ToolButton(
           icon: AppIcons.upload,
           tooltip: 'Carica file…',
-          onPressed: () => _act((s) => cloudUploadFiles(context, s, t.bucket, t.prefix)),
+          onPressed: () => _act((s) => storageUploadFiles(context, s, t.bucket, t.prefix)),
         ),
         ToolButton(
           icon: AppIcons.download,
@@ -215,14 +215,14 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
           onPressed: single == null || single.isFolder
               ? null
               : () => _act((s) async {
-                  await cloudShareLink(context, s, single);
+                  await storageShareLink(context, s, single);
                   return false;
                 }),
         ),
         ToolButton(
           icon: AppIcons.delete,
           tooltip: 'Elimina…',
-          onPressed: sel.isEmpty ? null : () => _act((s) => cloudDelete(context, s, sel)),
+          onPressed: sel.isEmpty ? null : () => _act((s) => storageDelete(context, s, sel)),
         ),
         const SizedBox(width: Gap.sm),
         SearchField(controller: _filter, hint: 'Filtra', width: 180, onChanged: (_) => setState(() {})),
@@ -230,16 +230,16 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     );
   }
 
-  Future<void> _downloadSelection(List<CloudObject> sel) => _act((s) async {
+  Future<void> _downloadSelection(List<StorageObject> sel) => _act((s) async {
     if (sel.length == 1 && !sel.first.isFolder) {
-      await cloudDownload(context, s, sel.first);
+      await storageDownload(context, s, sel.first);
     } else {
       for (final o in sel) {
         if (!mounted) break;
         if (o.isFolder) {
-          await cloudDownloadFolder(context, s, o.bucket, o.key);
+          await storageDownloadFolder(context, s, o.bucket, o.key);
         } else {
-          await cloudDownload(context, s, o);
+          await storageDownload(context, s, o);
         }
       }
     }
@@ -248,7 +248,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
 
   static const _columns = ['name', 'size', 'modified', 'class'];
 
-  Widget _body(List<CloudObject> visible) {
+  Widget _body(List<StorageObject> visible) {
     final c = DbColors.of(context);
     if (_error != null) {
       return EmptyState.error(
@@ -265,7 +265,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
         message: _filter.text.isEmpty ? 'Usa "Carica file…" per aggiungere file qui.' : 'Modifica il filtro.',
       );
     }
-    String text(CloudObject o, int col) => switch (col) {
+    String text(StorageObject o, int col) => switch (col) {
       0 => o.name,
       1 => o.isFolder || o.size < 0 ? '' : formatBytes(o.size),
       2 => _date(o.modified),
@@ -312,7 +312,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
             builder: (context) => Padding(
               padding: const EdgeInsets.only(right: Gap.sm),
               child: Icon(
-                o.isFolder ? AppIcons.folder : cloudFileIcon(o.extension),
+                o.isFolder ? AppIcons.folder : storageFileIcon(o.extension),
                 size: 16,
                 color: RowTint.emphasizedOf(context)
                     ? c.onSelectionEmphasized
@@ -361,7 +361,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
       case LogicalKeyboardKey.backspace when HardwareKeyboard.instance.isMetaPressed:
       case LogicalKeyboardKey.delete:
         final sel = _selected;
-        if (sel.isNotEmpty) _act((s) => cloudDelete(context, s, sel));
+        if (sel.isNotEmpty) _act((s) => storageDelete(context, s, sel));
       case LogicalKeyboardKey.f5:
         _reload();
       default:
@@ -370,7 +370,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
     return KeyEventResult.handled;
   }
 
-  Widget _statusBar(List<CloudObject> visible, List<CloudObject> sel) {
+  Widget _statusBar(List<StorageObject> visible, List<StorageObject> sel) {
     final c = DbColors.of(context);
     final files = visible.where((o) => !o.isFolder).toList();
     final total = files.fold<int>(0, (a, o) => a + (o.size > 0 ? o.size : 0));
@@ -384,9 +384,9 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
         ),
         const Spacer(),
         ListenableBuilder(
-          listenable: CloudTransfers.instance,
+          listenable: StorageTransfers.instance,
           builder: (context, _) {
-            final running = CloudTransfers.instance.items.where((x) => x.state == TransferState.running).length;
+            final running = StorageTransfers.instance.items.where((x) => x.state == TransferState.running).length;
             if (running == 0) return const SizedBox.shrink();
             return Text(
               '$running trasferimenti in corso',
@@ -413,13 +413,13 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
       position: pos,
       entries: [
         if (single != null && single.isFolder) _item('Apri', () => _go(single.key)),
-        if (single != null && !single.isFolder && cloudTextExtensions.contains(ext))
+        if (single != null && !single.isFolder && storageTextExtensions.contains(ext))
           _item('Apri nell\'editor SQL', () => _openItem(single)),
-        if (single != null && !single.isFolder && cloudCsvExtensions.contains(ext))
+        if (single != null && !single.isFolder && storageCsvExtensions.contains(ext))
           _item(
             'Importa in tabella…',
             () => _act((s) async {
-              await cloudImportCsv(context, s, single);
+              await storageImportCsv(context, s, single);
               return false;
             }),
           ),
@@ -428,7 +428,7 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
           _item(
             'Copia link di condivisione…',
             () => _act((s) async {
-              await cloudShareLink(context, s, single);
+              await storageShareLink(context, s, single);
               return false;
             }),
           ),
@@ -436,19 +436,19 @@ class _CloudBrowserViewState extends State<_CloudBrowserView> {
           _item(
             'Copia URI',
             () => _act((s) async {
-              await cloudCopyUri(context, s, single.bucket, single.key);
+              await storageCopyUri(context, s, single.bucket, single.key);
               return false;
             }),
           ),
         const MenuEntry.divider(),
-        if (single != null) _item('Rinomina…', () => _act((s) => cloudRename(context, s, single))),
-        _item('Elimina…', () => _act((s) => cloudDelete(context, s, sel))),
+        if (single != null) _item('Rinomina…', () => _act((s) => storageRename(context, s, single))),
+        _item('Elimina…', () => _act((s) => storageDelete(context, s, sel))),
         if (single != null && !single.isFolder) ...[
           const MenuEntry.divider(),
           _item(
             'Proprietà',
             () => _act((s) async {
-              await cloudProperties(context, s, single);
+              await storageProperties(context, s, single);
               return false;
             }),
           ),
