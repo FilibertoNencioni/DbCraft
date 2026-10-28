@@ -30,6 +30,70 @@ enum FkRule {
   bool get isDefault => this == noAction || this == restrict;
 }
 
+/// MATCH option of a foreign key (PostgreSQL; the others always match
+/// SIMPLE).
+enum FkMatch {
+  simple('SIMPLE'),
+  full('FULL');
+
+  const FkMatch(this.sql);
+  final String sql;
+}
+
+/// Kind of a table constraint.
+enum ConstraintKind {
+  primaryKey('chiave primaria'),
+  unique('vincolo UNIQUE'),
+  check('vincolo CHECK'),
+  foreignKey('chiave esterna');
+
+  const ConstraintKind(this.label);
+  final String label;
+}
+
+/// State of a constraint besides its definition.
+class ConstraintState {
+  const ConstraintState({
+    this.enabled = true,
+    this.validated = true,
+    this.deferrable = false,
+    this.initiallyDeferred = false,
+  });
+
+  /// Checked on new rows (SQL Server NOCHECK, Oracle DISABLE, Db2 NOT
+  /// ENFORCED turn it off).
+  final bool enabled;
+
+  /// The existing rows were checked (PostgreSQL NOT VALID, SQL Server
+  /// "not trusted", Oracle NOVALIDATE turn it off).
+  final bool validated;
+  final bool deferrable;
+  final bool initiallyDeferred;
+
+  static const standard = ConstraintState();
+
+  bool get isStandard => this == standard;
+
+  ConstraintState copyWith({bool? enabled, bool? validated, bool? deferrable, bool? initiallyDeferred}) =>
+      ConstraintState(
+        enabled: enabled ?? this.enabled,
+        validated: validated ?? this.validated,
+        deferrable: deferrable ?? this.deferrable,
+        initiallyDeferred: initiallyDeferred ?? this.initiallyDeferred,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is ConstraintState &&
+      other.enabled == enabled &&
+      other.validated == validated &&
+      other.deferrable == deferrable &&
+      other.initiallyDeferred == initiallyDeferred;
+
+  @override
+  int get hashCode => Object.hash(enabled, validated, deferrable, initiallyDeferred);
+}
+
 /// Types whose declaration carries a length.
 const _sizedTypes = {'varchar', 'nvarchar', 'char', 'nchar', 'varbinary', 'binary'};
 
@@ -136,6 +200,13 @@ bool isScaledType(String type) => _scaledTypes.contains(canonicalType(type));
 /// default compares equal: SQL Server parentheses `((0))`, PostgreSQL casts
 /// `'a'::character varying`, surrounding blanks and case of keywords.
 String? normalizeDefault(String? def) {
+  final s = bareDefault(def);
+  if (s == null || s.startsWith("'")) return s;
+  return s.toLowerCase();
+}
+
+/// [def] without the decorations of [normalizeDefault], case preserved.
+String? bareDefault(String? def) {
   if (def == null) return null;
   var s = def.trim();
   if (s.isEmpty || s.toUpperCase() == 'NULL') return null;
@@ -146,9 +217,7 @@ String? normalizeDefault(String? def) {
       break;
     }
   }
-  s = s.replaceAll(RegExp(r'::[a-zA-Z_ ]+(\[\])?(\(\d+(,\d+)?\))?$'), '');
-  if (s.startsWith("'")) return s;
-  return s.toLowerCase();
+  return s.replaceAll(RegExp(r'::[a-zA-Z_ ]+(\[\])?(\(\d+(,\d+)?\))?$'), '');
 }
 
 bool _balanced(String s) {
@@ -174,6 +243,12 @@ class ColumnDef {
     this.autoIncrement = false,
     this.comment,
     this.originalName,
+    this.collation,
+    this.computed,
+    this.computedStored = true,
+    this.identitySeed,
+    this.identityIncrement,
+    this.defaultName,
   });
 
   final String name;
@@ -190,6 +265,42 @@ class ColumnDef {
   final bool autoIncrement;
   final String? comment;
   final String? originalName;
+
+  /// Explicit collation (null: the default of the table or database).
+  final String? collation;
+
+  /// Expression of a computed (generated) column.
+  final String? computed;
+
+  /// The computed value is stored (STORED / PERSISTED) rather than
+  /// calculated on read (VIRTUAL).
+  final bool computedStored;
+
+  /// First value and step of an identity column (null: 1).
+  final int? identitySeed;
+  final int? identityIncrement;
+
+  /// Name of the default constraint (SQL Server), read from the catalog.
+  final String? defaultName;
+
+  bool get isComputed => computed != null && computed!.trim().isNotEmpty;
+
+  static const _maxTypes = {'varchar', 'nvarchar', 'varbinary'};
+
+  /// The column with the type declared in the catalog (MySQL COLUMN_TYPE)
+  /// where ODBC loses details: ENUM and SET values, BIT length, fractional
+  /// seconds of DATETIME, TIMESTAMP and TIME.
+  ColumnDef withDeclaredType(String declared) {
+    final m = RegExp(r'^\s*(\w+)\s*\(([\s\S]*)\)', caseSensitive: false).firstMatch(declared);
+    if (m == null) return this;
+    final base = m[1]!.toLowerCase();
+    if (base == 'enum' || base == 'set') return copyWith(type: declared.trim(), size: null, scale: null);
+    if (const {'bit', 'datetime', 'timestamp', 'time'}.contains(base)) {
+      final n = int.tryParse(m[2]!.trim());
+      if (n != null && !type.contains('(')) return copyWith(size: n, scale: null);
+    }
+    return this;
+  }
 
   factory ColumnDef.fromDbColumn(DbColumn c) {
     var type = c.typeName.trim();
@@ -214,7 +325,10 @@ class ColumnDef {
     if (auto) def = null;
     int? size, scale;
     if (!type.contains('(')) {
-      if (isSizedType(type) && c.size != null && c.size! > 0) {
+      if (isSizedType(type) && c.size == 0 && _maxTypes.contains(lower)) {
+        // SQL Server reports varchar(max) and varbinary(max) with size 0.
+        size = -1;
+      } else if (isSizedType(type) && c.size != null && c.size! > 0) {
         size = c.size! >= 1073741823 ? -1 : c.size;
       } else if (isScaledType(type) && c.size != null && c.size! > 0) {
         size = c.size;
@@ -254,6 +368,12 @@ class ColumnDef {
     bool? autoIncrement,
     Object? comment = _unset,
     Object? originalName = _unset,
+    Object? collation = _unset,
+    Object? computed = _unset,
+    bool? computedStored,
+    Object? identitySeed = _unset,
+    Object? identityIncrement = _unset,
+    Object? defaultName = _unset,
   }) => ColumnDef(
     name: name ?? this.name,
     type: type ?? this.type,
@@ -264,6 +384,12 @@ class ColumnDef {
     autoIncrement: autoIncrement ?? this.autoIncrement,
     comment: comment == _unset ? this.comment : comment as String?,
     originalName: originalName == _unset ? this.originalName : originalName as String?,
+    collation: collation == _unset ? this.collation : collation as String?,
+    computed: computed == _unset ? this.computed : computed as String?,
+    computedStored: computedStored ?? this.computedStored,
+    identitySeed: identitySeed == _unset ? this.identitySeed : identitySeed as int?,
+    identityIncrement: identityIncrement == _unset ? this.identityIncrement : identityIncrement as int?,
+    defaultName: defaultName == _unset ? this.defaultName : defaultName as String?,
   );
 
   /// Display model used by the ER diagram.
@@ -282,12 +408,122 @@ class ColumnDef {
 }
 
 class PrimaryKeyDef {
-  const PrimaryKeyDef({this.name, required this.columns});
+  const PrimaryKeyDef({this.name, required this.columns, this.clustered, this.state = ConstraintState.standard});
   final String? name;
   final List<String> columns;
 
-  PrimaryKeyDef copyWith({Object? name = _unset, List<String>? columns}) =>
-      PrimaryKeyDef(name: name == _unset ? this.name : name as String?, columns: columns ?? this.columns);
+  /// SQL Server CLUSTERED / NONCLUSTERED (null: the server default).
+  final bool? clustered;
+  final ConstraintState state;
+
+  PrimaryKeyDef copyWith({
+    Object? name = _unset,
+    List<String>? columns,
+    Object? clustered = _unset,
+    ConstraintState? state,
+  }) => PrimaryKeyDef(
+    name: name == _unset ? this.name : name as String?,
+    columns: columns ?? this.columns,
+    clustered: clustered == _unset ? this.clustered : clustered as bool?,
+    state: state ?? this.state,
+  );
+}
+
+/// UNIQUE constraint (an index created with CREATE UNIQUE INDEX is an
+/// [IndexDef] instead).
+class UniqueDef {
+  const UniqueDef({this.name, required this.columns, this.state = ConstraintState.standard});
+  final String? name;
+  final List<String> columns;
+  final ConstraintState state;
+
+  String signature({bool ignoreCase = true}) {
+    final s = columns.join(',');
+    return ignoreCase ? s.toLowerCase() : s;
+  }
+
+  UniqueDef copyWith({Object? name = _unset, List<String>? columns, ConstraintState? state}) => UniqueDef(
+    name: name == _unset ? this.name : name as String?,
+    columns: columns ?? this.columns,
+    state: state ?? this.state,
+  );
+}
+
+/// CHECK constraint (column checks are kept as table checks).
+class CheckDef {
+  const CheckDef({this.name, required this.expression, this.state = ConstraintState.standard});
+  final String? name;
+
+  /// Boolean expression, without the surrounding CHECK ( ).
+  final String expression;
+  final ConstraintState state;
+
+  /// Expression normalized for comparisons: DBMS add parentheses, casts and
+  /// change spacing and keyword case.
+  String get normalized => normalizeExpression(expression);
+
+  CheckDef copyWith({Object? name = _unset, String? expression, ConstraintState? state}) => CheckDef(
+    name: name == _unset ? this.name : name as String?,
+    expression: expression ?? this.expression,
+    state: state ?? this.state,
+  );
+}
+
+/// Normalizes an SQL expression for comparisons: outer parentheses,
+/// PostgreSQL casts, quotes around identifiers, blanks and case outside
+/// string literals.
+String normalizeExpression(String expr) {
+  // Code and string literal segments: only the code is normalized.
+  final parts = <(bool, String)>[];
+  final cur = StringBuffer();
+  var inString = false;
+  for (var i = 0; i < expr.length; i++) {
+    final ch = expr[i];
+    if (ch == "'") {
+      if (inString) {
+        cur.write(ch);
+        // '' inside a literal
+        if (i + 1 < expr.length && expr[i + 1] == "'") {
+          cur.write("'");
+          i++;
+          continue;
+        }
+        parts.add((true, cur.toString()));
+        cur.clear();
+        inString = false;
+        continue;
+      }
+      parts.add((false, cur.toString()));
+      cur.clear();
+      inString = true;
+    }
+    cur.write(ch);
+  }
+  parts.add((inString, cur.toString()));
+  String code(String c) {
+    var s = c.toLowerCase().replaceAll(RegExp(r'["`\[\]]'), '');
+    s = s.replaceAll(
+      RegExp(r'::[a-z_]+( varying| precision| without time zone| with time zone)?(\[\])?(\(\d+(,\d+)?\))?'),
+      '',
+    );
+    s = s.replaceAll(RegExp(r'\s+'), ' ');
+    return s.replaceAllMapped(RegExp(r'\s*([(),=<>+\-*/])\s*'), (m) => m[1]!);
+  }
+
+  var s = parts.map((p) => p.$1 ? p.$2 : code(p.$2)).join().trim();
+  // Casts after a literal ('a'::text) are in the code segment that follows.
+  s = s.replaceAll(RegExp(r"(?<=')::[a-z_]+( varying)?"), '');
+  // Redundant parentheses around the whole expression and around single
+  // terms (not function calls: `lower(x)` keeps them).
+  for (var i = 0; i < 10; i++) {
+    final before = s;
+    if (s.startsWith('(') && s.endsWith(')') && _balanced(s.substring(1, s.length - 1))) {
+      s = s.substring(1, s.length - 1).trim();
+    }
+    s = s.replaceAllMapped(RegExp(r"(?<![a-z0-9_$])\(([a-z_][a-z0-9_.]*|'[^']*'|-?\d+(\.\d+)?)\)"), (m) => m[1]!);
+    if (s == before) break;
+  }
+  return s;
 }
 
 class ForeignKeyDef {
@@ -300,6 +536,8 @@ class ForeignKeyDef {
     required this.refColumns,
     this.onDelete = FkRule.noAction,
     this.onUpdate = FkRule.noAction,
+    this.match = FkMatch.simple,
+    this.state = ConstraintState.standard,
   });
 
   final String? name;
@@ -310,6 +548,8 @@ class ForeignKeyDef {
   final List<String> refColumns;
   final FkRule onDelete;
   final FkRule onUpdate;
+  final FkMatch match;
+  final ConstraintState state;
 
   factory ForeignKeyDef.fromDb(DbForeignKey f) => ForeignKeyDef(
     name: f.name,
@@ -337,6 +577,8 @@ class ForeignKeyDef {
     List<String>? refColumns,
     FkRule? onDelete,
     FkRule? onUpdate,
+    FkMatch? match,
+    ConstraintState? state,
   }) => ForeignKeyDef(
     name: name == _unset ? this.name : name as String?,
     columns: columns ?? this.columns,
@@ -346,24 +588,90 @@ class ForeignKeyDef {
     refColumns: refColumns ?? this.refColumns,
     onDelete: onDelete ?? this.onDelete,
     onUpdate: onUpdate ?? this.onUpdate,
+    match: match ?? this.match,
+    state: state ?? this.state,
   );
 }
 
 class IndexDef {
-  const IndexDef({required this.name, required this.columns, this.unique = false});
+  const IndexDef({
+    required this.name,
+    required this.columns,
+    this.unique = false,
+    this.descending = const {},
+    this.include = const [],
+    this.where,
+    this.method,
+    this.clustered = false,
+    this.enabled = true,
+  });
   final String name;
+
+  /// Indexed columns, in order. An entry in parentheses is an expression:
+  /// `(lower(email))`.
   final List<String> columns;
   final bool unique;
 
+  /// Columns (of [columns]) sorted in descending order.
+  final Set<String> descending;
+
+  /// Non-key columns stored in the index (INCLUDE).
+  final List<String> include;
+
+  /// Filter of a partial index (without WHERE).
+  final String? where;
+
+  /// Access method (btree, hash, gin, gist, brin, bitmap…); null: default.
+  final String? method;
+
+  /// SQL Server clustered index.
+  final bool clustered;
+
+  /// False when disabled (SQL Server DISABLE, Oracle UNUSABLE, MySQL
+  /// INVISIBLE, MariaDB IGNORED, Firebird INACTIVE).
+  final bool enabled;
+
+  static bool isExpression(String column) => column.trimLeft().startsWith('(');
+
   factory IndexDef.fromDb(DbIndex i) => IndexDef(name: i.name, columns: List.of(i.columns), unique: i.unique);
 
+  bool isDescending(String column) => descending.contains(column);
+
+  /// Structure for comparisons (the name is not part of it).
   String signature({bool ignoreCase = true}) {
-    final s = '${unique ? 'u' : ''}(${columns.join(',')})';
+    String c(String col) => isExpression(col) ? normalizeExpression(col) : col;
+    final m = method?.toLowerCase();
+    final s = [
+      '${unique ? 'u' : ''}(${columns.map((x) => '${c(x)}${isDescending(x) ? ' desc' : ''}').join(',')})',
+      if (include.isNotEmpty) 'include(${include.join(',')})',
+      if (where != null && where!.trim().isNotEmpty) 'where ${normalizeExpression(where!)}',
+      if (m != null && m.isNotEmpty && m != 'btree') 'using $m',
+      if (clustered) 'clustered',
+    ].join(' ');
     return ignoreCase ? s.toLowerCase() : s;
   }
 
-  IndexDef copyWith({String? name, List<String>? columns, bool? unique}) =>
-      IndexDef(name: name ?? this.name, columns: columns ?? this.columns, unique: unique ?? this.unique);
+  IndexDef copyWith({
+    String? name,
+    List<String>? columns,
+    bool? unique,
+    Set<String>? descending,
+    List<String>? include,
+    Object? where = _unset,
+    Object? method = _unset,
+    bool? clustered,
+    bool? enabled,
+  }) => IndexDef(
+    name: name ?? this.name,
+    columns: columns ?? this.columns,
+    unique: unique ?? this.unique,
+    descending: descending ?? this.descending,
+    include: include ?? this.include,
+    where: where == _unset ? this.where : where as String?,
+    method: method == _unset ? this.method : method as String?,
+    clustered: clustered ?? this.clustered,
+    enabled: enabled ?? this.enabled,
+  );
 }
 
 /// A table definition. [originalName] is the name of the table in the
@@ -377,8 +685,11 @@ class TableDef {
     this.primaryKey,
     this.foreignKeys = const [],
     this.indexes = const [],
+    this.uniques = const [],
+    this.checks = const [],
     this.comment,
     this.originalName,
+    this.options = const {},
   });
 
   final String? catalog;
@@ -388,8 +699,14 @@ class TableDef {
   final PrimaryKeyDef? primaryKey;
   final List<ForeignKeyDef> foreignKeys;
   final List<IndexDef> indexes;
+  final List<UniqueDef> uniques;
+  final List<CheckDef> checks;
   final String? comment;
   final String? originalName;
+
+  /// Storage options by dialect: `engine`, `charset`, `collation` (MySQL),
+  /// `unlogged`, `tablespace` (PostgreSQL, Oracle), `filegroup` (SQL Server).
+  final Map<String, String> options;
 
   /// Builds the definition from metadata. The index backing the primary key
   /// and SQLite automatic indexes are left out.
@@ -406,7 +723,14 @@ class TableDef {
       schema: t.schema,
       name: t.name,
       comment: t.remarks == null || t.remarks!.isEmpty ? null : t.remarks,
-      columns: columns.map(ColumnDef.fromDbColumn).toList(),
+      // Key columns cannot be null, whatever the driver says (MySQL reports
+      // AUTO_INCREMENT columns as nullable).
+      columns: [
+        for (final c in columns.map(ColumnDef.fromDbColumn))
+          primaryKey != null && primaryKey.columns.any((p) => p.toLowerCase() == c.name.toLowerCase())
+              ? c.copyWith(nullable: false)
+              : c,
+      ],
       primaryKey: primaryKey == null || primaryKey.columns.isEmpty
           ? null
           : PrimaryKeyDef(name: primaryKey.name, columns: List.of(primaryKey.columns)),
@@ -452,8 +776,11 @@ class TableDef {
     Object? primaryKey = _unset,
     List<ForeignKeyDef>? foreignKeys,
     List<IndexDef>? indexes,
+    List<UniqueDef>? uniques,
+    List<CheckDef>? checks,
     Object? comment = _unset,
     Object? originalName = _unset,
+    Map<String, String>? options,
   }) => TableDef(
     catalog: catalog == _unset ? this.catalog : catalog as String?,
     schema: schema == _unset ? this.schema : schema as String?,
@@ -462,8 +789,11 @@ class TableDef {
     primaryKey: primaryKey == _unset ? this.primaryKey : primaryKey as PrimaryKeyDef?,
     foreignKeys: foreignKeys ?? this.foreignKeys,
     indexes: indexes ?? this.indexes,
+    uniques: uniques ?? this.uniques,
+    checks: checks ?? this.checks,
     comment: comment == _unset ? this.comment : comment as String?,
     originalName: originalName == _unset ? this.originalName : originalName as String?,
+    options: options ?? this.options,
   );
 }
 
@@ -499,6 +829,10 @@ List<String> commonTypes(DbFamily family) => switch (family) {
     'INTEGER', 'BIGINT', 'SMALLINT', 'BOOLEAN', 'DECIMAL', 'NUMERIC', 'DOUBLE PRECISION', 'VARCHAR', //
     'CHAR', 'BLOB SUB_TYPE TEXT', 'DATE', 'TIME', 'TIMESTAMP', 'BLOB',
   ],
+  DbFamily.bigquery => const [
+    'STRING', 'INT64', 'FLOAT64', 'NUMERIC', 'BIGNUMERIC', 'BOOL', 'BYTES', 'DATE', 'DATETIME', 'TIME', //
+    'TIMESTAMP', 'JSON', 'GEOGRAPHY', 'INTERVAL', 'ARRAY<STRING>', 'STRUCT<>',
+  ],
   DbFamily.snowflake => const [
     'NUMBER', 'INTEGER', 'FLOAT', 'BOOLEAN', 'VARCHAR', 'TEXT', 'DATE', 'TIME', 'TIMESTAMP_NTZ', //
     'TIMESTAMP_TZ', 'VARIANT', 'BINARY',
@@ -517,6 +851,38 @@ ColumnDef mapColumnType(ColumnDef c, DbFamily from, DbFamily to) {
   ColumnDef t(String type, {Object? size = _unset, Object? scale = _unset}) =>
       c.copyWith(type: type, size: size, scale: scale);
   const noSize = null;
+  // MySQL ENUM / SET: text long enough for any value (SET: all of them).
+  final values = RegExp(r'^\s*(enum|set)\s*\(([\s\S]*)\)\s*$', caseSensitive: false).firstMatch(c.type);
+  if (values != null) {
+    final list = [for (final m in RegExp(r"'((?:[^']|'')*)'").allMatches(values[2]!)) m[1]!.replaceAll("''", "'")];
+    final longest = list.fold<int>(1, (n, v) => v.length > n ? v.length : n);
+    final size = values[1]!.toLowerCase() == 'set' ? list.fold<int>(0, (n, v) => n + v.length + 1) : longest;
+    return mapColumnType(c.copyWith(type: 'varchar', size: size < 1 ? 1 : size, scale: null), DbFamily.generic, to);
+  }
+  // Types of one DBMS with a plain equivalent elsewhere.
+  final alias = switch (canon) {
+    'mediumint' || 'mediumint unsigned' || 'smallint unsigned' => ('integer', null, null),
+    'int unsigned' || 'integer unsigned' => ('bigint', null, null),
+    'bigint unsigned' => ('numeric', 20, null),
+    'year' => ('smallint', null, null),
+    'tinytext' => ('text', null, null),
+    'tinyblob' => ('blob', null, null),
+    'money' || 'smallmoney' => ('numeric', 19, 4),
+    _ => null,
+  };
+  if (alias != null) {
+    return mapColumnType(c.copyWith(type: alias.$1, size: alias.$2, scale: alias.$3), DbFamily.generic, to);
+  }
+  // MySQL BIT(n) with n > 1 is a bit field, not a boolean.
+  if (canon == 'boolean' && c.type.trim().toLowerCase() == 'bit' && (c.size ?? 1) > 1) {
+    return switch (to) {
+      DbFamily.postgres => t('bit', size: c.size, scale: noSize),
+      DbFamily.sqlServer => t('bigint', size: noSize, scale: noSize),
+      DbFamily.oracle => t('NUMBER', size: 20, scale: noSize),
+      DbFamily.sqlite => t('INTEGER', size: noSize, scale: noSize),
+      _ => t('BIGINT', size: noSize, scale: noSize),
+    };
+  }
   switch (canon) {
     case 'integer':
       return switch (to) {
@@ -642,9 +1008,117 @@ ColumnDef mapColumnType(ColumnDef c, DbFamily from, DbFamily to) {
         DbFamily.snowflake => t('VARIANT', size: noSize, scale: noSize),
         _ => t('TEXT', size: noSize, scale: noSize),
       };
+    case 'varbinary' || 'binary':
+      final n = c.size;
+      return switch (to) {
+        DbFamily.postgres => t('bytea', size: noSize, scale: noSize),
+        DbFamily.sqlite => t('BLOB', size: noSize, scale: noSize),
+        DbFamily.oracle => n != null && n > 0 && n <= 2000 ? t('RAW', size: n) : t('BLOB', size: noSize),
+        DbFamily.mysql => n == null || n == -1 ? t('longblob', size: noSize, scale: noSize) : t(canon),
+        DbFamily.sqlServer => t(canon, size: n ?? -1, scale: noSize),
+        _ => t('BLOB', size: noSize, scale: noSize),
+      };
+    case 'xml':
+      return to == DbFamily.postgres || to == DbFamily.sqlServer
+          ? t('xml', size: noSize, scale: noSize)
+          : mapColumnType(c.copyWith(type: 'text', size: null, scale: null), DbFamily.generic, to);
     case 'date':
     case 'time':
       return to == DbFamily.oracle && canon == 'time' ? t('TIMESTAMP', size: noSize, scale: noSize) : c;
   }
-  return c;
+  // A type of the source DBMS only (geography, interval, arrays, PostgreSQL
+  // enums, inet…): its text form.
+  return mapColumnType(c.copyWith(type: 'text', size: null, scale: null), DbFamily.generic, to);
+}
+
+const _portableTypes = {
+  'integer', 'bigint', 'smallint', 'tinyint', 'tinyint unsigned', 'boolean', 'varchar', 'nvarchar', 'char', //
+  'nchar', 'text', 'numeric', 'real', 'double', 'timestamp', 'timestamptz', 'blob', 'uuid', 'json', 'date', //
+  'time', 'varbinary', 'binary', 'mediumint', 'mediumint unsigned', 'smallint unsigned', 'int unsigned', //
+  'integer unsigned', 'bigint unsigned', 'year', 'tinytext', 'tinyblob', 'money', 'smallmoney', 'enum', 'set',
+};
+
+/// Whether [mapColumnType] has an equivalent of [type] in the other DBMS
+/// (otherwise the column becomes text).
+bool isPortableType(String type) => _portableTypes.contains(canonicalType(type));
+
+/// [c] for a table of [to]: type ([mapColumnType]), default expression
+/// ([mapDefaultValue]) and no DBMS specific collation or default name.
+ColumnDef mapColumn(ColumnDef c, DbFamily from, DbFamily to) {
+  if (from == to) return c;
+  final m = mapColumnType(c, from, to);
+  return m.copyWith(defaultValue: mapDefaultValue(m, c.defaultValue, from, to), defaultName: null, collation: null);
+}
+
+final _nowDefault = RegExp(
+  r'^(getdate|sysdatetime|sysutcdatetime|getutcdate|now|current_timestamp|localtimestamp|sysdate|systimestamp|'
+  r'statement_timestamp|transaction_timestamp|clock_timestamp|sysdatetimeoffset)\s*(\(\s*\d*\s*\))?$'
+  r"|^datetime\s*\(\s*'now'\s*(,[^)]*)?\)$"
+  r"|^strftime\s*\([^)]*'now'[^)]*\)$",
+  caseSensitive: false,
+);
+final _todayDefault = RegExp(r"^(current_date|curdate)\s*(\(\s*\))?$|^date\s*\(\s*'now'\s*\)$", caseSensitive: false);
+final _uuidDefault = RegExp(
+  r'^(newid|newsequentialid|gen_random_uuid|uuid|uuid_generate_v4|uuid_generate_v1|sys_guid)\s*\(\s*\)$',
+  caseSensitive: false,
+);
+
+/// The default expression [def] of a column of [from] written for [to]
+/// ([column] is the column already mapped): literals are kept, the current
+/// time, date and random UUID functions are translated, the other
+/// expressions are left out (null) since they would not be valid.
+String? mapDefaultValue(ColumnDef column, String? def, DbFamily from, DbFamily to) {
+  if (from == to) return def;
+  var s = bareDefault(def);
+  if (s == null) return null;
+  // The SQLite driver reports text defaults without the quotes; expressions
+  // are always in parentheses there.
+  if (from == DbFamily.sqlite &&
+      !def!.trim().startsWith('(') &&
+      !s.startsWith("'") &&
+      !RegExp(r'^([+-]?\d+(\.\d+)?([eE][+-]?\d+)?|true|false|current_(date|time|timestamp)|[xX]' "'" r'.*)$', caseSensitive: false)
+          .hasMatch(s)) {
+    s = "'${s.replaceAll("'", "''")}'";
+  }
+  // SQL Server N'…' and MySQL b'…' literals.
+  if (RegExp(r"^[Nn]'").hasMatch(s)) s = s.substring(1);
+  final bits = RegExp(r"^[bB]'([01]+)'$").firstMatch(s);
+  if (bits != null) s = '${int.parse(bits[1]!, radix: 2)}';
+  final lower = s.toLowerCase();
+  final boolTarget = canonicalType(column.type) == 'boolean' && to == DbFamily.postgres;
+  if (RegExp(r'^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$').hasMatch(s) || lower == 'true' || lower == 'false') {
+    final truth = lower == 'true' || (num.tryParse(s) ?? 0) != 0;
+    if (boolTarget) return truth ? 'true' : 'false';
+    if (lower == 'true' || lower == 'false') {
+      return to == DbFamily.postgres || to == DbFamily.mysql ? lower : (truth ? '1' : '0');
+    }
+    return s;
+  }
+  if (s.startsWith("'") && s.endsWith("'") && s.length >= 2) {
+    if (boolTarget && const ["'0'", "'1'"].contains(s)) return s == "'1'" ? 'true' : 'false';
+    return s;
+  }
+  if (_nowDefault.hasMatch(s)) {
+    final p = column.size;
+    if (to == DbFamily.mysql && p != null && p > 0 && p <= 6) return 'CURRENT_TIMESTAMP($p)';
+    return 'CURRENT_TIMESTAMP';
+  }
+  if (_todayDefault.hasMatch(s)) {
+    return switch (to) {
+      DbFamily.sqlServer => 'CAST(SYSDATETIME() AS date)',
+      DbFamily.mysql => '(CURRENT_DATE)',
+      DbFamily.oracle => 'TRUNC(SYSDATE)',
+      _ => 'CURRENT_DATE',
+    };
+  }
+  if (_uuidDefault.hasMatch(s)) {
+    return switch (to) {
+      DbFamily.postgres => 'gen_random_uuid()',
+      DbFamily.sqlServer => 'NEWID()',
+      DbFamily.mysql => '(UUID())',
+      DbFamily.oracle => 'SYS_GUID()',
+      _ => null,
+    };
+  }
+  return null;
 }

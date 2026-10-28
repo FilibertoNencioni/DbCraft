@@ -301,7 +301,14 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
   Future<void> _execute(List<String> statements) async {
     final dc = tab.target.connection;
     if (dc == null) return;
-    final ok = await executeDdl(context, dc, statements);
+    final ok = await executeDdl(
+      context,
+      dc,
+      statements,
+      scope: SchemaScope.schema(tab.target.catalog, tab.target.schema),
+      // A migration stopped halfway leaves the target in between.
+      transactional: true,
+    );
     if (ok && mounted) await _compare();
   }
 

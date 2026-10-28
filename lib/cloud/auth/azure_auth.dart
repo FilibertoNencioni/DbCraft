@@ -99,7 +99,7 @@ class AzureClientSecretCredential extends AzureCredential {
       ),
       operation: 'Accesso Entra ID',
     );
-    final j = jsonDecode(r.body) as Map;
+    final j = jsonDecode(r.text) as Map;
     return AccessToken.expiresIn(j['access_token'] as String, j['expires_in']);
   });
 }
@@ -147,7 +147,7 @@ class AzureManagedIdentityCredential extends AzureCredential {
       }
       rethrow;
     }
-    final j = jsonDecode(r.body) as Map;
+    final j = jsonDecode(r.text) as Map;
     final token = j['access_token'] as String;
     final on = int.tryParse('${j['expires_on']}');
     return on != null

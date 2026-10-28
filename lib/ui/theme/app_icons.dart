@@ -140,6 +140,11 @@ abstract final class AppIcons {
   static const IconData plug = IconData(0xe946, fontFamily: 'PhosphorRegular'); // plug
   static const IconData lock = IconData(0xe2fa, fontFamily: 'PhosphorRegular'); // lock
   static const IconData lockOpen = IconData(0xe306, fontFamily: 'PhosphorRegular'); // lockOpen
+  static const IconData security = IconData(0xe40a, fontFamily: 'PhosphorRegular'); // shield
+  static const IconData user = IconData(0xe4c2, fontFamily: 'PhosphorRegular'); // user
+  static const IconData role = IconData(0xe4d6, fontFamily: 'PhosphorRegular'); // users
+  static const IconData group = IconData(0xe68e, fontFamily: 'PhosphorRegular'); // usersThree
+  static const IconData login = IconData(0xe6f6, fontFamily: 'PhosphorRegular'); // identificationBadge
   static const IconData eye = IconData(0xe220, fontFamily: 'PhosphorRegular'); // eye
   static const IconData eyeOff = IconData(0xe224, fontFamily: 'PhosphorRegular'); // eyeSlash
   static const IconData block = IconData(0xe3de, fontFamily: 'PhosphorRegular'); // prohibit
@@ -315,6 +320,11 @@ abstract final class AppIcons {
     'plug': plug,
     'lock': lock,
     'lockOpen': lockOpen,
+    'security': security,
+    'user': user,
+    'role': role,
+    'group': group,
+    'login': login,
     'eye': eye,
     'eyeOff': eyeOff,
     'block': block,

@@ -4,6 +4,7 @@
 import '../../model/db_objects.dart';
 import '../../services/metadata_service.dart';
 import '../../services/sql_dialect.dart';
+import '../../services/system_objects.dart';
 import '../../state/db_connection.dart';
 import 'claude_client.dart';
 
@@ -97,25 +98,6 @@ List<DbTable> referencedTables(String sql, List<DbTable> all) {
   ];
 }
 
-const _systemSchemas = {
-  'information_schema',
-  'pg_catalog',
-  'pg_toast',
-  'sys',
-  'mysql',
-  'performance_schema',
-  'guest',
-  'db_owner',
-  'db_accessadmin',
-  'db_securityadmin',
-  'db_ddladmin',
-  'db_backupoperator',
-  'db_datareader',
-  'db_datawriter',
-  'db_denydatareader',
-  'db_denydatawriter',
-};
-
 String _familyLabel(DbFamily f) => switch (f) {
   DbFamily.sqlServer => 'Microsoft SQL Server (T-SQL)',
   DbFamily.postgres => 'PostgreSQL',
@@ -208,7 +190,9 @@ class AiDbContext {
     try {
       catalog = md.supportsCatalogs ? md.currentCatalog : null;
       if (md.supportsSchemas) {
-        final schemas = (await md.schemas(catalog)).where((s) => !_systemSchemas.contains(s.toLowerCase())).toList();
+        final schemas = (await md.schemas(catalog))
+            .where((s) => !isSystemSchema(dialect, s) && !isSystemCatalog(dialect, s))
+            .toList();
         schema = _defaultSchema(dc, schemas);
         all = schema != null
             ? await md.tables(catalog, schema)

@@ -4,9 +4,8 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:isolate';
 
-import 'package:ffi/ffi.dart';
-
 import '../drivers/db_session.dart';
+import 'cancel_slot.dart';
 import 'odbc_core.dart';
 import 'odbc_ffi.dart';
 import 'odbc_types.dart';
@@ -49,7 +48,7 @@ class OdbcSession implements DbSession {
   final Isolate _isolate;
   final SendPort _send;
   final ReceivePort _receive;
-  final Pointer<IntPtr> _cancelSlot;
+  final CancelSlot _cancelSlot;
   @override
   final String completedConnectionString;
   final Map<int, Completer<Object?>> _pending = {};
@@ -70,7 +69,7 @@ class OdbcSession implements DbSession {
     bool readOnly = false,
   }) async {
     final api = OdbcApi.load(libPath);
-    final slot = calloc<IntPtr>()..value = 0;
+    final slot = CancelSlot.allocate();
     final receive = ReceivePort();
     final boot = Completer<Object?>();
     late SendPort send;
@@ -128,7 +127,7 @@ class OdbcSession implements DbSession {
     } catch (e) {
       receive.close();
       isolate.kill(priority: Isolate.immediate);
-      calloc.free(slot);
+      slot.free();
       if (e is TimeoutException) {
         throw StateError('Timeout di connessione: il driver ODBC non ha risposto');
       }
@@ -189,14 +188,12 @@ class OdbcSession implements DbSession {
   Future<String?> currentCatalog() => _call<String?>('getCatalog');
 
   /// Asks the driver to cancel the running statement (SQLCancel is allowed
-  /// from a different thread than the one executing the statement).
+  /// from a different thread than the one executing the statement). The
+  /// slot keeps the worker from freeing the handle meanwhile.
   @override
   void cancel() {
     if (_closed) return;
-    final addr = _cancelSlot.value;
-    if (addr != 0) {
-      _api.SQLCancel(Pointer.fromAddress(addr));
-    }
+    _cancelSlot.cancelWith((stmt) => _api.SQLCancel(Pointer.fromAddress(stmt)));
   }
 
   @override
@@ -214,7 +211,7 @@ class OdbcSession implements DbSession {
     _pending.clear();
     _receive.close();
     _isolate.kill(priority: Isolate.immediate);
-    calloc.free(_cancelSlot);
+    _cancelSlot.free();
   }
 }
 
@@ -226,7 +223,7 @@ void _workerMain(_Boot boot) {
   final port = ReceivePort();
   boot.port.send(port.sendPort);
   final api = OdbcApi.load(boot.libPath);
-  final core = OdbcConnectionCore(api, cancelSlot: Pointer<IntPtr>.fromAddress(boot.cancelSlot));
+  final core = OdbcConnectionCore(api, cancelSlot: CancelSlot.fromAddress(boot.cancelSlot));
   try {
     final completed = core.connect(
       boot.connectionString,

@@ -1,3 +1,4 @@
+import 'package:dbcraft/features/design/ui/constraint_dialogs.dart';
 import 'package:dbcraft/features/schema/ddl_builder.dart';
 import 'package:dbcraft/features/schema/ddl_execution.dart';
 import 'package:dbcraft/features/schema/erd_dialogs.dart';
@@ -294,6 +295,22 @@ void main() {
       expect(m[0], endsWith(") COMMENT='Ordini'"));
     });
 
+    test('SQL Server fills a new nullable column with its default (D-019)', () {
+      const note = ColumnDef(name: 'note', type: 'varchar', size: 200, defaultValue: "'n/d'");
+      expect(DdlBuilder(mssql).addColumn(customers, note).single, endsWith("DEFAULT 'n/d' WITH VALUES"));
+      expect(DdlBuilder(pg).addColumn(customers, note).single, isNot(contains('WITH VALUES')));
+      expect(
+        DdlBuilder(mssql).addColumn(customers, note.copyWith(defaultValue: null)).single,
+        isNot(contains('WITH VALUES')),
+      );
+    });
+
+    test('PostgreSQL never writes catalog.name without the schema (D-016)', () {
+      expect(pg.qualified('dbcraft', null, 'dbc_menu'), 'dbc_menu');
+      expect(pg.qualified('dbcraft', 'public', 'dbc_menu'), 'dbcraft.public.dbc_menu');
+      expect(mysql.qualified('dbcraft', null, 't'), 'dbcraft.t');
+    });
+
     test('rename table', () {
       expect(DdlBuilder(pg).renameTable(customers, 'clients'), ['ALTER TABLE app.customers RENAME TO clients']);
       expect(DdlBuilder(mssql).renameTable(customers, 'clients'), ["EXEC sp_rename N'app.customers', N'clients'"]);
@@ -550,6 +567,96 @@ void main() {
       expect(s, hasLength(4));
     });
 
+    test('migration between DBMS adapts types, defaults and names (D-030)', () {
+      // SQL Server → PostgreSQL: defaults translated, generated names left out.
+      const audit = TableDef(
+        schema: 'dbo',
+        name: 'audit',
+        columns: [
+          ColumnDef(name: 'id', type: 'int', nullable: false, autoIncrement: true),
+          ColumnDef(name: 'quando', type: 'datetime2', defaultValue: '(sysdatetime())'),
+          ColumnDef(name: 'attivo', type: 'bit', defaultValue: '((1))'),
+          ColumnDef(name: 'chi', type: 'nvarchar', size: 50, defaultValue: "(N'sistema')"),
+          ColumnDef(name: 'calc', type: 'int', defaultValue: '(datepart(year,getdate()))'),
+        ],
+        primaryKey: PrimaryKeyDef(name: 'PK__audit__3213E83F0A1B2C3D', columns: ['id']),
+      );
+      final toPg = SchemaMigration(pg).generate(
+        SchemaDiff.compare(snap([audit], schema: 'dbo', family: DbFamily.sqlServer), snap([], schema: 'da_mssql')),
+      );
+      final create = executableStatements(toPg).single;
+      expect(create, contains('quando timestamp DEFAULT CURRENT_TIMESTAMP'));
+      expect(create, contains('attivo boolean DEFAULT true'));
+      expect(create, contains("chi varchar(50) DEFAULT 'sistema'"));
+      expect(create, isNot(contains('PK__audit')));
+      expect(create, isNot(contains('datepart')));
+      expect(toPg.where((e) => e.startsWith('-- audit.calc')), hasLength(1), reason: 'the dropped default is noted');
+
+      // PostgreSQL → MySQL: TEXT in a unique index becomes VARCHAR(255).
+      const reparti = TableDef(
+        schema: 'public',
+        name: 'reparti',
+        columns: [
+          ColumnDef(name: 'id', type: 'integer', nullable: false),
+          ColumnDef(name: 'nome', type: 'text', nullable: false),
+        ],
+        primaryKey: PrimaryKeyDef(name: 'reparti_pkey', columns: ['id']),
+        indexes: [IndexDef(name: 'reparti_nome_key', columns: ['nome'], unique: true)],
+      );
+      final toMy = executableStatements(
+        SchemaMigration(mysql).generate(SchemaDiff.compare(snap([reparti], schema: 'public'), snap([], schema: null))),
+      );
+      expect(toMy.first, contains('nome varchar(255) NOT NULL'));
+
+      // MariaDB → SQLite: index names unique per table get the table name;
+      // ENUM / SET / BIT(n) become valid types.
+      const progetti = TableDef(
+        name: 'progetti',
+        columns: [
+          ColumnDef(name: 'id', type: 'int', nullable: false),
+          ColumnDef(name: 'reparto_id', type: 'int'),
+          ColumnDef(name: 'e', type: "enum('felice','triste')"),
+          ColumnDef(name: 'st', type: "set('a','b','c')"),
+          ColumnDef(name: 'bit8', type: 'bit', size: 8, defaultValue: "b'101'"),
+        ],
+        primaryKey: PrimaryKeyDef(name: 'PRIMARY', columns: ['id']),
+        indexes: [IndexDef(name: 'reparto_id', columns: ['reparto_id'])],
+      );
+      final toLite = executableStatements(
+        SchemaMigration(sqlite).generate(
+          SchemaDiff.compare(snap([progetti], schema: null, family: DbFamily.mysql), snap([], schema: null)),
+        ),
+      );
+      expect(toLite.first, isNot(contains('CONSTRAINT')));
+      expect(toLite.first, contains('e TEXT'));
+      expect(toLite.first, contains('bit8 INTEGER DEFAULT 5'));
+      expect(toLite[1], 'CREATE INDEX ix_progetti_reparto_id ON progetti (reparto_id)');
+      final toPg2 = SchemaMigration(pg).generate(
+        SchemaDiff.compare(snap([progetti], schema: null, family: DbFamily.mysql), snap([], schema: 'x')),
+      );
+      expect(executableStatements(toPg2).first, allOf(contains('e varchar(6)'), contains('st varchar(6)'), contains('bit8 bit(8)')));
+    });
+
+    test('key columns read through ODBC are NOT NULL', () {
+      final t = TableDef.fromMetadata(
+        DbTable(catalog: 'd', schema: null, name: 'audit', type: 'TABLE'),
+        [
+          DbColumn(
+            name: 'id',
+            dataType: 4,
+            typeName: 'int',
+            size: 10,
+            decimals: 0,
+            nullable: true,
+            position: 1,
+            autoIncrement: true,
+          ),
+        ],
+        primaryKey: DbPrimaryKey('PRIMARY', ['id']),
+      );
+      expect(t.columns.single.nullable, isFalse);
+    });
+
     test('drops only when requested and in the right order', () {
       final d = SchemaDiff.compare(snap([]), snap([customers, orders]));
       expect(executableStatements(SchemaMigration(pg).generate(d)), isEmpty);
@@ -625,7 +732,7 @@ void main() {
       final d = SchemaDiff.compare(snap([customers]), snap([], schema: 'dbo', family: DbFamily.sqlServer));
       final s = executableStatements(SchemaMigration(mssql).generate(d));
       expect(s.single, contains('id int IDENTITY(1,1) NOT NULL'));
-      expect(s.single, contains('active bit DEFAULT true'));
+      expect(s.single, contains('active bit DEFAULT 1'));
       expect(s.single, startsWith('CREATE TABLE dbo.customers'));
     });
 
@@ -730,18 +837,24 @@ void main() {
 
     testWidgets('relation dialog builds the foreign key', (tester) async {
       final ctx = await host(tester);
-      final f = showRelationDialog(
+      final child = orders.copyWith(foreignKeys: const []);
+      final f = showForeignKeyDialog(
         ctx,
-        child: orders.copyWith(foreignKeys: const []),
-        childColumn: 'customer_id',
-        parent: customers,
-        parentColumn: 'id',
+        ConstraintContext(dialect: pg, table: child, isNew: true),
+        prefill: const ForeignKeyDef(
+          columns: ['customer_id'],
+          refSchema: 'app',
+          refTable: 'customers',
+          refColumns: ['id'],
+        ),
+        tables: [customers.toDbTable()],
+        loadTable: (_) async => customers,
       );
       await tester.pumpAndSettle();
       expect(find.text('fk_orders_customers'), findsOneWidget);
       await tester.tap(find.text('Crea'));
       await tester.pumpAndSettle();
-      final fk = (await f)!;
+      final fk = (await f)!.value;
       expect(fk.refTable, 'customers');
       expect(fk.refSchema, 'app');
       expect(fk.columns, ['customer_id']);
@@ -853,8 +966,8 @@ void main() {
     }
     await g.up();
     await tester.pumpAndSettle();
-    expect(find.text('Nuova relazione'), findsOneWidget);
-    expect(find.textContaining('non è chiave primaria'), findsOneWidget);
+    expect(find.text('Nuova chiave esterna'), findsOneWidget);
+    expect(find.textContaining('non sono chiave primaria né univoche'), findsOneWidget);
     await tester.tap(find.text('Crea'));
     await tester.pumpAndSettle();
     expect(find.text('1 modifica'), findsOneWidget);

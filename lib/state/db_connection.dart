@@ -12,6 +12,54 @@ import '../services/storage.dart';
 
 enum ConnectionStatus { disconnected, connecting, connected, error }
 
+/// Part of a database whose structure changed (see
+/// [DbConnection.schemaChanged]). A null [catalog] or [schema] matches any.
+class SchemaScope {
+  const SchemaScope._(this.level, {this.catalog, this.schema, this.object});
+
+  /// The list of databases (catalogs) or everything may have changed.
+  static const connection = SchemaScope._(SchemaLevel.connection);
+
+  /// The schemas of [catalog] changed.
+  const SchemaScope.catalog(String? catalog) : this._(SchemaLevel.catalog, catalog: catalog);
+
+  /// The objects of a schema changed (created, dropped, renamed).
+  const SchemaScope.schema(String? catalog, String? schema)
+    : this._(SchemaLevel.schema, catalog: catalog, schema: schema);
+
+  /// The structure of the object [object] changed.
+  const SchemaScope.object(String? catalog, String? schema, String object)
+    : this._(SchemaLevel.object, catalog: catalog, schema: schema, object: object);
+
+  /// Users, roles or privileges changed (of [catalog] for SQL Server
+  /// database users): no schema object is affected.
+  const SchemaScope.security([String? catalog]) : this._(SchemaLevel.security, catalog: catalog);
+
+  final SchemaLevel level;
+  final String? catalog;
+  final String? schema;
+  final String? object;
+
+  /// Whether a location (catalog, schema) is inside this scope.
+  bool covers(String? catalog, String? schema) {
+    if (level == SchemaLevel.security) return false;
+    return level == SchemaLevel.connection ||
+        ((this.catalog == null || catalog == null || _same(this.catalog, catalog)) &&
+            (level == SchemaLevel.catalog || this.schema == null || schema == null || _same(this.schema, schema)));
+  }
+
+  /// Whether the object [name] at (catalog, schema) is inside this scope.
+  bool coversObject(String? catalog, String? schema, String name) =>
+      covers(catalog, schema) && (object == null || _same(object, name));
+
+  static bool _same(String? a, String? b) => (a ?? '').toLowerCase() == (b ?? '').toLowerCase();
+
+  @override
+  String toString() => 'SchemaScope(${level.name} ${[catalog, schema, object].whereType<String>().join('.')})';
+}
+
+enum SchemaLevel { connection, catalog, schema, object, security }
+
 /// Runtime state of a configured connection (DBeaver "data source").
 ///
 /// Two ODBC sessions are opened: one for metadata reading (navigator,
@@ -44,6 +92,23 @@ class DbConnection extends ChangeNotifier {
   /// Receives every statement run on the [main] session (query history).
   void Function(HistoryEntry e)? onHistory;
 
+  /// Incremented by [schemaChanged]; the navigator and the object editors
+  /// compare it with the last value they saw.
+  int schemaGeneration = 0;
+
+  /// Scopes of the latest [schemaChanged] calls (oldest first).
+  final List<SchemaScope> _schemaChanges = [];
+  static const _keptSchemaChanges = 32;
+
+  /// What changed after [generation]: the whole connection when [generation]
+  /// is too old to know.
+  List<SchemaScope> schemaChangesSince(int generation) {
+    final n = schemaGeneration - generation;
+    if (n <= 0) return const [];
+    if (n > _schemaChanges.length) return const [SchemaScope.connection];
+    return _schemaChanges.sublist(_schemaChanges.length - n);
+  }
+
   String? _sessionPassword;
   String? _libPath;
 
@@ -55,7 +120,23 @@ class DbConnection extends ChangeNotifier {
 
   /// Opens an additional independent session (exports, imports, …).
   Future<DbSession> openSession({bool readOnly = false}) =>
+      sessionOpener?.call(readOnly) ??
       openDbSession(config, libPath: _libPath, password: _password, readOnly: readOnly);
+
+  /// Replaces the driver in [openSession] (tests).
+  @visibleForTesting
+  Future<DbSession> Function(bool readOnly)? sessionOpener;
+
+  /// [session] reporting its statements to the query history, like [main].
+  DbSession withHistory(DbSession session) => RecordingSession(session, _recordStatement);
+
+  /// The [main] session without the query history recorder: for statements
+  /// that carry secrets (CREATE USER … PASSWORD). Same transaction and
+  /// current catalog as [main].
+  DbSession? get unrecordedMain {
+    final m = main;
+    return m is RecordingSession ? m.inner : m;
+  }
 
   bool get isConnected => status == ConnectionStatus.connected;
   SqlDialect get dialect => metadata?.dialect ?? SqlDialect(dbmsName: '');
@@ -82,7 +163,7 @@ class DbConnection extends ChangeNotifier {
         await openDbSession(config, libPath: libPath, password: _password, readOnly: config.readOnly),
         _recordStatement,
       );
-      final inf = await md.info();
+      final inf = normalizeServerInfo(await md.info());
       if (config.defaultCatalog.isNotEmpty) {
         await m.setCurrentCatalog(config.defaultCatalog);
         inf['currentCatalog'] = config.defaultCatalog;
@@ -201,11 +282,21 @@ class DbConnection extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Called after DDL: drops the cached metadata and tells the navigator and
+  /// the open editors which part of the database to reload.
+  void schemaChanged([SchemaScope scope = SchemaScope.connection]) {
+    metadata?.clearCache();
+    schemaGeneration++;
+    _schemaChanges.add(scope);
+    if (_schemaChanges.length > _keptSchemaChanges) _schemaChanges.removeAt(0);
+    notifyListeners();
+  }
+
   void touch() => notifyListeners();
 }
 
 final _modifying = RegExp(
-  r'^\s*(insert|update|delete|merge|drop|truncate|alter|create|replace|grant|revoke|rename|upsert|exec|execute|call)\b',
+  r'^\s*(insert|update|delete|merge|drop|truncate|alter|create|replace|grant|revoke|rename|upsert|exec|execute|call|copy|load|comment|refresh|do)\b',
   caseSensitive: false,
 );
 
@@ -231,4 +322,16 @@ bool isDangerousSql(String sql) {
     return true;
   }
   return false;
+}
+
+/// The MySQL and MariaDB ODBC drivers report the version in the ODBC format
+/// (`08.04.000003`): shown as the server does (`8.4.3`).
+Map<String, Object?> normalizeServerInfo(Map<String, Object?> info) {
+  final name = (info['dbmsName'] as String? ?? '').toLowerCase();
+  final v = info['dbmsVersion'] as String? ?? '';
+  final m = RegExp(r'^0*(\d+)\.0*(\d+)\.0*(\d+)$').firstMatch(v.trim());
+  if (m != null && (name.contains('mysql') || name.contains('mariadb'))) {
+    info['dbmsVersion'] = '${m[1]}.${m[2]}.${m[3]}';
+  }
+  return info;
 }

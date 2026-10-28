@@ -14,6 +14,18 @@ class OdbcDiag {
   String toString() => '[$sqlState] ($nativeError) $message';
 }
 
+/// The line of a (multi line) error message that tells the cause: the
+/// server reports it with FATAL / ERROR (libpq lists first the attempts that
+/// failed for other reasons, e.g. GSSAPI); otherwise the first line.
+String mainErrorLine(String message) {
+  final lines = [for (final l in message.trim().split('\n')) if (l.trim().isNotEmpty) l.trim()];
+  if (lines.isEmpty) return '';
+  for (final l in lines) {
+    if (RegExp(r'\b(FATAL|ERROR|PANIC)\b:').hasMatch(l)) return l;
+  }
+  return lines.first;
+}
+
 class OdbcException implements Exception {
   OdbcException(this.operation, this.diagnostics, [this.returnCode = SQL_ERROR]);
 

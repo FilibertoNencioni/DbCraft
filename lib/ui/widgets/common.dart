@@ -7,6 +7,7 @@ export 'badges.dart';
 export 'bars.dart';
 export 'buttons.dart';
 export 'control_base.dart';
+export 'editable_grid.dart';
 export 'feedback.dart';
 export 'fields.dart';
 export 'lists.dart';

@@ -57,6 +57,11 @@ class MetadataService {
     }
   }
 
+  /// Caches the result of [load] under [key] until [clearCache]. The design
+  /// tools use it for their DBMS specific catalog queries (keys prefixed
+  /// `design:`).
+  Future<T> cached<T extends Object>(String key, Future<T> Function() load) => _cached(key, load);
+
   Future<T> _cached<T extends Object>(String key, Future<T> Function() load) async {
     final hit = _cache[key];
     if (hit != null) return hit as T;
@@ -99,6 +104,22 @@ class MetadataService {
         set.add(s);
       }
     } catch (_) {}
+    if (dialect.family == DbFamily.sqlServer) {
+      // The Microsoft driver lists only the schemas holding objects: an empty
+      // schema (just created) would stay invisible.
+      try {
+        final from = catalog == null || catalog.isEmpty ? 'sys.schemas' : '${dialect.quoteIdent(catalog)}.sys.schemas';
+        final r = await session.execute(
+          'SELECT name FROM $from WHERE schema_id NOT BETWEEN 16384 AND 16399',
+          fetchSize: 10000,
+        );
+        if (r.cursorId != null) await session.closeCursor(r.cursorId!);
+        for (final row in r.rows) {
+          final s = _str(row[0]);
+          if (s != null) set.add(s);
+        }
+      } catch (_) {}
+    }
     if (set.isEmpty) {
       // Fallback: derive schemas from the table list.
       final r = await session.catalog('tables', [catalog, '%', '%', null]);
@@ -133,12 +154,16 @@ class MetadataService {
           final sch = _str(row[1]);
           if (catalog != null && cat != null && cat != catalog) continue;
           if (schema != null && sch != null && sch != schema) continue;
+          final name = _str(row[2]) ?? '';
+          // SQLite internal tables (sqlite_sequence, sqlite_stat1…) are
+          // reported as plain tables by the ODBC driver.
+          final internal = dialect.family == DbFamily.sqlite && name.toLowerCase().startsWith('sqlite_');
           list.add(
             DbTable(
               catalog: cat ?? catalog,
               schema: sch ?? schema,
-              name: _str(row[2]) ?? '',
-              type: _str(row[3]) ?? 'TABLE',
+              name: name,
+              type: internal ? 'SYSTEM TABLE' : (_str(row[3]) ?? 'TABLE'),
               remarks: _str(row[4]),
             ),
           );

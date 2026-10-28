@@ -701,6 +701,49 @@ class _ControlGalleryState extends State<ControlGallery> {
           ),
         ),
       ]),
+      const SizedBox(height: Gap.md),
+      // Table designer columns: editable cells, change markers, reorder.
+      SizedBox(
+        width: 620,
+        height: 180,
+        child: _Demo<(List<(String, String, bool)>, int?)>(
+          (const [('id', 'integer', false), ('nome', 'varchar(80)', true), ('email', 'varchar(120)', true)], 1),
+          (v, set) {
+            void swap(int a, int b) {
+              final l = List.of(v.$1);
+              final x = l[a];
+              l[a] = l[b];
+              l[b] = x;
+              set((l, b));
+            }
+
+            return EditableGrid(
+              columns: const [
+                EditableGridColumn('Nome', flex: 2),
+                EditableGridColumn('Tipo', flex: 2),
+                EditableGridColumn('Null', width: 40, center: true),
+              ],
+              rowCount: v.$1.length,
+              selected: v.$2,
+              onSelect: (i) => set((v.$1, i)),
+              mark: (i) => switch (i) {
+                1 => EditableRowMark.changed,
+                2 => EditableRowMark.added,
+                _ => EditableRowMark.none,
+              },
+              addLabel: 'Aggiungi colonna',
+              onAdd: () => set(([...v.$1, ('colonna', 'varchar', true)], v.$1.length)),
+              onRemove: (i) => set((List.of(v.$1)..removeAt(i), null)),
+              onMove: swap,
+              cellBuilder: (context, r, col) => switch (col) {
+                0 => Text(v.$1[r].$1, style: uiText(TypeSize.body, color: c.text)),
+                1 => Align(alignment: Alignment.centerLeft, child: TypeLabel(v.$1[r].$2, mono: true)),
+                _ => MacCheckbox(value: v.$1[r].$3, onChanged: (_) {}),
+              },
+            );
+          },
+        ),
+      ),
     ];
   }
 

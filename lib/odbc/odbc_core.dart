@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import 'cancel_slot.dart';
 import 'odbc_ffi.dart';
 import 'odbc_types.dart';
 
@@ -114,7 +115,7 @@ List<OdbcDataSource> listDataSources(OdbcApi api) {
 }
 
 /// Kind of value extraction used for a column.
-enum _Fetch { integer, real, binary, text }
+enum _Fetch { integer, real, decimal, binary, text }
 
 class _Cursor {
   _Cursor(this.stmt, this.columns, this.fetchModes);
@@ -125,6 +126,13 @@ class _Cursor {
   bool positionedOnNextResult = false;
 }
 
+/// SQL Server returns decimals without the leading zero (`.5`, `-.5`).
+String normalizeDecimalText(String v) {
+  if (v.startsWith('.')) return '0$v';
+  if (v.startsWith('-.')) return '-0${v.substring(1)}';
+  return v;
+}
+
 class OdbcConnectionCore {
   OdbcConnectionCore(this.api, {this.cancelSlot});
 
@@ -132,7 +140,7 @@ class OdbcConnectionCore {
 
   /// Native slot where the handle of the running statement is published so
   /// that the UI isolate can call SQLCancel on it.
-  final Pointer<IntPtr>? cancelSlot;
+  final CancelSlot? cancelSlot;
 
   SQLHANDLE _env = nullptr;
   SQLHANDLE _dbc = nullptr;
@@ -332,13 +340,11 @@ class OdbcConnectionCore {
   }
 
   void _publish(SQLHANDLE stmt) {
-    cancelSlot?.value = stmt.address;
+    cancelSlot?.publish(stmt.address);
   }
 
   void _freeStmt(SQLHANDLE stmt) {
-    if (cancelSlot != null && cancelSlot!.value == stmt.address) {
-      cancelSlot!.value = 0;
-    }
+    cancelSlot?.unpublish(stmt.address);
     api.SQLFreeHandle(SQL_HANDLE_STMT, stmt);
   }
 
@@ -691,6 +697,9 @@ class OdbcConnectionCore {
       case SQL_FLOAT:
       case SQL_DOUBLE:
         return _Fetch.real;
+      case SQL_DECIMAL:
+      case SQL_NUMERIC:
+        return _Fetch.decimal;
       case SQL_BINARY:
       case SQL_VARBINARY:
       case SQL_LONGVARBINARY:
@@ -750,6 +759,9 @@ class OdbcConnectionCore {
         _check(rc, 'SQLGetData', SQL_HANDLE_STMT, stmt);
         if (ind.value == SQL_NULL_DATA) return null;
         return buf.cast<Double>().value;
+      case _Fetch.decimal:
+        final v = _getValue(stmt, col, _Fetch.text, buf, chunk, ind);
+        return v is String ? normalizeDecimalText(v) : v;
       case _Fetch.binary:
       case _Fetch.text:
         final isText = mode == _Fetch.text;

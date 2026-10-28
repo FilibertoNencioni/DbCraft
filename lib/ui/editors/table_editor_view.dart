@@ -3,11 +3,23 @@ import 'package:flutter/services.dart';
 
 import '../../features/query_builder/query_model.dart';
 import '../../features/query_builder/visual_filter.dart';
+import '../../features/design/capabilities.dart';
+import '../../features/design/catalog/design_catalog.dart';
+import '../../features/design/table_design.dart';
+import '../../features/design/ui/constraints_page.dart';
+import '../../features/design/ui/design_actions.dart';
+import '../../features/design/ui/table_designer.dart';
+import '../../features/design/ui/table_permissions.dart';
+import '../../features/design/ui/view_editor.dart';
+import '../../features/design/view_design.dart';
+import '../../features/schema/ddl_builder.dart';
 import '../../model/db_objects.dart';
+import '../../services/sql_dialect.dart';
 import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
 import '../../state/editor_tabs.dart';
 import '../../state/result_set_model.dart';
+import '../navigator/nav_nodes.dart' show hasSecurity;
 import '../actions.dart';
 import '../dialogs/export_dialog.dart';
 import '../dialogs/import_dialog.dart';
@@ -39,15 +51,92 @@ class _TableEditorViewState extends State<TableEditorView> {
   late final _where = TextEditingController(text: tab.dataFilter);
   late final _order = TextEditingController(text: tab.dataOrder);
   bool _loadingData = false;
+
+  /// The designer definition is being read for the first time: the
+  /// structure pages wait for it instead of showing the read-only version
+  /// and then swapping it.
+  bool _designLoading = false;
   Object? _dataError;
   int? _rowCount;
   int _lastInitialPage = -1;
+  int _schemaGeneration = 0;
+  String _tableKey = '';
+  TableDesign? _attached;
 
   TableEditorTab get tab => widget.tab;
   DbTable get table => tab.table;
+  TableDesign? get _design => tab.design;
 
   static const _pageData = 1;
-  static const _pageNames = ['Proprietà', 'Dati', 'Colonne', 'Chiavi', 'Indici', 'DDL', 'Diagramma'];
+  static const _pageChanges = 7;
+  static const _pageDefinition = 8;
+  static const _pagePermissions = 9;
+  static const _pageNames = [
+    'Proprietà', 'Dati', 'Colonne', 'Vincoli', 'Indici', 'DDL', 'Diagramma', 'Modifiche', 'Definizione', 'Permessi', //
+  ];
+
+  /// Pages of a table that does not exist yet.
+  static const _newPages = [0, 2, 3, 4, 7];
+
+  /// Pages of a view.
+  static const _viewPages = [0, 1, 2, 8, 5];
+
+  /// Pages shown in the page switcher.
+  List<int> get _visiblePages {
+    if (tab.isNew) return tab.viewDesign != null ? const [_pageDefinition] : _newPages;
+    if (table.isView) return [..._viewPages, if (_permissions) _pagePermissions];
+    return [
+      for (var i = 0; i < _pageDefinition; i++)
+        if (i != _pageChanges || (_design != null && _designable)) i,
+      if (_permissions) _pagePermissions,
+    ];
+  }
+
+  /// The privileges on the object can be read and granted here.
+  bool get _permissions {
+    final c = tab.connection;
+    final f = c.dialect.family;
+    return !_simple &&
+        f != DbFamily.mongodb &&
+        (hasSecurity(c) || f == DbFamily.bigquery) &&
+        DesignCapabilities.of(c.dialect).has(DesignFeature.grants);
+  }
+
+  /// The view definition can be edited here.
+  bool get _viewEditable {
+    final c = tab.connection;
+    return table.isView && sqlDesign(c.dialect) && !c.config.readOnly && !_simple;
+  }
+
+  /// Reads the definition of the view (or refreshes an unchanged one).
+  Future<void> _loadViewDesign() async {
+    final cat = DesignCatalog.of(tab.connection);
+    if (cat == null || !table.isView) return;
+    try {
+      final def = await cat.viewDef(table);
+      if (!mounted || def == null) return;
+      final v = tab.viewDesign;
+      if (v == null) {
+        tab.viewDesign = ViewDesign.existing(tab.connection.dialect, def);
+        _attachDesign();
+      } else if (!v.isDirty) {
+        v.saved(def);
+      }
+    } catch (_) {
+      // The definition page shows that it cannot be read.
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// The structure can be edited here (the designer).
+  bool get _designable {
+    final c = tab.connection;
+    return !table.isView &&
+        sqlDesign(c.dialect) &&
+        !c.config.readOnly &&
+        !_simple &&
+        DesignCapabilities.of(c.dialect).has(DesignFeature.createTable);
+  }
 
   /// Columns of the table once the metadata is loaded (visual filter).
   List<DbColumn>? _columnsMeta;
@@ -67,7 +156,62 @@ class _TableEditorViewState extends State<TableEditorView> {
     super.initState();
     _lastInitialPage = tab.initialPage;
     tab.addListener(_onTab);
+    _schemaGeneration = tab.connection.schemaGeneration;
+    _tableKey = table.key;
+    tab.connection.addListener(_onConnection);
+    _attachDesign();
     _init();
+  }
+
+  /// Follows the design: tab title and dirty mark, toolbar, pages.
+  void _attachDesign() {
+    final d = _design;
+    if (!identical(d, _attached)) {
+      _attached?.removeListener(_onDesign);
+      _attached = d;
+      d?.addListener(_onDesign);
+    }
+    final v = tab.viewDesign;
+    if (!identical(v, _attachedView)) {
+      _attachedView?.removeListener(_onDesign);
+      _attachedView = v;
+      v?.addListener(_onDesign);
+    }
+  }
+
+  ViewDesign? _attachedView;
+
+  void _onDesign() {
+    tab.refresh();
+    if (mounted) setState(() {});
+  }
+
+  /// Reads the complete definition for the designer (or refreshes a design
+  /// without pending changes).
+  Future<void> _loadDesign() async {
+    if (!_designable) return;
+    final cat = DesignCatalog.of(tab.connection);
+    if (cat == null) return;
+    if (tab.design == null) _designLoading = true;
+    try {
+      final def = await cat.loadTable(table);
+      if (!mounted) return;
+      final d = tab.design;
+      if (d == null) {
+        tab.design = TableDesign.existing(tab.connection.dialect, def);
+        _attachDesign();
+      } else if (!d.isDirty) {
+        d.saved(def);
+      }
+      if (_designLoading) setState(() => _designLoading = false);
+      final incoming = await incomingForeignKeys(tab.connection, def);
+      tab.design?.incoming = incoming;
+      tab.design?.refresh();
+    } catch (_) {
+      // The pages stay read-only.
+    }
+    _designLoading = false;
+    if (mounted) setState(() {});
   }
 
   void _setPage(int page) {
@@ -77,13 +221,43 @@ class _TableEditorViewState extends State<TableEditorView> {
   }
 
   void _onTab() {
+    _attachDesign();
+    // Created or renamed by the designer.
+    if (table.key != _tableKey) {
+      _tableKey = table.key;
+      if (!tab.isNew) {
+        setState(() {
+          _details = tab.connection.metadata?.tableDetails(table);
+        });
+      }
+    }
     if (tab.initialPage != _lastInitialPage) {
       _lastInitialPage = tab.initialPage;
       _setPage(_effectivePage(tab.initialPage));
     }
   }
 
+  /// Reloads the structure after DDL touching this table.
+  void _onConnection() {
+    final c = tab.connection;
+    if (c.schemaGeneration == _schemaGeneration) return;
+    final changes = c.schemaChangesSince(_schemaGeneration);
+    _schemaGeneration = c.schemaGeneration;
+    if (!c.isConnected || c.metadata == null || _details == null) return;
+    if (!changes.any((s) => s.coversObject(table.catalog, table.schema, table.name))) return;
+    setState(() {
+      _details = c.metadata!.tableDetails(table);
+    });
+    if (_design != null && !_design!.isDirty) _loadDesign();
+    if (table.isView && !(tab.viewDesign?.isDirty ?? false)) _loadViewDesign();
+  }
+
   Future<void> _init() async {
+    if (tab.isNew) {
+      if (!_visiblePages.contains(_page)) _page = _visiblePages.first;
+      return;
+    }
+    if (table.isView && !_viewPages.contains(_page) && _page != _pagePermissions) _page = 0;
     if (!await ensureConnected(context, tab.connection)) return;
     setState(() {
       _details = tab.connection.metadata!.tableDetails(table);
@@ -92,11 +266,19 @@ class _TableEditorViewState extends State<TableEditorView> {
       if (mounted) setState(() => _columnsMeta = d.columns);
     }, onError: (_) {});
     if (_page == _pageData) _loadData();
+    if (table.isView) {
+      _loadViewDesign();
+    } else if (_design == null) {
+      _loadDesign();
+    }
   }
 
   @override
   void dispose() {
+    _attached?.removeListener(_onDesign);
+    _attachedView?.removeListener(_onDesign);
     tab.removeListener(_onTab);
+    tab.connection.removeListener(_onConnection);
     _where.dispose();
     _order.dispose();
     super.dispose();
@@ -176,6 +358,38 @@ class _TableEditorViewState extends State<TableEditorView> {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
+    final d = _design;
+    final vd = tab.viewDesign;
+    if (tab.isNew && vd != null) {
+      return Column(
+        children: [
+          _header(app),
+          Expanded(child: ViewDefinitionPage(design: vd, connection: tab.connection)),
+        ],
+      );
+    }
+    if (tab.isNew && d != null) {
+      return Column(
+        children: [
+          _header(app),
+          Expanded(
+            child: IndexedStack(
+              index: _page,
+              children: [
+                DesignPropertiesPage(design: d, connection: tab.connection),
+                const SizedBox(),
+                DesignColumnsPage(design: d, connection: tab.connection),
+                ConstraintsPage(connection: tab.connection, table: table, design: d),
+                IndexesPage(connection: tab.connection, table: table, design: d),
+                const SizedBox(),
+                const SizedBox(),
+                DesignChangesPage(design: d, connection: tab.connection),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     return Column(
       children: [
         _header(app),
@@ -188,17 +402,47 @@ class _TableEditorViewState extends State<TableEditorView> {
                     if (snap.hasError) {
                       return EmptyState.error(snap.error!, title: 'Impossibile leggere la struttura della tabella');
                     }
-                    final d = snap.data;
+                    // Structure pages: nothing until the designer is ready.
+                    final det = _designLoading ? null : snap.data;
+                    final design = _designable ? _design : null;
                     return IndexedStack(
                       index: _page,
                       children: [
-                        d == null ? const Center(child: Spinner(size: Spinner.large)) : _properties(d),
+                        det == null
+                            ? const Center(child: Spinner(size: Spinner.large))
+                            : design != null
+                            ? DesignPropertiesPage(
+                                design: design,
+                                connection: tab.connection,
+                                footer: _propertiesContent(det),
+                              )
+                            : _properties(det),
                         _dataPage(),
-                        d == null ? const SizedBox() : _columns(d),
-                        d == null ? const SizedBox() : _constraints(d),
-                        d == null ? const SizedBox() : _indexes(d),
-                        d == null ? const SizedBox() : _ddl(d),
-                        d == null || _page != 6
+                        det == null
+                            ? const Center(child: Spinner(size: Spinner.large))
+                            : design != null
+                            ? DesignColumnsPage(design: design, connection: tab.connection)
+                            : _columns(det),
+                        det == null || table.isView
+                            ? const SizedBox()
+                            : ConstraintsPage(
+                                key: ValueKey(design),
+                                connection: tab.connection,
+                                table: table,
+                                editable: !_simple,
+                                design: design,
+                              ),
+                        det == null || table.isView
+                            ? const SizedBox()
+                            : IndexesPage(
+                                key: ValueKey(design),
+                                connection: tab.connection,
+                                table: table,
+                                editable: !_simple,
+                                design: design,
+                              ),
+                        det == null ? const SizedBox() : _ddl(det),
+                        det == null || _page != 6
                             ? const SizedBox()
                             : ErDiagramView(
                                 connection: tab.connection,
@@ -207,6 +451,21 @@ class _TableEditorViewState extends State<TableEditorView> {
                                 focus: table,
                                 positions: {},
                               ),
+                        design == null
+                            ? const SizedBox()
+                            : DesignChangesPage(design: design, connection: tab.connection),
+                        !table.isView
+                            ? const SizedBox()
+                            : vd == null
+                            ? EmptyState(
+                                icon: AppIcons.code,
+                                title: 'Definizione non disponibile',
+                                message: 'Il catalogo di ${tab.connection.dialect.dbmsName} non espone il testo di questa vista.',
+                              )
+                            : ViewDefinitionPage(design: vd, connection: tab.connection, readOnly: !_viewEditable),
+                        det == null || _page != _pagePermissions
+                            ? const SizedBox()
+                            : TablePermissionsPage(connection: tab.connection, table: table),
                       ],
                     );
                   },
@@ -245,13 +504,14 @@ class _TableEditorViewState extends State<TableEditorView> {
                         children: [
                           Flexible(
                             child: Text(
-                              table.name,
+                              tab.title,
                               overflow: TextOverflow.ellipsis,
                               style: uiText(TypeSize.title, weight: FontWeight.w600, color: c.text),
                             ),
                           ),
                           const SizedBox(width: Gap.sm),
-                          Tag(table.isView ? 'vista' : table.type.toLowerCase()),
+                          Tag(tab.isNew ? 'nuova' : (table.isView ? 'vista' : table.type.toLowerCase())),
+                          if (_design?.isDirty ?? false) ...[const SizedBox(width: Gap.xs), const DirtyDot()],
                         ],
                       ),
                       PathBar(
@@ -259,25 +519,29 @@ class _TableEditorViewState extends State<TableEditorView> {
                           PathSegment(tab.connection.config.name, icon: AppIcons.server),
                           if (table.catalog != null) PathSegment(table.catalog!, icon: AppIcons.database),
                           if (table.schema != null) PathSegment(table.schema!, icon: AppIcons.schema),
-                          PathSegment(table.name, icon: tab.icon),
+                          PathSegment(tab.title, icon: tab.icon),
                         ],
                       ),
                     ],
                   ),
                 ),
-                if (!app.settings.simpleMode)
+                // Only on the structure pages: the data page has its own "Salva".
+                if (_design != null && _designable && _newPages.contains(_page)) ..._designTools(),
+                if (tab.viewDesign != null && _viewEditable && (_page == 0 || _page == _pageDefinition)) ..._viewTools(),
+                if (!app.settings.simpleMode && !tab.isNew)
                   ToolButton(
                     icon: AppIcons.script,
                     tooltip: 'Apri in un editor SQL',
                     onPressed: () =>
                         app.sqlEditorWith(tab.connection, 'SELECT * FROM ${tab.connection.dialect.tableName(table)}'),
                   ),
-                ToolButton(
-                  icon: AppIcons.share,
-                  tooltip: 'Esporta dati…',
-                  onPressed: () => showTableExportDialog(context, tab.connection, table),
-                ),
-                if (!table.isView)
+                if (!tab.isNew)
+                  ToolButton(
+                    icon: AppIcons.share,
+                    tooltip: 'Esporta dati…',
+                    onPressed: () => showTableExportDialog(context, tab.connection, table),
+                  ),
+                if (!table.isView && !tab.isNew)
                   ToolButton(
                     icon: AppIcons.download,
                     tooltip: 'Importa dati da CSV…',
@@ -285,6 +549,7 @@ class _TableEditorViewState extends State<TableEditorView> {
                         ? null
                         : () => showImportDialog(context, tab.connection, table),
                   ),
+                if (!tab.isNew)
                 ToolButton(
                   icon: AppIcons.refresh,
                   tooltip: 'Ricarica metadati',
@@ -302,12 +567,77 @@ class _TableEditorViewState extends State<TableEditorView> {
               ? _simplePages()
               : PageSwitcher<int>(
                   value: _page,
-                  items: [for (final (i, n) in _pageNames.indexed) (i, n, null)],
+                  items: [
+                    for (final (i, n) in _pageNames.indexed)
+                      if (_visiblePages.contains(i))
+                        (i, i == _pageChanges && (_design?.changes.isNotEmpty ?? false) ? '$n (${_design!.changes.length})' : n, null),
+                  ],
                   onChanged: _setPage,
                 ),
         ],
       ),
     );
+  }
+
+  /// Discard and save of the view editor.
+  List<Widget> _viewTools() {
+    final v = tab.viewDesign!;
+    return [
+      if (!v.isNew)
+        ToolButton(
+          icon: AppIcons.replay,
+          tooltip: 'Scarta le modifiche alla vista',
+          onPressed: v.isDirty ? v.discard : null,
+        ),
+      const SizedBox(width: Gap.xs),
+      PushButton.primary(
+        label: v.isNew ? 'Crea vista' : 'Salva',
+        icon: AppIcons.save,
+        size: ControlScale.small,
+        tooltip: v.errors.isNotEmpty ? v.errors.first : 'Mostra lo script ed esegue le modifiche',
+        onPressed: v.isDirty && v.errors.isEmpty ? () => saveViewDesign(context, tab) : null,
+      ),
+      const SizedBox(width: Gap.sm),
+      ToolSeparator(),
+    ];
+  }
+
+  /// Undo, redo, discard and save of the designer.
+  List<Widget> _designTools() {
+    final d = _design!;
+    final mac = Theme.of(context).platform == TargetPlatform.macOS;
+    final save = SingleActivator(LogicalKeyboardKey.keyS, meta: mac, control: !mac);
+    return [
+      ToolButton(icon: AppIcons.undo, tooltip: 'Annulla l\'ultima modifica alla struttura', onPressed: d.canUndo ? d.undo : null),
+      ToolButton(icon: AppIcons.redo, tooltip: 'Ripeti', onPressed: d.canRedo ? d.redo : null),
+      if (!d.isNew)
+        ToolButton(
+          icon: AppIcons.replay,
+          tooltip: 'Scarta le modifiche alla struttura',
+          onPressed: d.isDirty
+              ? () async {
+                  final ok = await confirmDialog(
+                    context,
+                    'Scartare le modifiche?',
+                    'Le ${d.changes.length} modifiche alla struttura di ${table.name} non ancora salvate andranno perse.',
+                    ok: 'Scarta',
+                    destructive: true,
+                  );
+                  if (ok) d.discard();
+                }
+              : null,
+        ),
+      const SizedBox(width: Gap.xs),
+      PushButton.primary(
+        label: d.isNew ? 'Crea tabella' : 'Salva',
+        icon: AppIcons.save,
+        size: ControlScale.small,
+        tooltip: d.errors.isNotEmpty ? d.errors.first : 'Mostra lo script ed esegue le modifiche (${shortcutLabel(save)})',
+        onPressed: d.isDirty && d.errors.isEmpty ? () => saveTableDesign(context, tab) : null,
+      ),
+      const SizedBox(width: Gap.sm),
+      ToolSeparator(),
+    ];
   }
 
   /// Simplified analyst view: "Dati" first, developer pages under a
@@ -372,8 +702,11 @@ class _TableEditorViewState extends State<TableEditorView> {
     setState(() => ui.visual = v);
   }
 
-  Widget _properties(TableDetails d) => SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
+  Widget _properties(TableDetails d) =>
+      SingleChildScrollView(padding: const EdgeInsets.all(16), child: _propertiesContent(d));
+
+  Widget _propertiesContent(TableDetails d) => Align(
+    alignment: Alignment.topLeft,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -512,98 +845,14 @@ class _TableEditorViewState extends State<TableEditorView> {
     ],
   );
 
-  Widget _constraints(TableDetails d) {
-    final c = DbColors.of(context);
-    Widget section(String title, Widget child) => Align(
-      alignment: Alignment.topLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820),
-        child: FormGroup(title: title, children: [child]),
-      ),
-    );
-    final app = AppScope.read(context);
-    return ListView(
-      padding: const EdgeInsets.all(Gap.lg),
-      children: [
-        section(
-          'Chiave primaria',
-          d.primaryKey == null
-              ? const Text('Nessuna chiave primaria')
-              : SelectableText('${d.primaryKey!.name ?? 'PRIMARY KEY'}  (${d.primaryKey!.columns.join(', ')})'),
-        ),
-        section(
-          'Vincoli UNIQUE',
-          Text(
-            d.indexes.where((i) => i.unique).map((i) => '${i.name} (${i.columns.join(', ')})').join('\n').isEmpty
-                ? 'Nessuno'
-                : d.indexes.where((i) => i.unique).map((i) => '${i.name} (${i.columns.join(', ')})').join('\n'),
-          ),
-        ),
-        section(
-          'Chiavi esterne',
-          d.foreignKeys.isEmpty
-              ? const Text('Nessuna')
-              : Column(
-                  children: [
-                    for (final f in d.foreignKeys)
-                      ListRow(
-                        icon: AppIcons.link,
-                        iconColor: c.foreignKeyIcon,
-                        title: f.name ?? '(senza nome)',
-                        subtitle:
-                            '(${f.columns.join(', ')}) → ${f.pkTable} (${f.refColumns.join(', ')})'
-                            '${DbForeignKey.ruleName(f.deleteRule).isEmpty ? '' : '  ON DELETE ${DbForeignKey.ruleName(f.deleteRule)}'}',
-                        trailing: LinkButton(
-                          label: 'Apri',
-                          onPressed: () => app.openTable(
-                            tab.connection,
-                            DbTable(catalog: f.pkCatalog, schema: f.pkSchema, name: f.pkTable, type: 'TABLE'),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-        ),
-        section(
-          'Referenziata da',
-          d.referencedBy.isEmpty
-              ? const Text('Nessuna tabella')
-              : Column(
-                  children: [
-                    for (final f in d.referencedBy)
-                      ListRow(
-                        icon: AppIcons.incoming,
-                        title: f.fkTable,
-                        subtitle: '${f.name ?? ''}  (${f.columns.join(', ')}) → (${f.refColumns.join(', ')})',
-                        trailing: LinkButton(
-                          label: 'Apri',
-                          onPressed: () => app.openTable(
-                            tab.connection,
-                            DbTable(catalog: f.fkCatalog, schema: f.fkSchema, name: f.fkTable, type: 'TABLE'),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _indexes(TableDetails d) => SimpleGrid(
-    headers: const ['Nome', 'Univoco', 'Tipo', 'Colonne'],
-    rows: [
-      for (final i in d.indexes) [i.name, i.unique ? 'sì' : 'no', i.typeName, i.columns.join(', ')],
-    ],
-  );
-
   Widget _ddl(TableDetails d) {
-    final ddl = tab.connection.dialect.ddl(d);
+    final view = tab.viewDesign?.original;
+    final ddl = view != null ? viewScript(tab.connection.dialect, view) : DdlBuilder(tab.connection.dialect).tableScript(d);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         PaneHeader(
-          title: 'DDL ricostruito dai metadati ODBC',
+          title: view != null ? 'DDL letto dal catalogo del database' : 'DDL ricostruito dai metadati ODBC',
           actions: [
             ToolButton(
               icon: AppIcons.copy,

@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../../features/design/capabilities.dart';
+import '../../features/design/catalog/design_catalog.dart';
+import '../../features/design/ddl/security/security_ddl.dart';
+import '../../features/design/model/extra_defs.dart';
+import '../../features/design/model/object_defs.dart';
+import '../../features/design/model/security_defs.dart';
+import '../../features/schema/schema_model.dart';
 import '../../model/db_objects.dart';
+import '../../services/sql_dialect.dart';
+import '../../services/system_objects.dart';
 import '../../state/db_connection.dart';
 import '../theme/app_icons.dart';
 
@@ -47,6 +56,60 @@ class FolderNode extends NavNode {
   Future<List<NavNode>> load() async => items;
 }
 
+/// The system databases or schemas of a list (master, pg_catalog…), kept
+/// apart at the end of it.
+class SystemFolderNode extends FolderNode {
+  SystemFolderNode(this._key, List<NavNode> items) : super('Sistema', items) {
+    children = items;
+  }
+  final String _key;
+
+  @override
+  String? get detail => '${items.length}';
+  @override
+  IconData get icon => AppIcons.settings;
+  @override
+  String get key => _key;
+}
+
+/// [nodes] with those matching [isSystem] moved into a [SystemFolderNode]
+/// at the end (no folder when none matches).
+List<NavNode> groupSystem(String key, List<NavNode> nodes, bool Function(NavNode) isSystem) {
+  final system = nodes.where(isSystem).toList();
+  if (system.isEmpty) return nodes;
+  return [...nodes.where((n) => !isSystem(n)), SystemFolderNode(key, system)];
+}
+
+/// Whether a schema of [dc] belongs to the DBMS. Oracle: the users flagged
+/// ORACLE_MAINTAINED, when readable, besides the built-in list. The schema
+/// of the user of the connection is never one (Oracle SYSTEM login).
+Future<bool Function(String)> systemSchemaTest(DbConnection dc) async {
+  final user = dc.config.user.trim().toLowerCase();
+  var builtIn = const <String>{};
+  if (dc.dialect.family == DbFamily.oracle) {
+    try {
+      builtIn = {
+        for (final p in await DesignCatalog.of(dc)?.principals() ?? const <PrincipalDef>[])
+          if (p.builtIn && p.kind == PrincipalKind.user) p.name.toLowerCase(),
+      };
+    } catch (_) {
+      // Built-in list only.
+    }
+  }
+  return (s) {
+    final n = s.toLowerCase();
+    return n != user && (builtIn.contains(n) || isSystemSchema(dc.dialect, s));
+  };
+}
+
+/// Schema nodes of [catalog] with the system ones grouped.
+Future<List<NavNode>> schemaNodes(DbConnection dc, String? catalog, List<String> schemas) async {
+  final isSystem = await systemSchemaTest(dc);
+  return groupSystem('sys:${dc.config.id}:${catalog ?? ''}', [
+    for (final s in schemas) SchemaNode(dc, catalog, s),
+  ], (n) => isSystem((n as SchemaNode).schema));
+}
+
 class ConnectionNode extends NavNode {
   ConnectionNode(DbConnection super.connection);
 
@@ -64,26 +127,75 @@ class ConnectionNode extends NavNode {
   @override
   Future<List<NavNode>> load() async {
     final md = dc.metadata!;
+    final security = [
+      for (final k in extraKinds(dc, ExtraLevel.connection)) ExtraFolderNode(dc, k),
+      if (hasSecurity(dc)) SecurityNode(dc, server: dc.dialect.family == DbFamily.sqlServer),
+    ];
     if (md.supportsCatalogs) {
       final cats = await md.catalogs();
       if (cats.isNotEmpty) {
-        return [for (final c in cats) CatalogNode(dc, c, current: c == (dc.defaultCatalog ?? md.currentCatalog))];
+        final current = dc.defaultCatalog ?? md.currentCatalog;
+        return [
+          ...groupSystem(
+            'sys:${dc.config.id}',
+            [for (final c in cats) CatalogNode(dc, c, current: c == current)],
+            // The database the connection opens stays in sight.
+            (n) => !(n as CatalogNode).current && isSystemCatalog(dc.dialect, n.catalog),
+          ),
+          ...security,
+        ];
       }
     }
     if (md.supportsSchemas) {
-      final schemas = await md.schemas(null);
-      if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(dc, null, s)];
+      final schemas = await listSchemas(dc, null);
+      if (schemas.isNotEmpty) return [...await schemaNodes(dc, null, schemas), ...security];
     }
-    return objectFolders(dc, null, null);
+    return [...objectFolders(dc, null, null), ...security];
   }
 }
+
+/// Whether [dc] has users and roles to manage.
+bool hasSecurity(DbConnection dc) =>
+    dc.dialect.family != DbFamily.bigquery && SecurityDdl.forFamily(dc.dialect).kinds.isNotEmpty;
 
 List<NavNode> objectFolders(DbConnection dc, String? catalog, String? schema) => [
   ObjectFolderNode(dc, catalog, schema, ObjectKind.tables),
   ObjectFolderNode(dc, catalog, schema, ObjectKind.views),
   ObjectFolderNode(dc, catalog, schema, ObjectKind.system),
   if (dc.metadata?.supportsProcedures ?? true) ObjectFolderNode(dc, catalog, schema, ObjectKind.procedures),
+  if (dc.dialect.isSql && DesignCapabilities.of(dc.dialect).has(DesignFeature.sequences))
+    ObjectFolderNode(dc, catalog, schema, ObjectKind.sequences),
+  for (final k in extraKinds(dc, ExtraLevel.schema)) ExtraFolderNode(dc, k, catalog: catalog, schema: schema),
 ];
+
+/// DBMS specific object kinds of [dc] listed at [level].
+List<ExtraKind> extraKinds(DbConnection dc, ExtraLevel level) {
+  if (!dc.dialect.isSql) return const [];
+  final caps = DesignCapabilities.of(dc.dialect);
+  return [
+    for (final k in ExtraKind.values)
+      if (k.level == level && caps.has(extraFeature(k))) k,
+  ];
+}
+
+/// Schemas of [catalog]: the ODBC list plus, where the design catalog
+/// reads them, the empty ones ODBC leaves out (SQL Server lists only the
+/// schemas that contain objects).
+Future<List<String>> listSchemas(DbConnection dc, String? catalog) async {
+  final odbc = await dc.metadata!.schemas(catalog);
+  final cat = DesignCatalog.of(dc);
+  if (cat == null || !DesignCapabilities.of(dc.dialect).has(DesignFeature.schemas)) return odbc;
+  try {
+    final extra = [
+      for (final s in await cat.schemaDefs(catalog))
+        if (!odbc.any((o) => o.toLowerCase() == s.name.toLowerCase())) s.name,
+    ];
+    if (extra.isEmpty) return odbc;
+    return [...odbc, ...extra]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  } catch (_) {
+    return odbc;
+  }
+}
 
 class CatalogNode extends NavNode {
   CatalogNode(DbConnection super.connection, this.catalog, {this.current = false});
@@ -103,8 +215,13 @@ class CatalogNode extends NavNode {
   Future<List<NavNode>> load() async {
     final md = connection!.metadata!;
     if (md.supportsSchemas) {
-      final schemas = await md.schemas(catalog);
-      if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(connection!, catalog, s)];
+      final schemas = await listSchemas(connection!, catalog);
+      // SQL Server users and roles belong to a database.
+      final security = [
+        if (connection!.dialect.family == DbFamily.sqlServer && hasSecurity(connection!))
+          SecurityNode(connection!, catalog: catalog),
+      ];
+      if (schemas.isNotEmpty) return [...await schemaNodes(connection!, catalog, schemas), ...security];
     }
     return objectFolders(connection!, catalog, null);
   }
@@ -130,7 +247,8 @@ enum ObjectKind {
   tables('Tabelle', AppIcons.table),
   views('Viste', AppIcons.erDiagram),
   system('Altri oggetti', AppIcons.settings),
-  procedures('Procedure e funzioni', AppIcons.function);
+  procedures('Procedure e funzioni', AppIcons.function),
+  sequences('Sequenze', AppIcons.number);
 
   const ObjectKind(this.label, this.icon);
   final String label;
@@ -155,6 +273,11 @@ class ObjectFolderNode extends NavNode {
   @override
   Future<List<NavNode>> load() async {
     final md = connection!.metadata!;
+    if (kind == ObjectKind.sequences) {
+      final cat = DesignCatalog.of(connection!);
+      final seqs = cat == null ? const <SequenceDef>[] : await cat.sequences(catalog, schema);
+      return [for (final s in seqs) SequenceNode(connection!, s)];
+    }
     if (kind == ObjectKind.procedures) {
       final procs = await md.procedures(catalog, schema);
       return [for (final p in procs) ProcedureNode(connection!, p)];
@@ -169,7 +292,7 @@ class ObjectFolderNode extends NavNode {
           return type.contains('VIEW');
         case ObjectKind.system:
           return !(type == 'TABLE' || type == 'BASE TABLE' || type.contains('VIEW'));
-        case ObjectKind.procedures:
+        case ObjectKind.procedures || ObjectKind.sequences:
           return false;
       }
     }
@@ -205,18 +328,25 @@ class TableNode extends NavNode {
   Future<List<NavNode>> load() async => [
     TablePartNode(connection!, table, TablePart.columns),
     if (!table.isView) TablePartNode(connection!, table, TablePart.keys),
+    if (!table.isView) TablePartNode(connection!, table, TablePart.checks),
     if (!table.isView) TablePartNode(connection!, table, TablePart.foreignKeys),
     if (!table.isView) TablePartNode(connection!, table, TablePart.references),
     if (!table.isView) TablePartNode(connection!, table, TablePart.indexes),
+    if (connection!.dialect.isSql && DesignCapabilities.of(connection!.dialect).has(DesignFeature.triggers))
+      TablePartNode(connection!, table, TablePart.triggers),
+    if (!table.isView)
+      for (final k in extraKinds(connection!, ExtraLevel.table)) ExtraFolderNode(connection!, k, table: table),
   ];
 }
 
 enum TablePart {
   columns('Colonne', AppIcons.column),
   keys('Chiavi', AppIcons.key),
+  checks('Vincoli CHECK', AppIcons.check),
   foreignKeys('Chiavi esterne', AppIcons.link),
   references('Riferimenti', AppIcons.incoming),
-  indexes('Indici', AppIcons.sort);
+  indexes('Indici', AppIcons.sort),
+  triggers('Trigger', AppIcons.bolt);
 
   const TablePart(this.label, this.icon);
   final String label;
@@ -254,49 +384,158 @@ class TablePartNode extends NavNode {
             ),
         ];
       case TablePart.keys:
-        final pk = await md.primaryKey(table);
-        if (pk == null) return [];
+        final t = await _definition();
         return [
-          LeafNode(
-            connection!,
-            pk.name ?? 'PRIMARY KEY',
-            detail: pk.columns.join(', '),
-            icon: AppIcons.key,
-            isKey: true,
-            id: '${table.key}:pk',
-          ),
+          if (t.primaryKey != null) ConstraintNode(connection!, table, t.primaryKey!),
+          for (final u in t.uniques) ConstraintNode(connection!, table, u),
         ];
+      case TablePart.checks:
+        final t = await _definition();
+        return [for (final c in t.checks) ConstraintNode(connection!, table, c)];
       case TablePart.foreignKeys:
+        final t = await _definition();
+        return [for (final f in t.foreignKeys) ConstraintNode(connection!, table, f)];
       case TablePart.references:
-        final fks = part == TablePart.foreignKeys
-            ? await md.foreignKeys(table)
-            : await md.referencedBy(table);
+        final refs = await md.referencedBy(table);
         return [
-          for (final f in fks)
-            LeafNode(
+          for (final f in refs)
+            ConstraintNode(
               connection!,
-              f.name ?? '${f.fkTable}_${f.pkTable}_fk',
-              detail: part == TablePart.foreignKeys
-                  ? '(${f.columns.join(', ')}) → ${f.pkTable}(${f.refColumns.join(', ')})'
-                  : '${f.fkTable}(${f.columns.join(', ')})',
-              icon: AppIcons.link,
-              id: '${table.key}:fk:${f.name}:${f.fkTable}',
+              DbTable(catalog: f.fkCatalog, schema: f.fkSchema, name: f.fkTable, type: 'TABLE'),
+              ForeignKeyDef.fromDb(f),
+              referencing: true,
             ),
         ];
       case TablePart.indexes:
-        final ix = await md.indexes(table);
-        return [
-          for (final i in ix)
-            LeafNode(
-              connection!,
-              i.name,
-              detail: '${i.unique ? 'UNIQUE ' : ''}(${i.columns.join(', ')})',
-              icon: AppIcons.sort,
-              id: '${table.key}:ix:${i.name}',
-            ),
-        ];
+        final t = await _definition();
+        return [for (final i in t.indexes) ConstraintNode(connection!, table, i)];
+      case TablePart.triggers:
+        final cat = DesignCatalog.of(connection!);
+        final triggers = cat == null ? const <TriggerDef>[] : await cat.triggers(table);
+        return [for (final t in triggers) TriggerNode(connection!, table, t)];
     }
   }
+
+  /// The table with constraints and index attributes from the DBMS catalog
+  /// (the ODBC metadata when the catalog cannot be read).
+  Future<TableDef> _definition() async {
+    final cat = DesignCatalog.of(connection!);
+    if (cat != null) return cat.loadTable(table);
+    return TableDef.fromDetails(await connection!.metadata!.tableDetails(table));
+  }
+}
+
+/// A key, constraint or index of [table] ([definition] is a
+/// [PrimaryKeyDef], [UniqueDef], [CheckDef], [ForeignKeyDef] or [IndexDef]).
+/// [referencing]: a foreign key of [table] that references the table the
+/// node is listed under ("Riferimenti").
+class ConstraintNode extends NavNode {
+  ConstraintNode(DbConnection super.connection, this.table, this.definition, {this.referencing = false});
+  final DbTable table;
+  final Object definition;
+  final bool referencing;
+
+  String? get name => switch (definition) {
+    PrimaryKeyDef p => p.name,
+    UniqueDef u => u.name,
+    CheckDef c => c.name,
+    ForeignKeyDef f => f.name,
+    IndexDef i => i.name,
+    _ => null,
+  };
+
+  ConstraintState? get state => switch (definition) {
+    PrimaryKeyDef p => p.state,
+    UniqueDef u => u.state,
+    CheckDef c => c.state,
+    ForeignKeyDef f => f.state,
+    _ => null,
+  };
+
+  bool get enabled => definition is IndexDef ? (definition as IndexDef).enabled : (state?.enabled ?? true);
+  bool get validated => state?.validated ?? true;
+
+  bool get isKey => definition is PrimaryKeyDef;
+
+  @override
+  String get label => switch (definition) {
+    PrimaryKeyDef p => p.name ?? 'PRIMARY KEY',
+    UniqueDef u => u.name ?? 'UNIQUE',
+    CheckDef c => c.name ?? 'CHECK',
+    ForeignKeyDef f => referencing ? table.name : (f.name ?? '${table.name}_${f.refTable}_fk'),
+    IndexDef i => i.name,
+    _ => '',
+  };
+
+  @override
+  String? get detail {
+    final base = switch (definition) {
+      PrimaryKeyDef p => p.columns.join(', '),
+      UniqueDef u => 'UNIQUE (${u.columns.join(', ')})',
+      CheckDef c => c.expression,
+      ForeignKeyDef f when referencing => '${f.name == null ? '' : '${f.name} '}(${f.columns.join(', ')})',
+      ForeignKeyDef f => '(${f.columns.join(', ')}) → ${f.refTable}(${f.refColumns.join(', ')})',
+      IndexDef i => '${i.unique ? 'UNIQUE ' : ''}(${i.columns.map((c) => i.isDescending(c) ? '$c DESC' : c).join(', ')})',
+      _ => '',
+    };
+    final marks = [if (!enabled) 'disabilitato', if (enabled && !validated) 'non validato'];
+    return marks.isEmpty ? base : '$base · ${marks.join(', ')}';
+  }
+
+  @override
+  IconData get icon => switch (definition) {
+    PrimaryKeyDef _ => AppIcons.key,
+    UniqueDef _ => AppIcons.key,
+    CheckDef _ => AppIcons.check,
+    ForeignKeyDef _ => referencing ? AppIcons.incoming : AppIcons.link,
+    _ => AppIcons.sort,
+  };
+
+  @override
+  bool get expandable => false;
+  @override
+  String get key => 'con:${connection!.config.id}:${table.key}:${definition.runtimeType}:${referencing ? 'ref:' : ''}$label';
+  @override
+  Future<List<NavNode>> load() async => [];
+}
+
+class SequenceNode extends NavNode {
+  SequenceNode(DbConnection super.connection, this.sequence);
+  final SequenceDef sequence;
+
+  @override
+  String get label => sequence.name;
+  @override
+  String? get detail => sequence.currentValue == null ? null : 'valore ${sequence.currentValue}';
+  @override
+  IconData get icon => AppIcons.number;
+  @override
+  bool get expandable => false;
+  @override
+  bool get filterable => true;
+  @override
+  String get key => 'seq:${connection!.config.id}:${sequence.catalog ?? ''}:${sequence.schema ?? ''}:${sequence.name}';
+  @override
+  Future<List<NavNode>> load() async => [];
+}
+
+class TriggerNode extends NavNode {
+  TriggerNode(DbConnection super.connection, this.table, this.trigger);
+  final DbTable table;
+  final TriggerDef trigger;
+
+  @override
+  String get label => trigger.name;
+  @override
+  String? get detail => '${trigger.summary}${trigger.enabled ? '' : ' · disabilitato'}';
+  @override
+  IconData get icon => AppIcons.bolt;
+  @override
+  bool get expandable => false;
+  @override
+  String get key => 'trg:${connection!.config.id}:${table.key}:${trigger.name}';
+  @override
+  Future<List<NavNode>> load() async => [];
 }
 
 class ProcedureNode extends NavNode {
@@ -315,6 +554,175 @@ class ProcedureNode extends NavNode {
   bool get filterable => true;
   @override
   String get key => 'proc:${connection!.config.id}:${procedure.key}';
+  @override
+  Future<List<NavNode>> load() async => [];
+}
+
+/// "Sicurezza": users, roles and logins. For SQL Server the folder under
+/// the connection ([server]) lists the logins, the one under each database
+/// its users and roles.
+class SecurityNode extends NavNode {
+  SecurityNode(DbConnection super.connection, {this.catalog, this.server = false});
+  final String? catalog;
+  final bool server;
+
+  @override
+  String get label => 'Sicurezza';
+  @override
+  IconData get icon => AppIcons.security;
+  @override
+  String get key => 'sec:${connection!.config.id}:${catalog ?? ''}:$server';
+
+  List<PrincipalKind> get kinds {
+    final all = SecurityDdl.forFamily(connection!.dialect).kinds;
+    if (connection!.dialect.family != DbFamily.sqlServer) return all;
+    return [
+      for (final k in all)
+        if ((k == PrincipalKind.login) == server) k,
+    ];
+  }
+
+  @override
+  Future<List<NavNode>> load() async => [for (final k in kinds) PrincipalFolderNode(connection!, k, catalog: catalog)];
+}
+
+/// Plural label of a principal kind (navigator folders).
+String principalKindPlural(PrincipalKind k) => switch (k) {
+  PrincipalKind.user => 'Utenti',
+  PrincipalKind.role => 'Ruoli',
+  PrincipalKind.login => 'Login',
+  PrincipalKind.group => 'Gruppi',
+};
+
+IconData principalIcon(PrincipalKind k) => switch (k) {
+  PrincipalKind.user => AppIcons.user,
+  PrincipalKind.role => AppIcons.role,
+  PrincipalKind.login => AppIcons.login,
+  PrincipalKind.group => AppIcons.group,
+};
+
+class PrincipalFolderNode extends NavNode {
+  PrincipalFolderNode(DbConnection super.connection, this.kind, {this.catalog});
+  final PrincipalKind kind;
+  final String? catalog;
+
+  @override
+  String get label => principalKindPlural(kind);
+  @override
+  String? get detail => children == null ? null : '${children!.length}';
+  @override
+  IconData get icon => AppIcons.folder;
+  @override
+  String get key => 'principals:${connection!.config.id}:${catalog ?? ''}:${kind.name}';
+
+  @override
+  Future<List<NavNode>> load() async {
+    final cat = DesignCatalog.of(connection!);
+    if (cat == null) return const [];
+    final all = await cat.principals(catalog: catalog);
+    return [
+      for (final p in all)
+        if (p.kind == kind) PrincipalNode(connection!, p, catalog: catalog),
+    ];
+  }
+}
+
+class PrincipalNode extends NavNode {
+  PrincipalNode(DbConnection super.connection, this.principal, {this.catalog});
+  final PrincipalDef principal;
+  final String? catalog;
+
+  @override
+  String get label => principal.display;
+  @override
+  String? get detail =>
+      [if (principal.builtIn) 'di sistema', if (principal.locked) 'disabilitato'].join(' · ').nullIfEmpty;
+  @override
+  IconData get icon => principalIcon(principal.kind);
+  @override
+  bool get expandable => false;
+  @override
+  bool get filterable => true;
+  @override
+  String get key => 'principal:${connection!.config.id}:${catalog ?? ''}:${principal.key}';
+  @override
+  Future<List<NavNode>> load() async => [];
+}
+
+extension on String {
+  String? get nullIfEmpty => isEmpty ? null : this;
+}
+
+IconData extraIcon(ExtraKind k) => switch (k) {
+  ExtraKind.extensions => AppIcons.extension,
+  ExtraKind.enumTypes => AppIcons.category,
+  ExtraKind.domains => AppIcons.shortText,
+  ExtraKind.synonyms => AppIcons.link,
+  ExtraKind.packages => AppIcons.archive,
+  ExtraKind.events => AppIcons.timer,
+  ExtraKind.warehouses => AppIcons.memory,
+  ExtraKind.stages => AppIcons.upload,
+  ExtraKind.fileFormats => AppIcons.document,
+  ExtraKind.policies => AppIcons.security,
+  ExtraKind.exclusions => AppIcons.block,
+  ExtraKind.userTypes => AppIcons.category,
+};
+
+/// Folder of DBMS specific objects of [kind] (in a schema, at the
+/// connection, or of [table]).
+class ExtraFolderNode extends NavNode {
+  ExtraFolderNode(DbConnection super.connection, this.kind, {this.catalog, this.schema, this.table});
+  final ExtraKind kind;
+  final String? catalog;
+  final String? schema;
+  final DbTable? table;
+
+  String? get objectCatalog => table?.catalog ?? catalog;
+  String? get objectSchema => table?.schema ?? schema;
+
+  @override
+  String get label => kind.label;
+  @override
+  String? get detail => children == null ? null : '${children!.length}';
+  @override
+  IconData get icon => AppIcons.folder;
+  @override
+  String get key =>
+      'extra:${connection!.config.id}:${kind.name}:${catalog ?? ''}:${schema ?? ''}:${table?.key ?? ''}';
+
+  @override
+  Future<List<NavNode>> load() async {
+    final cat = DesignCatalog.of(connection!);
+    if (cat == null) return const [];
+    final objects = await cat.extras(kind, catalog: catalog, schema: schema, table: table);
+    return [for (final o in objects) ExtraObjectNode(connection!, kind, o, table: table)];
+  }
+}
+
+class ExtraObjectNode extends NavNode {
+  ExtraObjectNode(DbConnection super.connection, this.kind, this.object, {this.table});
+  final ExtraKind kind;
+  final ExtraObjectDef object;
+  final DbTable? table;
+
+  @override
+  String get label => object.name;
+  @override
+  String? get detail {
+    final d = object.detail;
+    return d == null || d.isEmpty ? null : d;
+  }
+
+  @override
+  IconData get icon => extraIcon(kind);
+  @override
+  bool get expandable => false;
+  @override
+  bool get filterable => true;
+  @override
+  String get key =>
+      'xobj:${connection!.config.id}:${kind.name}:${object.catalog ?? ''}:${object.schema ?? ''}:'
+      '${table?.key ?? ''}:${object.name}';
   @override
   Future<List<NavNode>> load() async => [];
 }
@@ -378,4 +786,46 @@ List<NavNode> buildRoots(List<DbConnection> conns, Map<String, NavNode> cache) {
   }
   folderNodes.sort((a, b) => a.label.compareTo(b.label));
   return [...folderNodes, ...roots];
+}
+
+/// Loaded nodes under the connection node [root] to reload after the schema
+/// changes [scopes]: the connection itself, the catalogs whose schemas
+/// changed, the object folders whose objects changed.
+List<NavNode> nodesForSchemaChanges(NavNode root, List<SchemaScope> scopes) {
+  if (scopes.isEmpty) return const [];
+  if (scopes.any((s) => s.level == SchemaLevel.connection)) return [root];
+  final catalogs = scopes.where((s) => s.level == SchemaLevel.catalog).toList();
+  final objects = scopes.where((s) => s.level == SchemaLevel.schema || s.level == SchemaLevel.object).toList();
+  final security = scopes.where((s) => s.level == SchemaLevel.security).toList();
+  final out = <NavNode>[];
+  var catalogNodes = false;
+  void walk(NavNode n) {
+    for (final ch in n.children ?? const <NavNode>[]) {
+      final hit = switch (ch) {
+        CatalogNode c => catalogs.any((s) => s.covers(c.catalog, null)),
+        ObjectFolderNode f => objects.any((s) => s.covers(f.catalog, f.schema)),
+        ExtraFolderNode f when f.kind.level == ExtraLevel.connection => objects.any(
+          (s) => s.catalog == null && s.schema == null,
+        ),
+        ExtraFolderNode f => objects.any(
+          (s) => f.table == null
+              ? s.covers(f.catalog, f.schema)
+              : s.coversObject(f.objectCatalog, f.objectSchema, f.table!.name),
+        ),
+        SecurityNode f => security.any((s) => s.catalog == null || f.catalog == null || s.catalog == f.catalog),
+        _ => false,
+      };
+      if (ch is CatalogNode) catalogNodes = true;
+      if (hit && ch.children != null) {
+        out.add(ch);
+      } else {
+        walk(ch);
+      }
+    }
+  }
+
+  walk(root);
+  // Schemas listed right under the connection (no catalogs).
+  if (catalogs.isNotEmpty && !catalogNodes) return [root];
+  return out;
 }

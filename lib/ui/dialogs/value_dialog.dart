@@ -46,6 +46,11 @@ class _ValueDialogState extends State<_ValueDialog> {
   late _View _view = widget.value is Uint8List ? _View.hex : (_looksJson ? _View.json : _View.text);
   bool _changed = false;
 
+  /// Laying out a text field with hundreds of KB of wrapped text blocks the
+  /// UI for seconds: large values open in a virtualized read-only view.
+  static const _largeText = 200 * 1000;
+  late bool _largeView = _ctrl.text.length > _largeText;
+
   bool get _looksJson {
     final v = widget.value;
     if (v is! String) return false;
@@ -113,6 +118,7 @@ class _ValueDialogState extends State<_ValueDialog> {
         _view = _View.hex;
       } else {
         _ctrl.text = utf8.decode(bytes, allowMalformed: true);
+        _largeView = _ctrl.text.length > _largeText;
       }
     });
   }
@@ -140,6 +146,8 @@ class _ValueDialogState extends State<_ValueDialog> {
               );
             },
           )
+        : _largeView
+        ? _LargeTextView(text: _ctrl.text)
         : MacTextField(
             controller: _ctrl,
             readOnly: readOnly,
@@ -176,6 +184,21 @@ class _ValueDialogState extends State<_ValueDialog> {
             ),
           ),
           const SizedBox(height: Gap.md),
+          if (_largeView && _view != _View.hex) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Valore grande: mostrato in sola lettura per non bloccare l\'app.',
+                    style: uiText(TypeSize.caption, color: DbColors.of(context).textSecondary),
+                  ),
+                ),
+                if (widget.editable)
+                  PushButton(label: 'Modifica comunque', onPressed: () => setState(() => _largeView = false)),
+              ],
+            ),
+            const SizedBox(height: Gap.sm),
+          ],
           Expanded(child: body),
         ],
       ),
@@ -184,8 +207,18 @@ class _ValueDialogState extends State<_ValueDialog> {
           label: 'Copia',
           onPressed: () => Clipboard.setData(ClipboardData(text: _ctrl.text)),
         ),
-        if (isBinary || v is String) PushButton(label: 'Salva su file…', onPressed: () => _saveToFile(v)),
-        if (widget.editable) PushButton(label: 'Carica da file…', onPressed: () => _loadFromFile(isBinary)),
+        // One pull-down when editable: the footer also holds three actions.
+        if (widget.editable)
+          PulldownButton(
+            label: 'File',
+            bordered: true,
+            entries: () => [
+              if (isBinary || v is String) MenuEntry('Salva su file…', onSelected: () => _saveToFile(v)),
+              MenuEntry('Carica da file…', onSelected: () => _loadFromFile(isBinary)),
+            ],
+          )
+        else if (isBinary || v is String)
+          PushButton(label: 'Salva su file…', onPressed: () => _saveToFile(v)),
       ],
       actions: widget.editable
           ? [
@@ -197,6 +230,67 @@ class _ValueDialogState extends State<_ValueDialog> {
               PushButton.primary(label: 'Applica', onPressed: _apply),
             ]
           : [PushButton.primary(label: 'Fine', onPressed: () => Navigator.pop(context))],
+    );
+  }
+}
+
+/// Long text split in short pieces laid out only when visible.
+class _LargeTextView extends StatefulWidget {
+  const _LargeTextView({required this.text});
+  final String text;
+
+  @override
+  State<_LargeTextView> createState() => _LargeTextViewState();
+}
+
+class _LargeTextViewState extends State<_LargeTextView> {
+  static const _piece = 2000;
+  late List<String> _pieces = _split(widget.text);
+
+  @override
+  void didUpdateWidget(_LargeTextView old) {
+    super.didUpdateWidget(old);
+    if (!identical(old.text, widget.text)) _pieces = _split(widget.text);
+  }
+
+  static List<String> _split(String text) {
+    final out = <String>[];
+    for (final line in const LineSplitter().convert(text)) {
+      if (line.length <= _piece) {
+        out.add(line);
+        continue;
+      }
+      for (var i = 0; i < line.length; i += _piece) {
+        out.add(line.substring(i, i + _piece > line.length ? line.length : i + _piece));
+      }
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    final style = TextStyle(
+      fontFamily: kMonoFamily,
+      fontFamilyFallback: kMonoFallback,
+      fontSize: TypeSize.mono,
+      height: 1.35,
+      color: c.text,
+    );
+    return Container(
+      decoration: BoxDecoration(
+        color: c.codeBackground,
+        borderRadius: BorderRadius.circular(Radii.menu),
+        border: Border.all(color: c.separator, width: 0.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SelectionArea(
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: Gap.md, vertical: Gap.sm),
+          itemCount: _pieces.length,
+          itemBuilder: (_, i) => Text(_pieces[i], style: style),
+        ),
+      ),
     );
   }
 }

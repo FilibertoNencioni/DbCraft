@@ -1,0 +1,151 @@
+# Database servers for the design tool integration tests
+# (integration_test/design_db_test.dart). See docs/design-testing.md.
+#
+#   tool/design_db/up.sh                 # pg, mssql, mysql, mariadb, oracle, firebird
+#   tool/design_db/up.sh --profile db2   # also Db2 (x86 only, ~3 GB, slow start)
+#   tool/design_db/down.sh
+#
+# Ports are offset from the defaults so they do not clash with local servers.
+# Every server has an administrator "dbcraft" with password "DbCraft_Test1"
+# (SQL Server: "sa"; Oracle: "system"; Db2: "db2inst1") and a database "dbcraft".
+# Versions are pinned: bumping one is an explicit change (new golden cases).
+
+name: dbcraft-design
+
+services:
+  pg:
+    image: postgres:17.2
+    environment:
+      POSTGRES_USER: dbcraft
+      POSTGRES_PASSWORD: DbCraft_Test1
+      POSTGRES_DB: dbcraft
+    ports: ["55432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbcraft -d dbcraft"]
+      interval: 2s
+      retries: 60
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-CU16-ubuntu-22.04
+    platform: linux/amd64 # Rosetta on Apple Silicon
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: DbCraft_Test1
+      MSSQL_PID: Developer
+    ports: ["51433:1433"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P DbCraft_Test1 -Q 'SELECT 1' || exit 1"]
+      interval: 5s
+      retries: 60
+
+  mysql:
+    image: mysql:8.4.3
+    environment:
+      MYSQL_ROOT_PASSWORD: DbCraft_Test1
+      MYSQL_DATABASE: dbcraft
+      MYSQL_USER: dbcraft
+      MYSQL_PASSWORD: DbCraft_Test1
+    ports: ["53306:3306"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -pDbCraft_Test1 --silent"]
+      interval: 2s
+      retries: 90
+
+  mariadb:
+    image: mariadb:11.4.4
+    environment:
+      MARIADB_ROOT_PASSWORD: DbCraft_Test1
+      MARIADB_DATABASE: dbcraft
+      MARIADB_USER: dbcraft
+      MARIADB_PASSWORD: DbCraft_Test1
+    ports: ["53307:3306"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      retries: 90
+
+  oracle:
+    image: gvenzl/oracle-free:23.5-slim
+    environment:
+      ORACLE_PASSWORD: DbCraft_Test1
+      APP_USER: dbcraft
+      APP_USER_PASSWORD: DbCraft_Test1
+    ports: ["51521:1521"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 5s
+      retries: 120
+
+  firebird:
+    image: firebirdsql/firebird:5.0.1
+    environment:
+      FIREBIRD_ROOT_PASSWORD: DbCraft_Test1
+      FIREBIRD_USER: dbcraft
+      FIREBIRD_PASSWORD: DbCraft_Test1
+      FIREBIRD_DATABASE: dbcraft.fdb
+      FIREBIRD_DATABASE_DEFAULT_CHARSET: UTF8
+    ports: ["53050:3050"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /var/lib/firebird/data/dbcraft.fdb"]
+      interval: 2s
+      retries: 60
+
+  db2:
+    profiles: ["db2"]
+    image: icr.io/db2_community/db2:11.5.9.0
+    platform: linux/amd64
+    privileged: true
+    environment:
+      LICENSE: accept
+      DB2INSTANCE: db2inst1
+      DB2INST1_PASSWORD: DbCraft_Test1
+      DBNAME: dbcraft
+      ARCHIVE_LOGS: "false"
+      AUTOCONFIG: "false"
+    ports: ["55000:50000"]
+    healthcheck:
+      test: ["CMD-SHELL", "su - db2inst1 -c 'db2 connect to dbcraft' >/dev/null"]
+      interval: 10s
+      retries: 90
+
+  # NoSQL (phase 9): native drivers, no ODBC driver needed.
+  mongo:
+    image: mongo:8.0.4
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: dbcraft
+      MONGO_INITDB_ROOT_PASSWORD: DbCraft_Test1
+    ports: ["57017:27017"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet -u dbcraft -p DbCraft_Test1 --eval \"db.adminCommand('ping')\""]
+      interval: 2s
+      retries: 60
+
+  cassandra:
+    image: cassandra:5.0.2
+    # Password authentication and authorization (roles and grants), and
+    # materialized views, are off by default.
+    entrypoint:
+      - bash
+      - -c
+      - >-
+        sed -i -e 's/^authenticator: .*/authenticator: PasswordAuthenticator/'
+        -e 's/^authorizer: .*/authorizer: CassandraAuthorizer/'
+        -e 's/^materialized_views_enabled: .*/materialized_views_enabled: true/'
+        /etc/cassandra/cassandra.yaml && exec docker-entrypoint.sh cassandra -f
+    environment:
+      MAX_HEAP_SIZE: 768M
+      HEAP_NEWSIZE: 128M
+    ports: ["59042:9042"]
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -u cassandra -p cassandra -e 'describe keyspaces' >/dev/null"]
+      interval: 5s
+      retries: 90
+
+  redis:
+    image: redis:7.4.1
+    command: ["redis-server", "--requirepass", "DbCraft_Test1"]
+    ports: ["56379:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a DbCraft_Test1 ping | grep PONG"]
+      interval: 2s
+      retries: 30

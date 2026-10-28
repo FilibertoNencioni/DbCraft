@@ -121,10 +121,16 @@ class ConnectionConfig {
         return '${d?.id ?? nativeDriver}://${user.isNotEmpty && useUser ? '$user@' : ''}$hp${database.isEmpty ? '' : '/$database'}';
       case ConnectionMode.connectionString:
         var s = connectionString.trim();
-        if (pwd.isNotEmpty && !RegExp(r'(^|;)\s*PWD\s*=', caseSensitive: false).hasMatch(s)) {
-          s = '${s.endsWith(';') || s.isEmpty ? s : '$s;'}PWD=${odbcEscape(pwd)}';
-        }
-        return s;
+        if (pwd.isEmpty) return s;
+        // An empty PWD= / PASSWORD= left by [movePasswordToVault] is filled
+        // in place, so that the keyword chosen by the user is kept.
+        final segments = splitOdbcSegments(s);
+        final i = segments.indexWhere((e) => _passwordKeyword.hasMatch(e));
+        if (i < 0) return '${s.endsWith(';') || s.isEmpty ? s : '$s;'}PWD=${odbcEscape(pwd)}';
+        final m = _passwordKeyword.firstMatch(segments[i])!;
+        if (segments[i].substring(m.end).trim().isNotEmpty) return s;
+        segments[i] = '${m[1]}=${odbcEscape(pwd)}';
+        return segments.join(';');
       case ConnectionMode.dsn:
         final parts = <String>['DSN=${odbcEscape(dsn)}'];
         if (user.isNotEmpty && useUser && !overridden('UID')) parts.add('UID=${odbcEscape(user)}');
@@ -158,6 +164,30 @@ class ConnectionConfig {
         extraParams.forEach((k, v) => parts.add('$k=${odbcEscape(v)}'));
         return parts.join(';');
     }
+  }
+
+  static final _passwordKeyword = RegExp(r'^\s*(PWD|PASSWORD)\s*=', caseSensitive: false);
+
+  /// Moves a password written in an ODBC connection string to [password],
+  /// which is kept in the vault instead of connections.json. The keyword is
+  /// left empty (`PWD=`) and filled by [buildConnectionString]. Returns true
+  /// when the configuration changed.
+  bool movePasswordToVault() {
+    if (mode != ConnectionMode.connectionString) return false;
+    final segments = splitOdbcSegments(connectionString);
+    var moved = false;
+    for (var i = 0; i < segments.length; i++) {
+      final m = _passwordKeyword.firstMatch(segments[i]);
+      if (m == null) continue;
+      final value = segments[i].substring(m.end).trim();
+      if (value.isEmpty) continue;
+      password = parseOdbcParams('x=$value')['x'] ?? value;
+      savePassword = true;
+      segments[i] = '${m[1]}=';
+      moved = true;
+    }
+    if (moved) connectionString = segments.join(';');
+    return moved;
   }
 
   /// Connection string with the password masked (for logs and UI).
@@ -297,6 +327,36 @@ Map<String, String> parseOdbcParams(String text) {
 }
 
 /// Escapes a value for an ODBC connection string attribute.
+/// Splits an ODBC connection string on `;`, keeping braced values (`{a;b}`)
+/// and the text of every segment as written.
+List<String> splitOdbcSegments(String text) {
+  final out = <String>[];
+  final buf = StringBuffer();
+  var inBraces = false;
+  for (var i = 0; i < text.length; i++) {
+    final ch = text[i];
+    if (inBraces) {
+      if (ch == '}') {
+        if (i + 1 < text.length && text[i + 1] == '}') {
+          buf.write('}}');
+          i++;
+          continue;
+        }
+        inBraces = false;
+      }
+    } else if (ch == ';') {
+      out.add(buf.toString());
+      buf.clear();
+      continue;
+    } else if (ch == '{') {
+      inBraces = true;
+    }
+    buf.write(ch);
+  }
+  out.add(buf.toString());
+  return out;
+}
+
 String odbcEscape(String v) {
   if (v.contains(';') || v.contains('{') || v.contains('}') || v.trim() != v) {
     return '{${v.replaceAll('}', '}}')}}';

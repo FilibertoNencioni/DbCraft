@@ -13,6 +13,7 @@ import '../../state/db_connection.dart';
 import '../../state/result_set_model.dart';
 import '../../ui/actions.dart';
 import '../../ui/widgets/common.dart';
+import '../schema/ddl_builder.dart';
 import 'ai_chat.dart';
 import 'ai_context.dart';
 import 'ai_service.dart';
@@ -86,7 +87,7 @@ Future<void> showAiExplainObject(BuildContext context, DbConnection dc, DbTable 
         final md = dc.metadata;
         if (md == null) throw AiException('La connessione non è attiva.');
         final d = await md.tableDetails(table);
-        final ddl = dc.dialect.ddl(d);
+        final ddl = DdlBuilder(dc.dialect).tableScript(d);
         final sb = StringBuffer('Spiega questo oggetto del database: ${table.displayPath} (${table.type}).\n\n');
         sb.writeln(fenced(ddl, 'sql'));
         if (table.remarks != null && table.remarks!.trim().isNotEmpty) sb.writeln('\nCommento: ${table.remarks}');

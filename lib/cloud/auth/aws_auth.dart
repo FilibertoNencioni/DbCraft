@@ -263,7 +263,7 @@ class AwsAuth {
     if (authFile != null) headers['Authorization'] = (await File(authFile).readAsString()).trim();
     try {
       final r = await cloudRequest('GET', url, headers: headers, timeout: const Duration(seconds: 2));
-      final j = jsonDecode(r.body) as Map;
+      final j = jsonDecode(r.text) as Map;
       return AwsCredentials(
         j['AccessKeyId'] as String,
         j['SecretAccessKey'] as String,
@@ -288,21 +288,21 @@ class AwsAuth {
         headers: {'X-aws-ec2-metadata-token-ttl-seconds': '21600'},
         timeout: t,
       );
-      final h = {'X-aws-ec2-metadata-token': tok.body};
+      final h = {'X-aws-ec2-metadata-token': tok.text};
       final roles = await cloudRequest(
         'GET',
         Uri.parse('$base/latest/meta-data/iam/security-credentials/'),
         headers: h,
         timeout: t,
       );
-      final role = const LineSplitter().convert(roles.body).firstWhere((e) => e.trim().isNotEmpty);
+      final role = const LineSplitter().convert(roles.text).firstWhere((e) => e.trim().isNotEmpty);
       final r = await cloudRequest(
         'GET',
         Uri.parse('$base/latest/meta-data/iam/security-credentials/$role'),
         headers: h,
         timeout: t,
       );
-      final j = jsonDecode(r.body) as Map;
+      final j = jsonDecode(r.text) as Map;
       return AwsCredentials(
         j['AccessKeyId'] as String,
         j['SecretAccessKey'] as String,
@@ -338,7 +338,7 @@ Future<AwsCredentials> assumeRole(
   final signer = SigV4Signer(credentials: source, region: r, service: 'sts');
   final headers = signer.sign(method: 'GET', uri: uri, payloadHash: emptySha256);
   final resp = await cloudRequest('GET', uri, headers: headers, operation: 'AssumeRole');
-  final doc = XmlDocument.parse(resp.body);
+  final doc = XmlDocument.parse(resp.text);
   String v(String n) => doc.findAllElements(n).first.innerText;
   return AwsCredentials(
     v('AccessKeyId'),

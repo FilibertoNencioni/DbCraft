@@ -6,10 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import '../odbc/odbc_types.dart';
 import '../cloud/ui/cloud_account_dialog.dart';
 import '../cloud/ui/cloud_explorer_panel.dart';
 import '../features/ai/ai.dart';
 import '../features/data_compare/data_compare_tab.dart';
+import '../features/design/capabilities.dart';
+import '../features/design/ui/object_actions.dart' as objects;
+import '../features/design/ui/security_tab.dart';
+import 'navigator/nav_nodes.dart' show hasSecurity;
+import '../features/design/ui/table_designer.dart';
+import '../features/design/ui/view_editor.dart';
 import '../features/git/git.dart';
 import '../features/performance/perf_dashboard.dart';
 import '../features/query_builder/query_builder_tab.dart';
@@ -157,6 +164,7 @@ class _HomePageState extends State<HomePage> {
     final connected = dc?.isConnected ?? false;
     final sql = _sqlTab(app);
     final table = app.currentTab is TableEditorTab ? app.currentTab as TableEditorTab : null;
+    final feature = app.currentTab is FeatureTab ? app.currentTab as FeatureTab : null;
     VoidCallback? sqlCmd(SqlCommand cmd) => sql == null ? null : () => SqlEditorView.dispatch(sql, cmd);
     return [
       _MenuSpec('File', [
@@ -165,9 +173,19 @@ class _HomePageState extends State<HomePage> {
         _MenuAction('Apri script SQL…', () => openScriptFile(context), _a(LogicalKeyboardKey.keyO)),
         const _MenuDivider(),
         _MenuAction(
-          table != null ? 'Salva modifiche ai dati' : 'Salva script',
-          table != null
-              ? (table.isDirty ? () => _saveTableData(table) : null)
+          feature != null
+              ? (feature.saveLabel ?? 'Salva')
+              : table == null
+              ? 'Salva script'
+              : table.designDirty
+              ? 'Salva struttura della tabella'
+              : 'Salva modifiche ai dati',
+          feature != null
+              ? (feature.saveLabel == null ? null : () => feature.save(context))
+              : table != null
+              ? (table.designDirty
+                    ? () => table.viewDesign != null ? saveViewDesign(context, table) : saveTableDesign(context, table)
+                    : (table.dataDirty ? () => _saveTableData(table) : null))
               : (sql == null ? null : () => sql.save()),
           _a(LogicalKeyboardKey.keyS),
         ),
@@ -212,6 +230,30 @@ class _HomePageState extends State<HomePage> {
           showCloudAccountDialog(context);
         }, null),
         const _MenuDivider(),
+        _MenuAction(
+          'Nuovo database…',
+          !connected ||
+                  !dc!.dialect.isSql ||
+                  dc.config.readOnly ||
+                  app.settings.simpleMode ||
+                  !DesignCapabilities.of(dc.dialect).has(DesignFeature.createDatabase)
+              ? null
+              : () => objects.createDatabase(context, dc),
+          null,
+        ),
+        _MenuAction(
+          'Nuova tabella…',
+          !connected || !dc!.dialect.isSql || dc.config.readOnly || app.settings.simpleMode
+              ? null
+              : () => app.openNewTable(dc, catalog: dc.defaultCatalog),
+          null,
+        ),
+        _MenuAction(
+          'Utenti e ruoli…',
+          !connected || app.settings.simpleMode || !hasSecurity(dc!) ? null : () => openSecurity(context, dc),
+          null,
+        ),
+        const _MenuDivider(),
         _MenuAction('Confronto schemi…', () => app.openFeatureTab(SchemaCompareTab(source: dc)), null),
         _MenuAction('Confronto dati…', () => app.openFeatureTab(DataCompareTab(source: dc)), null),
         _MenuAction(
@@ -233,6 +275,22 @@ class _HomePageState extends State<HomePage> {
         _MenuAction('Piano di esecuzione', sqlCmd(SqlCommand.explain), _a(LogicalKeyboardKey.keyE, shift: true)),
         _MenuAction('Piano visuale', sqlCmd(SqlCommand.visualPlan), _a(LogicalKeyboardKey.keyE, alt: true)),
         _MenuAction('Interrompi esecuzione', sql != null && sql.running ? () => sql.cancel() : null, _a(LogicalKeyboardKey.period)),
+        const _MenuDivider(),
+        _MenuAction(
+          'Crea vista dalla query…',
+          sql == null ||
+                  sql.connection == null ||
+                  !sql.connection!.dialect.isSql ||
+                  sql.connection!.config.readOnly ||
+                  app.settings.simpleMode
+              ? null
+              : () {
+                  final st = sql.currentStatement();
+                  if (st == null) return;
+                  app.openNewView(sql.connection!, catalog: sql.catalog, definition: st.text);
+                },
+          null,
+        ),
         const _MenuDivider(),
         _MenuAction('Formatta SQL', sqlCmd(SqlCommand.format), _a(LogicalKeyboardKey.keyF, shift: true)),
         _MenuAction('Trova e sostituisci…', sqlCmd(SqlCommand.find), _a(LogicalKeyboardKey.keyF)),
@@ -439,8 +497,12 @@ class _HomePageState extends State<HomePage> {
   Future<void> _closeTab(EditorTab t) async {
     final app = AppScope.read(context);
     if (t is TableEditorTab && t.isDirty) {
-      final ok = await confirmDialog(context, 'Modifiche non salvate',
-          'I dati di "${t.title}" contengono modifiche non salvate. Chiudere comunque?',
+      final what = t.isNew
+          ? 'La tabella "${t.title}" non è ancora stata creata'
+          : t.designDirty
+          ? 'La struttura di "${t.title}" contiene modifiche non salvate'
+          : 'I dati di "${t.title}" contengono modifiche non salvate';
+      final ok = await confirmDialog(context, 'Modifiche non salvate', '$what. Chiudere comunque?',
           ok: 'Chiudi', destructive: true);
       if (!ok) return;
     }
@@ -539,7 +601,7 @@ class _HomePageState extends State<HomePage> {
         if (dc.status == ConnectionStatus.connecting) const Text('Connessione in corso…'),
         if (dc.status == ConnectionStatus.error)
           Flexible(
-            child: Text('Errore: ${dc.error?.split('\n').first ?? ''}',
+            child: Text('Errore: ${mainErrorLine(dc.error ?? '')}',
                 style: uiText(TypeSize.caption, color: c.danger)),
           ),
       ] else

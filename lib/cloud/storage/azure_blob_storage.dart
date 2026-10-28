@@ -185,7 +185,7 @@ class AzureBlobStorage extends CloudStorage {
         query: {'comp': 'list', 'marker': ?marker},
         operation: 'Elenco container',
       );
-      final (list, next) = parseAzureContainers(r.body);
+      final (list, next) = parseAzureContainers(r.text);
       out.addAll(list);
       marker = next;
     } while (marker != null);
@@ -214,7 +214,7 @@ class AzureBlobStorage extends CloudStorage {
       },
       operation: 'Elenco blob',
     );
-    return parseAzureBlobs(r.body, bucket);
+    return parseAzureBlobs(r.text, bucket);
   }
 
   @override
@@ -405,7 +405,7 @@ class AzureBlobStorage extends CloudStorage {
         headers: {'Content-Type': 'application/xml'},
         operation: 'User delegation key',
       );
-      final k = XmlDocument.parse(r.body).rootElement;
+      final k = XmlDocument.parse(r.text).rootElement;
       final key0 = AzureUserDelegationKey(
         oid: _text(k, 'SignedOid') ?? '',
         tid: _text(k, 'SignedTid') ?? '',

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../features/design/table_design.dart';
 import '../model/connection_config.dart';
 import '../model/db_objects.dart';
 import '../services/storage.dart';
@@ -37,8 +38,10 @@ class AppState extends ChangeNotifier {
     final configs = await ws.loadConnections();
     final history = await ws.loadHistory();
     final state = AppState(ws, vault, settings, configs, history);
-    // Passwords saved in clear text by older versions move to the vault.
-    if (configs.any((c) => c.password.isNotEmpty) && await ws.connectionsContainPasswords()) {
+    // Passwords saved in clear text by older versions, or written in a
+    // connection string, move to the vault.
+    final inStrings = configs.where((c) => c.movePasswordToVault()).length;
+    if (inStrings > 0 || configs.any((c) => c.password.isNotEmpty) && await ws.connectionsContainPasswords()) {
       await state._saveConnections();
     }
     return state;
@@ -103,6 +106,7 @@ class AppState extends ChangeNotifier {
   Future<void> _saveConnections() async {
     for (final dc in connections) {
       final c = dc.config;
+      c.movePasswordToVault();
       await vault.set('${_secretPrefix(c)}password', c.savePassword ? c.password : null);
       await vault.setAll('${_secretPrefix(c)}secret:', c.secretParams);
     }
@@ -329,6 +333,14 @@ class AppState extends ChangeNotifier {
     }
     _open(TableEditorTab(c, table, initialPage: page));
   }
+
+  /// Opens the designer of a new table in [catalog].[schema].
+  void openNewTable(DbConnection c, {String? catalog, String? schema, TableDesign? template}) =>
+      _open(TableEditorTab.create(c, catalog: catalog, schema: schema, template: template));
+
+  /// Opens the editor of a new view (from [definition] when given).
+  void openNewView(DbConnection c, {String? catalog, String? schema, String? definition}) =>
+      _open(TableEditorTab.createView(c, catalog: catalog, schema: schema, definition: definition));
 
   void openProcedure(DbConnection c, DbProcedure p) {
     for (final t in tabs) {

@@ -12,6 +12,8 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
+
 // ---------------------------------------------------------------------------
 // Constants (from sql.h / sqlext.h / sqlucode.h)
 // ---------------------------------------------------------------------------
@@ -500,6 +502,7 @@ class OdbcApi {
   /// Loads the driver manager. [customPath] (from preferences) or the
   /// `DBCRAFT_ODBC_LIB` environment variable take precedence over defaults.
   static OdbcApi load([String? customPath]) {
+    _ensureUtf8CharType();
     final candidates = <String>[
       if (customPath != null && customPath.trim().isNotEmpty) customPath.trim(),
       if (Platform.environment['DBCRAFT_ODBC_LIB'] case final String env when env.isNotEmpty) env,
@@ -525,6 +528,37 @@ class OdbcApi {
       '"apt install unixodbc") oppure indica il percorso della libreria '
       'nelle Preferenze.\n\n${errors.join('\n')}',
     );
+  }
+
+  static bool _localeChecked = false;
+
+  /// unixODBC and iODBC convert the Unicode calls for drivers exporting only
+  /// the ANSI functions (e.g. sqliteodbc) with the character set of the
+  /// process locale. A GUI app starts with the "C" locale, so the text sent
+  /// to those drivers was converted to Latin-1: switch LC_CTYPE to UTF-8.
+  static void _ensureUtf8CharType() {
+    if (_localeChecked || Platform.isWindows) return;
+    _localeChecked = true;
+    try {
+      final setlocale = DynamicLibrary.process()
+          .lookupFunction<Pointer<Utf8> Function(Int32, Pointer<Utf8>), Pointer<Utf8> Function(int, Pointer<Utf8>)>(
+            'setlocale',
+          );
+      final lcCType = Platform.isMacOS ? 2 : 0;
+      final current = setlocale(lcCType, nullptr);
+      final name = current == nullptr ? 'C' : current.toDartString();
+      if (name != 'C' && name != 'POSIX') return;
+      for (final candidate in ['UTF-8', 'C.UTF-8', 'C.utf8', 'en_US.UTF-8']) {
+        final arg = candidate.toNativeUtf8();
+        try {
+          if (setlocale(lcCType, arg) != nullptr) return;
+        } finally {
+          malloc.free(arg);
+        }
+      }
+    } catch (_) {
+      // Keep the default locale: only non ASCII text for ANSI drivers suffers.
+    }
   }
 
   // -------------------------------------------------------------------------
