@@ -494,12 +494,16 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
             ),
           ),
           if (t.hostKey != null) _hostRow(t.defaultPort, withPort: t.portKey != null || t.portInServer),
-          if (t.databaseKey != null)
+          if (t.databaseKey != null || t.databaseSeparator != null)
             FormRow(
-              label: t.fileBased ? 'File' : (postgres && cfg.allDatabases ? 'Database iniziale' : 'Database'),
+              label: t.fileBased
+                  ? 'File'
+                  : t.id == 'oracle'
+                  ? 'Service name'
+                  : (postgres && cfg.allDatabases ? 'Database iniziale' : 'Database'),
               child: t.fileBased
                   ? _pathField(_database, '/percorso/del/file.db')
-                  : _field(_database, postgres ? 'Facoltativo' : 'Nome del database'),
+                  : _field(_database, postgres ? 'Facoltativo' : (t.id == 'oracle' ? 'Es. ORCLPDB1' : 'Nome del database')),
             ),
           if (postgres) _allDatabasesRow(),
         ],

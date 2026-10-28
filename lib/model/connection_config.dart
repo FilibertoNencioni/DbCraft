@@ -175,12 +175,11 @@ class ConnectionConfig {
           parts.add('$key=${odbcEscape(value)}');
         }
 
-        if (t.portInServer && port.isNotEmpty) {
-          add(t.hostKey, '$host${t.portSeparator}$port');
-        } else {
-          add(t.hostKey, host);
-          add(t.portKey, port);
-        }
+        var server = host;
+        if (t.portInServer && port.isNotEmpty) server += '${t.portSeparator}$port';
+        if (t.databaseSeparator != null && database.isNotEmpty) server += '${t.databaseSeparator}$database';
+        add(t.hostKey, server);
+        if (!t.portInServer) add(t.portKey, port);
         add(t.databaseKey, database);
         if (useUser && !overridden(t.userKey)) add(t.userKey, user);
         if (!overridden(t.passwordKey)) add(t.passwordKey, pwd);
@@ -409,6 +408,7 @@ class DriverTemplate {
     this.defaultPort = '',
     this.portInServer = false,
     this.portSeparator = ',',
+    this.databaseSeparator,
     this.defaults = const {},
     this.fileBased = false,
     this.icon = AppIcons.database,
@@ -426,6 +426,10 @@ class DriverTemplate {
   final String defaultPort;
   final bool portInServer;
   final String portSeparator;
+
+  /// The database goes in the host value after this separator instead of
+  /// its own keyword (Oracle EZConnect: `DBQ=host:port/service`).
+  final String? databaseSeparator;
   final Map<String, String> defaults;
 
   /// The database is a local file (SQLite, Access, …).
@@ -489,6 +493,10 @@ class DriverTemplate {
       hostKey: 'DBQ',
       portKey: null,
       databaseKey: null,
+      defaultPort: '1521',
+      portInServer: true,
+      portSeparator: ':',
+      databaseSeparator: '/',
       icon: AppIcons.database,
       color: Color(0xFFF80000),
     ),

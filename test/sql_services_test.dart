@@ -179,6 +179,15 @@ void main() {
     expect(pg.buildConnectionString(), 'DRIVER={PostgreSQL Unicode};SERVER=h;PORT=5432;DATABASE=d');
   });
 
+  test('Oracle ODBC: host, port and service name go in DBQ (EZConnect)', () {
+    ConnectionConfig ora(String host, String port, String db) =>
+        ConnectionConfig(id: 'o', name: 'o', driver: 'Oracle 23 ODBC driver', host: host, port: port, database: db);
+    expect(ora('h', '1521', 'ORCLPDB1').buildConnectionString(), 'DRIVER={Oracle 23 ODBC driver};DBQ=h:1521/ORCLPDB1');
+    expect(ora('h', '', 'XE').buildConnectionString(), 'DRIVER={Oracle 23 ODBC driver};DBQ=h/XE');
+    // Connections saved before: everything typed in the host field.
+    expect(ora('h:1521/XE', '', '').buildConnectionString(), 'DRIVER={Oracle 23 ODBC driver};DBQ=h:1521/XE');
+  });
+
   test('password in a connection string moves to the vault (D-007)', () {
     final c = ConnectionConfig(
       id: '1',
