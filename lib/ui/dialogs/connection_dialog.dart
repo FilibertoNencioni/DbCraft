@@ -275,6 +275,10 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     return r.details == null ? line : Tooltip(message: r.details!, child: line);
   }
 
+  /// The folders already used by the connections, as suggestions.
+  List<String> _folders() =>
+      {for (final c in widget.app.connections) c.config.folder.trim()}.where((f) => f.isNotEmpty).toList()..sort();
+
   Widget _field(TextEditingController ctrl, String hint, {int maxLines = 1, bool mono = false}) => MacTextField(
     controller: ctrl,
     hint: hint,
@@ -378,7 +382,10 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
               ),
             ),
           ),
-          FormRow(label: 'Cartella', child: _field(_folder, 'Nessuna (es. Clienti/Produzione)')),
+          FormRow(
+            label: 'Cartella',
+            child: ComboField(controller: _folder, hint: 'Nessuna (es. Clienti/Produzione)', options: _folders),
+          ),
         ],
       );
 
