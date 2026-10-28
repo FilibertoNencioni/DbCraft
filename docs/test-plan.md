@@ -93,7 +93,7 @@ Screenshot e risultati in `build/matrix/<suite>/<target>/` (`results.jsonl` + PN
 | T15 | Snowflake (ODBC) | Account di prova 30 giorni + driver ODBC Snowflake |
 | T16 | Redshift / Athena / Databricks / Trino / Atlas SQL / Access / Cassandra ODBC / BigQuery ODBC | Solo se l'utente ha account e driver: altrimenti si verifica il **template** (stringa generata) e il riconoscimento del dialetto |
 
-### Storage a oggetti (Cloud Explorer)
+### Storage a oggetti (pannello Storage)
 
 | ID | Sorgente | Come |
 |---|---|---|
@@ -297,7 +297,7 @@ Ogni caso ha un ID; nel report l'esito è per coppia *(caso, target)*: ✅ ok, �
 | AI-01 | Spiega query e oggetti, **Correggi con AI** su un errore, genera SQL/CQL/Mongo/Redis, chat per connessione; consenso prima dell'invio, contesto dello schema opzionale, chiave nel vault | Funziona; nessun dato inviato senza consenso |
 | SIMPLE-01 | **Vista semplificata**: filtri a chip, solo tabelle e viste, strumenti sviluppatore nascosti | Corretto |
 
-### CLD — Cloud Explorer (S01–S04)
+### CLD — Pannello Storage (S01–S04)
 | ID | Caso | Esito atteso |
 |---|---|---|
 | CLD-01 | Aggiungi account con ogni tipo di credenziale provabile (S3: chiavi + endpoint, profilo `~/.aws`, assume role se possibile; Azure: shared key, SAS, connection string, Azure CLI; GCS: service account, ADC) | Account valido, bucket/container elencati |
@@ -319,7 +319,7 @@ Ogni caso ha un ID; nel report l'esito è per coppia *(caso, target)*: ✅ ok, �
 | UI-02 | Ogni scorciatoia elencata in *Aiuto › Scorciatoie* funziona | Sì |
 | UI-03 | Persistenza dopo riavvio: connessioni, cartelle, preferenze, cronologia, script, account cloud | Sì |
 | UI-04 | Tema scuro su tutte le schermate principali (screenshot) | Nessun contrasto illeggibile |
-| UI-05 | Barra laterale: sezioni Navigator, Script, Cloud, Git; nascondi/mostra | Corretto |
+| UI-05 | Barra laterale: sezioni Navigator, Script, Storage, Git; nascondi/mostra | Corretto |
 
 ### ROB — Robustezza
 | ID | Caso | Esito atteso |

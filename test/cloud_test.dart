@@ -558,11 +558,11 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.text('Nessun account cloud'), findsOneWidget);
+      expect(find.text('Nessun account storage'), findsOneWidget);
 
       await tester.tap(find.text('Nuovo account…'));
       await tester.pumpAndSettle();
-      expect(find.text('Nuovo account cloud'), findsOneWidget);
+      expect(find.text('Nuovo account storage'), findsOneWidget);
       await tester.tap(find.text('Azure'));
       await tester.pumpAndSettle();
       expect(find.text('Storage account'), findsOneWidget);
@@ -594,7 +594,7 @@ void main() {
       expect(store.secrets(store.accounts.single)[CloudSecret.secretAccessKey], 'secret');
       await tester.runAsync(() => store.remove(store.accounts.single));
       await tester.pump();
-      expect(find.text('Nessun account cloud'), findsOneWidget);
+      expect(find.text('Nessun account storage'), findsOneWidget);
     });
   });
 

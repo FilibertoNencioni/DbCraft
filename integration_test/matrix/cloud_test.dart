@@ -66,7 +66,7 @@ void main() {
       final buckets = await s.listBuckets();
       record('CLD-01/buckets', Outcome.ok, buckets.map((b) => b.name).join(', '));
       expect(buckets.map((b) => b.name), contains(_bucket));
-      await tester.tap(find.byTooltip('Cloud').first);
+      await tester.tap(find.byTooltip('Storage').first);
       await settle(tester, 1500);
       await shot(tester, 'cld01_panel');
       final json = File('${app.workspace.root.path}/cloud_accounts.json').readAsStringSync();

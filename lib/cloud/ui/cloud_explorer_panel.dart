@@ -50,7 +50,7 @@ class _Node {
   CloudObject get asObject => object ?? CloudObject(bucket: bucket!, key: prefix, isFolder: true);
 }
 
-/// Left sidebar panel. Hook it as a third sidebar tab ("Cloud").
+/// Left sidebar panel. Hook it as a third sidebar tab ("Storage").
 class CloudExplorerPanel extends StatefulWidget {
   const CloudExplorerPanel({super.key});
 
@@ -228,7 +228,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
     final ok = await confirmDialog(
       context,
       'Elimina account',
-      'Rimuovere l\'account "${n.account.name}" da DbCraft? I dati nel cloud non vengono toccati.',
+      'Rimuovere l\'account "${n.account.name}" da DbCraft? I dati nello storage non vengono toccati.',
       ok: 'Rimuovi',
       destructive: true,
     );
@@ -287,12 +287,12 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
     return Column(
       children: [
         SectionLabel(
-          'Account cloud',
+          'Storage',
           padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ToolButton(icon: AppIcons.add, tooltip: 'Nuovo account cloud', onPressed: _newAccount),
+              ToolButton(icon: AppIcons.add, tooltip: 'Nuovo account storage', onPressed: _newAccount),
               ToolButton(
                 icon: AppIcons.collapseAll,
                 tooltip: 'Comprimi tutto',
@@ -325,9 +325,10 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
               : roots.isEmpty
               ? EmptyState(
                   icon: AppIcons.cloud,
-                  title: 'Nessun account cloud',
+                  title: 'Nessun account storage',
                   message:
-                      'Aggiungi un account AWS, Azure o Google Cloud per sfogliare bucket e container come '
+                      'Aggiungi un account Amazon S3 (o compatibile, come MinIO), Azure Blob Storage (anche '
+                      'l\'emulatore Azurite) o Google Cloud Storage per sfogliare bucket e container come '
                       'cartelle, caricare e scaricare file.',
                   action: PushButton.primary(label: 'Nuovo account…', onPressed: _newAccount),
                 )
@@ -488,7 +489,7 @@ class _CloudExplorerPanelState extends State<CloudExplorerPanel> {
             ),
           if (hasLocal)
             _item(
-              'Salva nel cloud la copia locale',
+              'Salva nello storage la copia locale',
               () => _withStorage(n, (s) => cloudSaveLocalCopy(context, n.account, s, o), refresh: n.parent),
             ),
           if (cloudCsvExtensions.contains(ext))

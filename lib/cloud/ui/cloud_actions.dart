@@ -133,7 +133,7 @@ Future<bool> cloudDelete(BuildContext context, CloudStorage s, List<CloudObject>
   final ok = await confirmDialog(
     context,
     'Elimina',
-    'Eliminare definitivamente $what dal cloud?',
+    'Eliminare definitivamente $what dallo storage?',
     ok: 'Elimina',
     destructive: true,
   );
@@ -278,7 +278,7 @@ Future<void> cloudOpenInEditor(BuildContext context, CloudAccount a, CloudStorag
   );
   if (!ok) return;
   await app.openSqlEditor(app.activeConnection, file: local);
-  if (context.mounted) showToast(context, 'Modifiche salvate in locale: usa "Salva nel cloud" per caricarle');
+  if (context.mounted) showToast(context, 'Modifiche salvate in locale: usa "Salva nello storage" per caricarle');
 }
 
 /// Uploads the local copy (edited in the SQL editor) back to the object.
@@ -295,7 +295,7 @@ Future<bool> cloudSaveLocalCopy(BuildContext context, CloudAccount a, CloudStora
     total: await local.length(),
     body: (t) => s.upload(o.bucket, o.key, local, onProgress: t.progress, cancel: t.cancel),
   );
-  if (ok && context.mounted) showToast(context, 'Salvato nel cloud: ${o.name}');
+  if (ok && context.mounted) showToast(context, 'Salvato nello storage: ${o.name}');
   return ok;
 }
 

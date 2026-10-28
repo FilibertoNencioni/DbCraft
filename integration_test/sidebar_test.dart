@@ -156,7 +156,7 @@ void main() {
       await tester.tap(find.byTooltip('Script'));
       await settle(tester);
       await shot(tester, 's1_scripts_$suffix');
-      await tester.tap(find.byTooltip('Cloud'));
+      await tester.tap(find.byTooltip('Storage'));
       await settle(tester);
       await shot(tester, 's2_cloud_$suffix');
       await tester.tap(find.byTooltip('Git'));

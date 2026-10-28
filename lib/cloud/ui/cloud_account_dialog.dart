@@ -193,7 +193,7 @@ class _CloudAccountDialogState extends State<_CloudAccountDialog> {
   @override
   Widget build(BuildContext context) {
     return SheetScaffold(
-      title: widget.existing == null ? 'Nuovo account cloud' : 'Modifica account cloud',
+      title: widget.existing == null ? 'Nuovo account storage' : 'Modifica account storage',
       onSubmit: _save,
       leading: [
         PushButton(label: 'Prova', onPressed: _testing ? null : _test),

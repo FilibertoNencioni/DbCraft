@@ -102,7 +102,7 @@ void main() {
     expect(File('${ws.path}/vault.json').existsSync(), isTrue);
 
     // Sidebar panels: Cloud and Git.
-    await tester.tap(find.byTooltip('Cloud'));
+    await tester.tap(find.byTooltip('Storage'));
     await shot(tester, 'p01_cloud_panel');
     await tester.tap(find.byTooltip('Git'));
     await shot(tester, 'p02_git_panel');

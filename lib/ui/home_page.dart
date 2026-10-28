@@ -222,7 +222,7 @@ class _HomePageState extends State<HomePage> {
             !connected ? null : () => _toggleAutoCommit(dc!), null),
         const _MenuDivider(),
         _MenuAction('Driver ODBC installati…', () => showDriverManagerDialog(context), null),
-        _MenuAction('Account cloud…', () {
+        _MenuAction('Account storage…', () {
           setState(() {
             _showSidebar = true;
             _leftTab = 2;
@@ -473,7 +473,7 @@ class _HomePageState extends State<HomePage> {
           items: const [
             SidebarTab(0, 'Database', AppIcons.database, selectedIcon: AppIcons.databaseFill),
             SidebarTab(1, 'Script', AppIcons.document, selectedIcon: AppIcons.documentFill),
-            SidebarTab(2, 'Cloud', AppIcons.cloud, selectedIcon: AppIcons.cloudFill),
+            SidebarTab(2, 'Storage', AppIcons.cloud, selectedIcon: AppIcons.cloudFill),
             SidebarTab(3, 'Git', AppIcons.git, selectedIcon: AppIcons.gitFill),
           ],
           onChanged: (v) => setState(() => _leftTab = v),
