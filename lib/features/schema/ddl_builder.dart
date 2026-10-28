@@ -365,7 +365,12 @@ class DdlBuilder {
       out.add(_comment('Attenzione: ${c.name} è NOT NULL senza DEFAULT, fallisce se la tabella contiene righe'));
     }
     switch (family) {
-      case DbFamily.sqlServer || DbFamily.oracle || DbFamily.firebird:
+      case DbFamily.sqlServer:
+        // Without WITH VALUES the existing rows of a nullable column stay
+        // NULL, unlike the other DBMS.
+        final fill = c.nullable && c.computed == null && (c.defaultValue?.trim().isNotEmpty ?? false);
+        out.add('ALTER TABLE ${tableRef(t)} ADD $def${fill ? ' WITH VALUES' : ''}');
+      case DbFamily.oracle || DbFamily.firebird:
         out.add('ALTER TABLE ${tableRef(t)} ADD $def');
       default:
         out.add('ALTER TABLE ${tableRef(t)} ADD COLUMN $def');

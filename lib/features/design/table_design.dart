@@ -210,6 +210,47 @@ class TableDesign extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Renames the table. In a new table the constraint and index names still
+  /// generated from the previous name follow the new one (they are unique
+  /// per schema in many DBMS).
+  void rename(String name) {
+    final t = _working;
+    if (!isNew || t.name == name) {
+      update(t.copyWith(name: name), coalesce: 'name');
+      return;
+    }
+    final b = DdlBuilder(dialect);
+    final olds = {t.name, if (t.name.isEmpty) 'tabella'};
+    final now = t.copyWith(name: name.isEmpty ? 'tabella' : name);
+    String? follow(String? n, ConstraintKind? kind, List<String> cols, {String? ref, int k = 1}) {
+      if (n == null) return null;
+      for (final old in olds) {
+        if (n == b.autoName(t.copyWith(name: old), kind, columns: cols, refTable: ref, n: k)) {
+          return b.autoName(now, kind, columns: cols, refTable: ref, n: k);
+        }
+      }
+      return n;
+    }
+
+    final pk = t.primaryKey;
+    update(
+      t.copyWith(
+        name: name,
+        primaryKey: pk?.copyWith(name: follow(pk.name, ConstraintKind.primaryKey, pk.columns)),
+        uniques: [for (final u in t.uniques) u.copyWith(name: follow(u.name, ConstraintKind.unique, u.columns))],
+        checks: [
+          for (final (i, c) in t.checks.indexed) c.copyWith(name: follow(c.name, ConstraintKind.check, const [], k: i + 1)),
+        ],
+        foreignKeys: [
+          for (final f in t.foreignKeys)
+            f.copyWith(name: follow(f.name, ConstraintKind.foreignKey, f.columns, ref: f.refTable)),
+        ],
+        indexes: [for (final x in t.indexes) x.copyWith(name: follow(x.name, null, x.columns))],
+      ),
+      coalesce: 'name',
+    );
+  }
+
   void undo() {
     if (_undo.isEmpty) return;
     _redo.add(_working);

@@ -106,7 +106,7 @@ class GcsStorage extends CloudStorage {
         query: {'project': project, 'maxResults': '1000', 'pageToken': ?token},
         operation: 'Elenco bucket',
       );
-      final j = jsonDecode(r.body) as Map;
+      final j = jsonDecode(r.text) as Map;
       for (final b in (j['items'] as List?) ?? const []) {
         final m = b as Map;
         out.add(
@@ -142,7 +142,7 @@ class GcsStorage extends CloudStorage {
       },
       operation: 'Elenco oggetti',
     );
-    final page = parseGcsList(r.body, bucket);
+    final page = parseGcsList(r.text, bucket);
     return CloudListPage(
       folders: page.folders.where((f) => f.key != prefix).toList(),
       files: page.files,
@@ -153,7 +153,7 @@ class GcsStorage extends CloudStorage {
   @override
   Future<CloudObject> stat(String bucket, String key) async {
     final r = await _json('GET', '/storage/v1/b/${_o(bucket)}/o/${_o(key)}', operation: 'Proprietà oggetto');
-    final o = _gcsObject(bucket, jsonDecode(r.body) as Map);
+    final o = _gcsObject(bucket, jsonDecode(r.text) as Map);
     return CloudObject(
       bucket: bucket,
       key: key,
@@ -267,7 +267,7 @@ class GcsStorage extends CloudStorage {
         final r = await http.Response.fromStream(s);
         if (r.statusCode == 308) continue;
         if (r.statusCode == 200 || r.statusCode == 201) return;
-        throw responseError(r, r.body, operation: 'Caricamento');
+        throw responseError(r, r.text, operation: 'Caricamento');
       }
     } catch (_) {
       try {
@@ -298,7 +298,7 @@ class GcsStorage extends CloudStorage {
         body: const <String, Object?>{},
         operation: 'Copia',
       );
-      final j = jsonDecode(r.body) as Map;
+      final j = jsonDecode(r.text) as Map;
       token = j['done'] == true ? null : j['rewriteToken'] as String?;
     } while (token != null);
   }

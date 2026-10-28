@@ -19,8 +19,17 @@ Future<bool> executeDdl(
   DbConnection dc,
   List<String> statements, {
   SchemaScope scope = SchemaScope.connection,
+  bool transactional = false,
   void Function(int done, int total)? onProgress,
-}) async => (await runDdlScript(context, dc, DdlScript(statements, scope: scope), onProgress: onProgress)).ok;
+}) async => (await runDdlScript(
+  context,
+  dc,
+  DdlScript(statements, scope: scope, transactional: transactional),
+  onProgress: onProgress,
+)).ok;
+
+final _fkChecksOff = RegExp(r'^\s*PRAGMA\s+foreign_keys\s*=\s*(OFF|0|FALSE)\s*;?\s*$', caseSensitive: false);
+final _fkChecksOn = RegExp(r'^\s*PRAGMA\s+foreign_keys\s*=\s*(ON|1|TRUE)\s*;?\s*$', caseSensitive: false);
 
 final _destructive = RegExp(
   r'^\s*(drop|revoke)\b|\bdrop\s+(column|constraint|primary|foreign|index|default)\b',
@@ -47,7 +56,7 @@ Future<DdlResult> runDdlScript(
     showToast(context, 'La connessione "${dc.config.name}" è in sola lettura', error: true);
     return const DdlResult.skipped();
   }
-  final exec = script.executable.map(stripLeadingComments).where((s) => s.isNotEmpty).toList();
+  var exec = script.executable.map(stripLeadingComments).where((s) => s.isNotEmpty).toList();
   if (exec.isEmpty) {
     showToast(context, 'Nessuna istruzione da eseguire');
     return const DdlResult.skipped();
@@ -60,6 +69,13 @@ Future<DdlResult> runDdlScript(
       !script.autocommitOnly &&
       dc.autoCommit &&
       DesignCapabilities.of(dc.dialect).has(DesignFeature.transactionalDdl);
+  // SQLite ignores PRAGMA foreign_keys inside a transaction (table
+  // rebuilds): the checks go off before it and back on afterwards, also when
+  // a statement fails.
+  final fkChecksOff = exec.any(_fkChecksOff.hasMatch);
+  if (tx && fkChecksOff) {
+    exec = [for (final s in exec) if (!_fkChecksOff.hasMatch(s) && !_fkChecksOn.hasMatch(s)) s];
+  }
   final ok = await confirmDialog(
     context,
     'Eseguire lo script?',
@@ -102,6 +118,7 @@ Future<DdlResult> runDdlScript(
     } else if (script.catalog != null) {
       await dc.useCatalog(script.catalog);
     }
+    if (tx && fkChecksOff) await _run(session, 'PRAGMA foreign_keys = OFF');
     if (tx) await session.setAutoCommit(false);
     for (var i = 0; i < exec.length; i++) {
       onProgress?.call(i, exec.length);
@@ -142,6 +159,11 @@ Future<DdlResult> runDdlScript(
         await session.setAutoCommit(true);
       } catch (_) {}
     }
+    if (fkChecksOff && (tx || failedAt >= 0)) {
+      try {
+        await _run(session, 'PRAGMA foreign_keys = ON');
+      } catch (_) {}
+    }
     await own?.close();
   }
 
@@ -152,7 +174,9 @@ Future<DdlResult> runDdlScript(
           ? ''
           : rolledBack
           ? ' (nessuna modifica applicata: la transazione è stata annullata)'
-          : failedAt > 0
+          : failedAt == 1
+          ? ' (la precedente è stata eseguita)'
+          : failedAt > 1
           ? ' (le $failedAt precedenti sono state eseguite)'
           : '';
       showErrorDialog(
@@ -180,6 +204,11 @@ Future<DdlResult> runDdlScript(
   return DdlResult(total: exec.length, executed: exec.length);
 }
 
+Future<void> _run(DbSession session, String sql) async {
+  final r = await session.execute(sql);
+  if (r.cursorId != null) await session.closeCursor(r.cursorId!);
+}
+
 /// Drivers may echo the failing statement: never show a secret.
 String _maskSecrets(String message, DdlScript script) {
   var m = message;
@@ -200,21 +229,24 @@ Future<bool> showDdlScriptDialog(
   List<String>? statements,
   DdlScript? script,
   String title = 'Script DDL',
+  ValueChanged<DdlResult>? onResult,
 }) async {
   assert((statements == null) != (script == null), 'Pass statements or script');
   final r = await showSheet<bool>(
     context,
     size: SheetSize.large,
-    builder: (_) => _DdlScriptDialog(dc: dc, script: script ?? DdlScript(statements!), title: title),
+    builder: (_) =>
+        _DdlScriptDialog(dc: dc, script: script ?? DdlScript(statements!), title: title, onResult: onResult),
   );
   return r ?? false;
 }
 
 class _DdlScriptDialog extends StatefulWidget {
-  const _DdlScriptDialog({required this.dc, required this.script, required this.title});
+  const _DdlScriptDialog({required this.dc, required this.script, required this.title, this.onResult});
   final DbConnection dc;
   final DdlScript script;
   final String title;
+  final ValueChanged<DdlResult>? onResult;
 
   @override
   State<_DdlScriptDialog> createState() => _DdlScriptDialogState();
@@ -237,9 +269,13 @@ class _DdlScriptDialogState extends State<_DdlScriptDialog> {
         if (mounted) setState(() => _progress = 'Esecuzione $d di $n…');
       },
     );
+    widget.onResult?.call(r);
     if (!mounted) return;
     if (r.ok) {
       Navigator.pop(context, true);
+    } else if (r.executed > 0 && !r.rolledBack) {
+      // Part of the script is applied: running it again would repeat it.
+      Navigator.pop(context, false);
     } else {
       setState(() {
         _running = false;

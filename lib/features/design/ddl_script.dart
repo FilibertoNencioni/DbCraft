@@ -51,8 +51,8 @@ class DdlScript {
   final bool autocommitOnly;
 
   /// Run the script in one transaction, rolled back at the first error, when
-  /// the DBMS has transactional DDL. Off for scripts that toggle settings
-  /// ignored inside a transaction (SQLite `PRAGMA foreign_keys`).
+  /// the DBMS has transactional DDL. SQLite `PRAGMA foreign_keys` statements
+  /// are moved before and after the transaction.
   final bool transactional;
 
   /// What the script changes: the navigator and the open editors refresh it.

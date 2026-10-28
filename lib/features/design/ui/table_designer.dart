@@ -13,6 +13,7 @@ import '../../schema/ddl_builder.dart';
 import '../../schema/schema_model.dart';
 import '../capabilities.dart';
 import '../catalog/design_catalog.dart';
+import '../ddl_script.dart';
 import '../table_design.dart';
 import 'design_actions.dart';
 
@@ -117,7 +118,7 @@ class _DesignPropertiesPageState extends State<DesignPropertiesPage> {
                         controller: _fields.of(0, 'name', t.name),
                         autofocus: d.isNew && t.name.isEmpty,
                         hint: 'nome della tabella',
-                        onChanged: (v) => d.update(t.copyWith(name: v.trim()), coalesce: 'name'),
+                        onChanged: (v) => d.rename(v.trim()),
                       ),
                     ),
                     if (t.catalog != null)
@@ -601,27 +602,42 @@ Future<bool> saveTableDesign(BuildContext context, TableEditorTab tab) async {
   }
   final w = d.working;
   final target = d.original ?? w;
+  DdlResult? result;
   final ok = await runTableScript(
     context,
     dc,
     target,
     d.statements,
     title: d.isNew ? 'Crea la tabella ${w.name}' : 'Modifiche alla tabella ${target.name}',
+    onResult: (r) => result = r,
   );
-  if (!ok) return false;
+  if (!ok) {
+    // Without transactional DDL the statements before the failing one stay
+    // applied: read the table again so that only the rest is pending.
+    final r = result;
+    if (r != null && r.executed > 0 && !r.rolledBack) await _reloadDesign(tab, keepPending: true);
+    return false;
+  }
+  await _reloadDesign(tab, keepPending: d.excluded.isNotEmpty);
+  return true;
+}
+
+Future<void> _reloadDesign(TableEditorTab tab, {required bool keepPending}) async {
+  final d = tab.design!;
+  final dc = tab.connection;
+  final w = d.working;
   final md = dc.metadata;
   final cat = DesignCatalog.of(dc);
   final found = await md?.findTable(w.catalog, w.schema, w.name);
-  if (found == null || cat == null) return true;
+  if (found == null || cat == null) return;
   try {
     final def = await cat.loadTable(found);
     tab.table = found;
-    d.saved(def, keepPending: d.excluded.isNotEmpty);
+    d.saved(def, keepPending: keepPending);
     d.incoming = await incomingForeignKeys(dc, def);
     d.refresh();
   } catch (_) {
     tab.table = found;
   }
   tab.refresh();
-  return true;
 }

@@ -9,6 +9,7 @@ import '../../model/connection_config.dart';
 import '../../odbc/odbc_session.dart';
 import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
+import '../../state/db_connection.dart';
 import '../widgets/common.dart';
 import 'driver_manager_dialog.dart';
 
@@ -50,7 +51,7 @@ class _TestResult {
 
   /// First diagnostic without its SQLSTATE and [vendor][driver] prefixes.
   static String _firstLine(Object e) {
-    final msg = (e is OdbcException ? e.message : '$e').trim().split('\n').first;
+    final msg = mainErrorLine(e is OdbcException ? e.message : '$e');
     return msg.replaceFirst(RegExp(r'^(\[\w+\]\s*\(-?\d+\)\s*)?(\[[^\]]*\])*\s*'), '');
   }
 }
@@ -210,7 +211,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     _TestResult result;
     try {
       final s = await openDbSession(c, libPath: widget.app.settings.libPathOrNull);
-      final info = await s.info();
+      final info = normalizeServerInfo(await s.info());
       await s.close();
       String v(String k) => '${info[k] ?? ''}'.trim();
       final dbms = [v('dbmsName'), v('dbmsVersion')].where((x) => x.isNotEmpty).join(' ');
@@ -514,7 +515,8 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         ),
         FormGroup(
           title: 'Autenticazione',
-          footer: 'Usata solo se la stringa non contiene già PWD.',
+          footer: 'Usata se la stringa non contiene PWD. Una password scritta nella stringa (PWD=…) '
+              'viene spostata qui al salvataggio e conservata cifrata nel vault.',
           children: [
             FormRow(label: 'Password', child: SecureField(controller: _password, hint: 'Facoltativa')),
             _savePasswordRow(),

@@ -34,6 +34,9 @@ class SqlSplitter {
     var blockMode = false;
     var checkedBlock = false;
     String? lastWord;
+    // MySQL client directive "DELIMITER $$": until "DELIMITER ;" statements
+    // end only at the custom delimiter.
+    var delimiter = ';';
 
     void emit(int end, int next) {
       final raw = sql.substring(stmtStart, end);
@@ -69,6 +72,11 @@ class SqlSplitter {
         i = e < 0 ? n : e + 2;
         continue;
       }
+      if (delimiter != ';' && sql.startsWith(delimiter, i)) {
+        emit(i, i + delimiter.length);
+        i = stmtStart;
+        continue;
+      }
       // Quoted text
       if (c == "'" || c == '"' || c == '`') {
         i = _skipQuoted(sql, i, c);
@@ -99,6 +107,20 @@ class SqlSplitter {
           j++;
         }
         final word = sql.substring(i, j).toUpperCase();
+        if (word == 'DELIMITER' && atLineStart(i)) {
+          final eol = _skipTo(sql, j, '\n');
+          final token = sql.substring(j, eol).trim().split(RegExp(r'\s+')).first;
+          if (token.isNotEmpty) {
+            emit(i, eol);
+            delimiter = token;
+            i = stmtStart;
+            continue;
+          }
+        }
+        if (delimiter != ';') {
+          i = j;
+          continue;
+        }
         if (word == 'GO' && atLineStart(i) && _restOfLineBlank(sql, j)) {
           emit(i, _skipTo(sql, j, '\n'));
           i = stmtStart;
@@ -116,6 +138,10 @@ class SqlSplitter {
         }
         lastWord = word;
         i = j;
+        continue;
+      }
+      if (delimiter != ';') {
+        i++;
         continue;
       }
       if (c == ';' && (!blockMode || depth <= 0)) {

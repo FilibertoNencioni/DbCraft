@@ -152,6 +152,20 @@ void main() {
       final my = TableDesign.create(sqlDialects['mysql']!);
       expect(my.working.primaryKey!.name, isNull, reason: 'MySQL always names it PRIMARY');
 
+      // Typing the name: the automatic key name follows it (D-017).
+      final typed = TableDesign.create(pg, schema: 'app');
+      expect(typed.working.primaryKey!.name, 'pk_tabella');
+      for (final partial in ['d', 'db', 'dbc_nuova1']) {
+        typed.rename(partial);
+      }
+      expect(typed.working.primaryKey!.name, 'pk_dbc_nuova1');
+      expect(typed.statements.single, contains('CONSTRAINT pk_dbc_nuova1 PRIMARY KEY (id)'));
+      typed.replace(typed.working.primaryKey, typed.working.primaryKey!.copyWith(name: 'chiave'));
+      typed.rename('dbc_nuova2');
+      expect(typed.working.primaryKey!.name, 'chiave', reason: 'a name chosen by the user stays');
+      typed.undo();
+      expect(typed.working.name, 'dbc_nuova1');
+
       final copy = TableDesign.copyOf(pg, orders, 'orders_2024');
       expect(copy.isNew, isTrue);
       expect(copy.working.name, 'orders_2024');

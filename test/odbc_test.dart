@@ -81,4 +81,20 @@ void main() {
       File(db).deleteSync();
     }
   }, skip: !hasDriver);
+
+  // sqliteodbc exports only the ANSI functions: the Driver Manager converts
+  // the SQL text with the process locale (D-005).
+  test('sqlite: non ASCII SQL text reaches an ANSI driver as UTF-8', () async {
+    final s = await OdbcSession.open('Driver=$_sqliteDriver;Database=:memory:');
+    try {
+      final p = await s.execute("SELECT hex('città'), 'città'");
+      expect(p.rows.first, ['63697474C3A0', 'città']);
+      await s.execute('CREATE TABLE "Tabella Strana" ("città" TEXT)');
+      await s.execute('INSERT INTO "Tabella Strana" ("città") VALUES (\'Forlì\')');
+      final r = await s.execute('SELECT "città" FROM "Tabella Strana"');
+      expect(r.rows.first.first, 'Forlì');
+    } finally {
+      await s.close();
+    }
+  }, skip: !hasDriver);
 }

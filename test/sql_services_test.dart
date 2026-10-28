@@ -1,4 +1,8 @@
 import 'package:dbcraft/model/connection_config.dart';
+import 'package:dbcraft/odbc/odbc_core.dart';
+import 'package:dbcraft/odbc/odbc_types.dart';
+import 'package:dbcraft/state/db_connection.dart';
+import 'package:dbcraft/state/result_set_model.dart';
 import 'package:dbcraft/services/data_transfer.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
 import 'package:dbcraft/services/sql_formatter.dart';
@@ -13,6 +17,22 @@ void main() {
     test('splits on ; ignoring strings and comments', () {
       final s = SqlSplitter().split("select 'a;b' from t; -- x;y\nselect \"c;d\" /* ; */ from u;");
       expect(s.map((e) => e.text), ["select 'a;b' from t", "-- x;y\nselect \"c;d\" /* ; */ from u"]);
+    });
+    test('MySQL DELIMITER directive (D-009)', () {
+      final s = SqlSplitter().split(
+        'DELIMITER \$\$\n'
+        'CREATE PROCEDURE p_dlm(IN a INT)\nBEGIN\n  SELECT a; SELECT \'\$\$\';\nEND \$\$\n'
+        'CREATE FUNCTION f() RETURNS INT RETURN 1\$\$\n'
+        'DELIMITER ;\n'
+        'SELECT 1; SELECT 2;',
+      );
+      expect(s.map((e) => e.text), [
+        "CREATE PROCEDURE p_dlm(IN a INT)\nBEGIN\n  SELECT a; SELECT '\$\$';\nEND",
+        'CREATE FUNCTION f() RETURNS INT RETURN 1',
+        'SELECT 1',
+        'SELECT 2',
+      ]);
+      expect(SqlSplitter().split('delimiter //\nselect 1//\ndelimiter ;').map((e) => e.text), ['select 1']);
     });
     test('GO and / delimiters', () {
       final s = SqlSplitter().split('select 1\nGO\nselect 2\n/\nselect 3');
@@ -94,6 +114,44 @@ void main() {
     });
   });
 
+  test('single table SELECT without base table metadata (D-011)', () {
+    expect(singleTableSelect('SELECT * FROM tipi ORDER BY id'), (catalog: null, schema: null, name: 'tipi'));
+    expect(singleTableSelect('select id, [nome] from dbo.[Tabella Strana] t where id > 1;'), (
+      catalog: null,
+      schema: 'dbo',
+      name: 'Tabella Strana',
+    ));
+    expect(singleTableSelect('SELECT TOP 10 * FROM d.dbo.t'), (catalog: 'd', schema: 'dbo', name: 't'));
+    expect(singleTableSelect('SELECT a + 1 FROM t'), isNull);
+    expect(singleTableSelect('SELECT a AS b FROM t'), isNull);
+    expect(singleTableSelect('SELECT * FROM a JOIN b ON a.id = b.id'), isNull);
+    expect(singleTableSelect('SELECT * FROM a, b'), isNull);
+    expect(singleTableSelect('SELECT DISTINCT a FROM t'), isNull);
+    expect(singleTableSelect('SELECT * FROM (SELECT 1 x) s'), isNull);
+  });
+
+  test('error lines, decimals, versions, modifying statements', () {
+    expect(
+      mainErrorLine(
+        '[08001] (101) could not initiate GSSAPI security context: Cannot find KDC\n'
+        '[08001] (101) FATAL:  password authentication failed for user "dbcraft"',
+      ),
+      contains('FATAL:  password authentication failed'),
+    );
+    expect(mainErrorLine('only line\nsecond'), 'only line');
+    expect(normalizeDecimalText('.0000000001'), '0.0000000001');
+    expect(normalizeDecimalText('-.5'), '-0.5');
+    expect(normalizeDecimalText('12.5'), '12.5');
+    expect(normalizeServerInfo({'dbmsName': 'MySQL', 'dbmsVersion': '08.04.000003'})['dbmsVersion'], '8.4.3');
+    expect(
+      normalizeServerInfo({'dbmsName': 'Microsoft SQL Server', 'dbmsVersion': '16.00.4135'})['dbmsVersion'],
+      '16.00.4135',
+    );
+    expect(isModifyingSql("UPDATE progetti SET budget = budget + 1 WHERE codice = 'ERP-07'"), isTrue);
+    expect(isModifyingSql('-- c\nCOPY t FROM stdin'), isTrue);
+    expect(isModifyingSql('SELECT * FROM t'), isFalse);
+  });
+
   test('connection strings', () {
     final c = ConnectionConfig(
       id: '1',
@@ -119,6 +177,33 @@ void main() {
       database: 'd',
     );
     expect(pg.buildConnectionString(), 'DRIVER={PostgreSQL Unicode};SERVER=h;PORT=5432;DATABASE=d');
+  });
+
+  test('password in a connection string moves to the vault (D-007)', () {
+    final c = ConnectionConfig(
+      id: '1',
+      name: 'x',
+      mode: ConnectionMode.connectionString,
+      connectionString: 'Driver={PostgreSQL Unicode};Server=h;Uid=u;Pwd={p;w};Port=5432',
+    );
+    expect(c.movePasswordToVault(), isTrue);
+    expect(c.password, 'p;w');
+    expect(c.savePassword, isTrue);
+    expect(c.connectionString, 'Driver={PostgreSQL Unicode};Server=h;Uid=u;Pwd=;Port=5432');
+    expect(c.toJson().toString().contains('p;w'), isFalse);
+    expect(c.buildConnectionString(), 'Driver={PostgreSQL Unicode};Server=h;Uid=u;Pwd={p;w};Port=5432');
+    expect(c.movePasswordToVault(), isFalse);
+    final other = ConnectionConfig(
+      id: '2',
+      name: 'y',
+      mode: ConnectionMode.connectionString,
+      connectionString: 'DSN=x;PASSWORD=s3cr',
+    );
+    expect(other.movePasswordToVault(), isTrue);
+    expect(other.buildConnectionString(), 'DSN=x;PASSWORD=s3cr');
+    final none = ConnectionConfig(id: '3', name: 'z', mode: ConnectionMode.connectionString, connectionString: 'DSN=x', password: 'q');
+    expect(none.movePasswordToVault(), isFalse);
+    expect(none.buildConnectionString(), 'DSN=x;PWD=q');
   });
 
   test('driver parameters', () {

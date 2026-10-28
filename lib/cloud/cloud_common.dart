@@ -22,6 +22,13 @@ class CloudException implements Exception {
   String toString() => message;
 }
 
+/// The body of a response as UTF-8. `Response.body` falls back to Latin-1
+/// when the Content-Type has no charset, as in the XML listings of S3 and
+/// Azure, and garbles non ASCII object names.
+extension Utf8ResponseText on http.Response {
+  String get text => utf8.decode(bodyBytes, allowMalformed: true);
+}
+
 /// Thrown when an operation is cancelled through a [CancelToken].
 class CancelledException implements Exception {
   @override
@@ -205,7 +212,7 @@ Future<http.Response> cloudRequest(
   final streamed = await sendRequest(req, cancel: cancel, timeout: timeout);
   final r = await http.Response.fromStream(streamed);
   final ok = accept?.call(r.statusCode) ?? (r.statusCode >= 200 && r.statusCode < 300);
-  if (!ok) throw responseError(r, r.body, operation: operation);
+  if (!ok) throw responseError(r, r.text, operation: operation);
   return r;
 }
 

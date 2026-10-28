@@ -81,8 +81,8 @@ Future<TableExtras> readMySqlTable(CatalogQueries q, SqlDialect d, DbTable t) as
   };
 
   final colRows = await q.first([
-    'SELECT COLUMN_NAME, COLLATION_NAME, GENERATION_EXPRESSION, EXTRA FROM information_schema.COLUMNS WHERE $cond',
-    'SELECT COLUMN_NAME, COLLATION_NAME, EXTRA FROM information_schema.COLUMNS WHERE $cond',
+    'SELECT COLUMN_NAME, COLUMN_TYPE, COLLATION_NAME, GENERATION_EXPRESSION, EXTRA FROM information_schema.COLUMNS WHERE $cond',
+    'SELECT COLUMN_NAME, COLUMN_TYPE, COLLATION_NAME, EXTRA FROM information_schema.COLUMNS WHERE $cond',
   ]);
   final columns = <String, ColumnExtra>{};
   for (final r in colRows) {
@@ -94,6 +94,7 @@ Future<TableExtras> readMySqlTable(CatalogQueries q, SqlDialect d, DbTable t) as
       collation: coll != null && coll != tableCollation ? coll : null,
       computed: generated ? stripParens(expr) : null,
       computedStored: extra.contains('STORED') || extra.contains('PERSISTENT'),
+      declaredType: rowText(r, 'column_type'),
     );
   }
 

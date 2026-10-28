@@ -22,17 +22,26 @@ class CodeDdl {
       dialect.qualified(family == DbFamily.sqlServer || family == DbFamily.postgres ? null : catalog, schema, name);
 
   static final _create = RegExp(
-    r'^\s*CREATE\s+(OR\s+(REPLACE|ALTER)\s+)?((NO)?EDITIONABLE\s+)?(DEFINER\s*=\s*\S+\s+)?',
+    r'CREATE\s+(OR\s+(REPLACE|ALTER)\s+)?((NO)?EDITIONABLE\s+)?(DEFINER\s*=\s*\S+\s+)?',
     caseSensitive: false,
   );
 
+  /// Blank space and comments before the first keyword of a statement.
+  static final _leading = RegExp(r'(\s+|--[^\n]*|/\*[\s\S]*?\*/)*');
+
   /// The header of [source] rewritten to replace an existing object where
   /// the DBMS can (CREATE OR REPLACE / OR ALTER); [replace] false leaves it.
+  /// Comments before CREATE are kept.
   String withReplace(String source, String kind, {bool replace = true}) {
-    final m = _create.firstMatch(source);
+    final start = _leading.matchAsPrefix(source)?.end ?? 0;
+    final m = _create.matchAsPrefix(source, start);
     if (m == null) return source;
     final rest = source.substring(m.end);
     final definer = m.group(5) ?? '';
+    // A PostgreSQL source holds the trigger function and the trigger: the
+    // kind is the one of this statement. Constraint triggers have no OR
+    // REPLACE.
+    final object = RegExp(r'\w+').matchAsPrefix(rest)?.group(0)?.toUpperCase() ?? kind;
     final head = switch (family) {
       DbFamily.sqlServer => replace ? 'CREATE OR ALTER ' : 'CREATE ',
       DbFamily.oracle => replace ? 'CREATE OR REPLACE ' : 'CREATE ',
@@ -40,12 +49,19 @@ class CodeDdl {
       DbFamily.db2 || DbFamily.snowflake => replace ? 'CREATE OR REPLACE ' : 'CREATE ',
       DbFamily.postgres =>
         // Triggers have OR REPLACE since PostgreSQL 14, functions always.
-        replace && (kind != 'TRIGGER' || (dialect.version?.atLeast(14) ?? true)) ? 'CREATE OR REPLACE ' : 'CREATE ',
+        replace && object != 'CONSTRAINT' && (object != 'TRIGGER' || (dialect.version?.atLeast(14) ?? true))
+            ? 'CREATE OR REPLACE '
+            : 'CREATE ',
       DbFamily.mysql => replace && dialect.isMariaDb ? 'CREATE OR REPLACE $definer' : 'CREATE $definer',
       _ => 'CREATE ',
     };
-    return '$head$rest';
+    return '${source.substring(0, start)}$head$rest';
   }
+
+  /// The statements of [source], each rewritten by [withReplace].
+  List<String> _replacing(String source, String kind) => [
+    for (final st in statementsOf(source)) withReplace(st, kind),
+  ];
 
   /// [source] as statements: PostgreSQL sources may hold the trigger
   /// function and the trigger; elsewhere the source is one statement (its
@@ -128,7 +144,11 @@ class CodeDdl {
     final inPlace = replacesInPlace('TRIGGER') && !renamed;
     return [
       if (original != null && !inPlace) ...dropTrigger(original),
-      ...statementsOf(original != null && inPlace ? withReplace(source, 'TRIGGER') : source),
+      // PostgreSQL: the trigger function is replaced even when the trigger
+      // itself has to be dropped (before version 14 or renamed).
+      ...(original != null && (inPlace || family == DbFamily.postgres)
+          ? _replacing(source, 'TRIGGER')
+          : statementsOf(source)),
     ];
   }
 
@@ -219,7 +239,7 @@ class CodeDdl {
     return [
       if (existing != null && !inPlace)
         ...dropRoutine(kind, existing.catalog, existing.schema, existing.name, ifExists: true),
-      ...statementsOf(existing != null && inPlace ? withReplace(source, kind.sql) : source),
+      ...(existing != null && inPlace ? _replacing(source, kind.sql) : statementsOf(source)),
     ];
   }
 

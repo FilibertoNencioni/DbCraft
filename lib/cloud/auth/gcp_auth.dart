@@ -152,7 +152,7 @@ class GcpServiceAccountCredential extends GcpCredential {
           ),
           operation: 'Token Google',
         );
-        final j = jsonDecode(r.body) as Map;
+        final j = jsonDecode(r.text) as Map;
         return AccessToken.expiresIn(j['access_token'] as String, j['expires_in']);
       });
 }
@@ -196,7 +196,7 @@ class GcpAuthorizedUserCredential extends GcpCredential {
           ),
           operation: 'Token Google',
         );
-        final j = jsonDecode(r.body) as Map;
+        final j = jsonDecode(r.text) as Map;
         return AccessToken.expiresIn(j['access_token'] as String, j['expires_in']);
       });
 }
@@ -265,7 +265,7 @@ class GceMetadataCredential extends GcpCredential {
         headers: {'Metadata-Flavor': 'Google'},
         timeout: const Duration(seconds: 2),
       );
-      return r.body.trim();
+      return r.text.trim();
     } catch (_) {
       return null;
     }
@@ -280,7 +280,7 @@ class GceMetadataCredential extends GcpCredential {
           headers: {'Metadata-Flavor': 'Google'},
           timeout: const Duration(seconds: 2),
         );
-        final j = jsonDecode(r.body) as Map;
+        final j = jsonDecode(r.text) as Map;
         return AccessToken.expiresIn(j['access_token'] as String, j['expires_in']);
       });
 }

@@ -179,8 +179,8 @@ class BigQuerySession implements DbSession {
         timeout: timeout,
         accept: allow404 ? (s) => (s >= 200 && s < 300) || s == 404 : null,
       );
-      if (r.statusCode == 404 || r.body.isEmpty) return const {};
-      return jsonDecode(r.body) as Map;
+      if (r.statusCode == 404 || r.bodyBytes.isEmpty) return const {};
+      return jsonDecode(r.text) as Map;
     } on CloudException catch (e) {
       throw _odbcError(e);
     }

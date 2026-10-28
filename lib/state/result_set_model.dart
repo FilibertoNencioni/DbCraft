@@ -192,6 +192,17 @@ class ResultSetModel extends ChangeNotifier {
   Future<void> detectEditTarget() async {
     final md = connection.metadata;
     if (md == null) return;
+    if (table == null && columns.every((c) => c.baseTable == null)) {
+      // The driver does not report the base table (SQL Server without a
+      // server cursor): a plain SELECT of columns from one table.
+      final from = singleTableSelect(sql);
+      if (from == null) return;
+      final t = await md.findTable(from.catalog, from.schema, from.name);
+      if (t == null) return;
+      final tableColumns = {for (final c in await md.columns(t)) c.name.toLowerCase()};
+      if (!columns.every((c) => tableColumns.contains(c.name.toLowerCase()))) return;
+      table = t;
+    }
     if (table == null) {
       // Editable only when every column comes from the same base table
       // (no expressions, aggregates or joins).
@@ -389,4 +400,37 @@ class ResultSetModel extends ChangeNotifier {
     notifyListeners();
     return total;
   }
+}
+
+const _ident = r'(?:\[[^\]]+\]|"[^"]+"|`[^`]+`|[A-Za-z_][\w$#@]*)';
+final _singleTable = RegExp(
+  '^\\s*SELECT\\s+(?:TOP\\s+\\(?\\d+\\)?\\s+)?((?:$_ident\\s*\\.\\s*)?\\*|$_ident(?:\\s*,\\s*$_ident)*)\\s+'
+  'FROM\\s+($_ident(?:\\s*\\.\\s*$_ident){0,2})'
+  '(?:\\s+(?:AS\\s+)?(?!WHERE\\b|ORDER\\b|LIMIT\\b|OFFSET\\b|FETCH\\b|FOR\\b)$_ident)?'
+  '\\s*(?:(?:WHERE|ORDER\\s+BY|LIMIT|OFFSET|FETCH|FOR)\\b[\\s\\S]*)?;?\\s*\$',
+  caseSensitive: false,
+);
+
+/// The table of `SELECT *|columns FROM table [alias] [WHERE …] [ORDER BY …]`:
+/// null for joins, subqueries, expressions, aliases of columns, grouping.
+({String? catalog, String? schema, String name})? singleTableSelect(String sql) {
+  final text = sql.replaceAll(RegExp(r'--[^\n]*'), ' ').replaceAll(RegExp(r'/\*[\s\S]*?\*/'), ' ');
+  if (RegExp(r'\b(JOIN|UNION|INTERSECT|EXCEPT|GROUP\s+BY|DISTINCT|HAVING)\b|\(\s*SELECT\b', caseSensitive: false)
+      .hasMatch(text)) {
+    return null;
+  }
+  final m = _singleTable.firstMatch(text);
+  if (m == null) return null;
+  final parts = [
+    for (final p in RegExp(_ident).allMatches(m[2]!))
+      switch (p[0]!) {
+        final s when s.startsWith('[') || s.startsWith('"') || s.startsWith('`') => s.substring(1, s.length - 1),
+        final s => s,
+      },
+  ];
+  return switch (parts.length) {
+    1 => (catalog: null, schema: null, name: parts[0]),
+    2 => (catalog: null, schema: parts[0], name: parts[1]),
+    _ => (catalog: parts[0], schema: parts[1], name: parts[2]),
+  };
 }

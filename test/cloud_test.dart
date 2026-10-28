@@ -21,6 +21,7 @@ import 'package:dbcraft/ui/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:dbcraft/odbc/odbc_ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:pointycastle/asn1.dart';
 import 'package:pointycastle/export.dart';
 
@@ -75,6 +76,13 @@ bool _verifyRs256(RSAPublicKey pub, List<int> data, List<int> sig) {
 }
 
 void main() {
+  test('XML listings without charset are read as UTF-8 (D-028)', () {
+    const xml = '<Key>cartella con spazi àè/piccolo àè 😀.txt</Key>';
+    final r = http.Response.bytes(utf8.encode(xml), 200, headers: {'content-type': 'application/xml'});
+    expect(r.body, isNot(xml), reason: 'package:http falls back to Latin-1');
+    expect(r.text, xml);
+  });
+
   group('AWS SigV4', () {
     final signer = SigV4Signer(credentials: _awsCreds, region: 'us-east-1', service: 's3');
 

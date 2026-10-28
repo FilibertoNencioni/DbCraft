@@ -356,8 +356,14 @@ class EventDef extends ExtraObjectDef {
 
   bool get recurring => at == null;
 
+  /// Whether [o] has this schedule. An [o] without STARTS keeps the current
+  /// one: MySQL sets it to the creation time when it is not given.
   bool sameSchedule(EventDef o) =>
-      at == o.at && every == o.every && unit == o.unit && starts == o.starts && ends == o.ends;
+      at == o.at &&
+      every == o.every &&
+      unit.toUpperCase() == o.unit.toUpperCase() &&
+      (o.starts == null || starts == o.starts) &&
+      ends == o.ends;
 
   @override
   String? get detail => [

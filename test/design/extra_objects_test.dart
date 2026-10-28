@@ -415,6 +415,14 @@ void main() {
         ['ALTER EVENT shop.pulizia ON SCHEDULE EVERY 6 HOUR RENAME TO shop.pulizia_log DISABLE'],
       );
       expect(my.alterEvent(e, e), isEmpty);
+      // Read back with the STARTS set by MySQL at creation (D-014).
+      expect(
+        my.alterEvent(
+          e,
+          EventDef(name: e.name, catalog: e.catalog, every: e.every, unit: e.unit, body: e.body, comment: e.comment),
+        ),
+        isEmpty,
+      );
       expect(my.dropEvent(e), ['DROP EVENT shop.pulizia']);
       expect(
         _ddl('mariadb').alterEvent(

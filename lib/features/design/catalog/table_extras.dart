@@ -14,6 +14,7 @@ class ColumnExtra {
     this.identitySeed,
     this.identityIncrement,
     this.defaultName,
+    this.declaredType,
   });
   final String? collation;
   final String? computed;
@@ -21,6 +22,9 @@ class ColumnExtra {
   final int? identitySeed;
   final int? identityIncrement;
   final String? defaultName;
+
+  /// Type as declared (MySQL COLUMN_TYPE), see [ColumnDef.withDeclaredType].
+  final String? declaredType;
 }
 
 /// Extra metadata of one table.
@@ -73,7 +77,7 @@ TableDef applyTableExtras(TableDef t, TableExtras x) {
     for (final c in t.columns)
       switch (x.columns[k(c.name)]) {
         null => c,
-        final e => c.copyWith(
+        final e => (e.declaredType == null ? c : c.withDeclaredType(e.declaredType!)).copyWith(
           collation: e.collation,
           computed: e.computed,
           computedStored: e.computedStored,

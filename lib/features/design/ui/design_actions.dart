@@ -64,7 +64,8 @@ Future<List<String>> tableChangeStatements(DbConnection dc, TableDef original, T
 }
 
 /// Script sheet for [statements] on table [t]: one transaction where the DBMS
-/// allows it (not around a SQLite rebuild, which toggles foreign keys).
+/// allows it (around a SQLite rebuild too: runDdlScript switches the foreign
+/// key checks outside of it).
 Future<bool> runTableScript(
   BuildContext context,
   DbConnection dc,
@@ -72,15 +73,16 @@ Future<bool> runTableScript(
   List<String> statements, {
   required String title,
   bool autocommitOnly = false,
+  ValueChanged<DdlResult>? onResult,
 }) {
-  final rebuild = statements.any((s) => s.contains('PRAGMA foreign_keys'));
   return showDdlScriptDialog(
     context,
     dc: dc,
     title: title,
+    onResult: onResult,
     script: DdlScript(
       statements,
-      transactional: !rebuild && !autocommitOnly,
+      transactional: !autocommitOnly,
       autocommitOnly: autocommitOnly,
       scope: SchemaScope.object(t.catalog, t.schema, t.name),
     ),

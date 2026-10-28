@@ -200,6 +200,13 @@ bool isScaledType(String type) => _scaledTypes.contains(canonicalType(type));
 /// default compares equal: SQL Server parentheses `((0))`, PostgreSQL casts
 /// `'a'::character varying`, surrounding blanks and case of keywords.
 String? normalizeDefault(String? def) {
+  final s = bareDefault(def);
+  if (s == null || s.startsWith("'")) return s;
+  return s.toLowerCase();
+}
+
+/// [def] without the decorations of [normalizeDefault], case preserved.
+String? bareDefault(String? def) {
   if (def == null) return null;
   var s = def.trim();
   if (s.isEmpty || s.toUpperCase() == 'NULL') return null;
@@ -210,9 +217,7 @@ String? normalizeDefault(String? def) {
       break;
     }
   }
-  s = s.replaceAll(RegExp(r'::[a-zA-Z_ ]+(\[\])?(\(\d+(,\d+)?\))?$'), '');
-  if (s.startsWith("'")) return s;
-  return s.toLowerCase();
+  return s.replaceAll(RegExp(r'::[a-zA-Z_ ]+(\[\])?(\(\d+(,\d+)?\))?$'), '');
 }
 
 bool _balanced(String s) {
@@ -280,6 +285,23 @@ class ColumnDef {
 
   bool get isComputed => computed != null && computed!.trim().isNotEmpty;
 
+  static const _maxTypes = {'varchar', 'nvarchar', 'varbinary'};
+
+  /// The column with the type declared in the catalog (MySQL COLUMN_TYPE)
+  /// where ODBC loses details: ENUM and SET values, BIT length, fractional
+  /// seconds of DATETIME, TIMESTAMP and TIME.
+  ColumnDef withDeclaredType(String declared) {
+    final m = RegExp(r'^\s*(\w+)\s*\(([\s\S]*)\)', caseSensitive: false).firstMatch(declared);
+    if (m == null) return this;
+    final base = m[1]!.toLowerCase();
+    if (base == 'enum' || base == 'set') return copyWith(type: declared.trim(), size: null, scale: null);
+    if (const {'bit', 'datetime', 'timestamp', 'time'}.contains(base)) {
+      final n = int.tryParse(m[2]!.trim());
+      if (n != null && !type.contains('(')) return copyWith(size: n, scale: null);
+    }
+    return this;
+  }
+
   factory ColumnDef.fromDbColumn(DbColumn c) {
     var type = c.typeName.trim();
     var auto = c.autoIncrement;
@@ -303,7 +325,10 @@ class ColumnDef {
     if (auto) def = null;
     int? size, scale;
     if (!type.contains('(')) {
-      if (isSizedType(type) && c.size != null && c.size! > 0) {
+      if (isSizedType(type) && c.size == 0 && _maxTypes.contains(lower)) {
+        // SQL Server reports varchar(max) and varbinary(max) with size 0.
+        size = -1;
+      } else if (isSizedType(type) && c.size != null && c.size! > 0) {
         size = c.size! >= 1073741823 ? -1 : c.size;
       } else if (isScaledType(type) && c.size != null && c.size! > 0) {
         size = c.size;
@@ -698,7 +723,14 @@ class TableDef {
       schema: t.schema,
       name: t.name,
       comment: t.remarks == null || t.remarks!.isEmpty ? null : t.remarks,
-      columns: columns.map(ColumnDef.fromDbColumn).toList(),
+      // Key columns cannot be null, whatever the driver says (MySQL reports
+      // AUTO_INCREMENT columns as nullable).
+      columns: [
+        for (final c in columns.map(ColumnDef.fromDbColumn))
+          primaryKey != null && primaryKey.columns.any((p) => p.toLowerCase() == c.name.toLowerCase())
+              ? c.copyWith(nullable: false)
+              : c,
+      ],
       primaryKey: primaryKey == null || primaryKey.columns.isEmpty
           ? null
           : PrimaryKeyDef(name: primaryKey.name, columns: List.of(primaryKey.columns)),
@@ -819,6 +851,38 @@ ColumnDef mapColumnType(ColumnDef c, DbFamily from, DbFamily to) {
   ColumnDef t(String type, {Object? size = _unset, Object? scale = _unset}) =>
       c.copyWith(type: type, size: size, scale: scale);
   const noSize = null;
+  // MySQL ENUM / SET: text long enough for any value (SET: all of them).
+  final values = RegExp(r'^\s*(enum|set)\s*\(([\s\S]*)\)\s*$', caseSensitive: false).firstMatch(c.type);
+  if (values != null) {
+    final list = [for (final m in RegExp(r"'((?:[^']|'')*)'").allMatches(values[2]!)) m[1]!.replaceAll("''", "'")];
+    final longest = list.fold<int>(1, (n, v) => v.length > n ? v.length : n);
+    final size = values[1]!.toLowerCase() == 'set' ? list.fold<int>(0, (n, v) => n + v.length + 1) : longest;
+    return mapColumnType(c.copyWith(type: 'varchar', size: size < 1 ? 1 : size, scale: null), DbFamily.generic, to);
+  }
+  // Types of one DBMS with a plain equivalent elsewhere.
+  final alias = switch (canon) {
+    'mediumint' || 'mediumint unsigned' || 'smallint unsigned' => ('integer', null, null),
+    'int unsigned' || 'integer unsigned' => ('bigint', null, null),
+    'bigint unsigned' => ('numeric', 20, null),
+    'year' => ('smallint', null, null),
+    'tinytext' => ('text', null, null),
+    'tinyblob' => ('blob', null, null),
+    'money' || 'smallmoney' => ('numeric', 19, 4),
+    _ => null,
+  };
+  if (alias != null) {
+    return mapColumnType(c.copyWith(type: alias.$1, size: alias.$2, scale: alias.$3), DbFamily.generic, to);
+  }
+  // MySQL BIT(n) with n > 1 is a bit field, not a boolean.
+  if (canon == 'boolean' && c.type.trim().toLowerCase() == 'bit' && (c.size ?? 1) > 1) {
+    return switch (to) {
+      DbFamily.postgres => t('bit', size: c.size, scale: noSize),
+      DbFamily.sqlServer => t('bigint', size: noSize, scale: noSize),
+      DbFamily.oracle => t('NUMBER', size: 20, scale: noSize),
+      DbFamily.sqlite => t('INTEGER', size: noSize, scale: noSize),
+      _ => t('BIGINT', size: noSize, scale: noSize),
+    };
+  }
   switch (canon) {
     case 'integer':
       return switch (to) {
@@ -944,9 +1008,117 @@ ColumnDef mapColumnType(ColumnDef c, DbFamily from, DbFamily to) {
         DbFamily.snowflake => t('VARIANT', size: noSize, scale: noSize),
         _ => t('TEXT', size: noSize, scale: noSize),
       };
+    case 'varbinary' || 'binary':
+      final n = c.size;
+      return switch (to) {
+        DbFamily.postgres => t('bytea', size: noSize, scale: noSize),
+        DbFamily.sqlite => t('BLOB', size: noSize, scale: noSize),
+        DbFamily.oracle => n != null && n > 0 && n <= 2000 ? t('RAW', size: n) : t('BLOB', size: noSize),
+        DbFamily.mysql => n == null || n == -1 ? t('longblob', size: noSize, scale: noSize) : t(canon),
+        DbFamily.sqlServer => t(canon, size: n ?? -1, scale: noSize),
+        _ => t('BLOB', size: noSize, scale: noSize),
+      };
+    case 'xml':
+      return to == DbFamily.postgres || to == DbFamily.sqlServer
+          ? t('xml', size: noSize, scale: noSize)
+          : mapColumnType(c.copyWith(type: 'text', size: null, scale: null), DbFamily.generic, to);
     case 'date':
     case 'time':
       return to == DbFamily.oracle && canon == 'time' ? t('TIMESTAMP', size: noSize, scale: noSize) : c;
   }
-  return c;
+  // A type of the source DBMS only (geography, interval, arrays, PostgreSQL
+  // enums, inet…): its text form.
+  return mapColumnType(c.copyWith(type: 'text', size: null, scale: null), DbFamily.generic, to);
+}
+
+const _portableTypes = {
+  'integer', 'bigint', 'smallint', 'tinyint', 'tinyint unsigned', 'boolean', 'varchar', 'nvarchar', 'char', //
+  'nchar', 'text', 'numeric', 'real', 'double', 'timestamp', 'timestamptz', 'blob', 'uuid', 'json', 'date', //
+  'time', 'varbinary', 'binary', 'mediumint', 'mediumint unsigned', 'smallint unsigned', 'int unsigned', //
+  'integer unsigned', 'bigint unsigned', 'year', 'tinytext', 'tinyblob', 'money', 'smallmoney', 'enum', 'set',
+};
+
+/// Whether [mapColumnType] has an equivalent of [type] in the other DBMS
+/// (otherwise the column becomes text).
+bool isPortableType(String type) => _portableTypes.contains(canonicalType(type));
+
+/// [c] for a table of [to]: type ([mapColumnType]), default expression
+/// ([mapDefaultValue]) and no DBMS specific collation or default name.
+ColumnDef mapColumn(ColumnDef c, DbFamily from, DbFamily to) {
+  if (from == to) return c;
+  final m = mapColumnType(c, from, to);
+  return m.copyWith(defaultValue: mapDefaultValue(m, c.defaultValue, from, to), defaultName: null, collation: null);
+}
+
+final _nowDefault = RegExp(
+  r'^(getdate|sysdatetime|sysutcdatetime|getutcdate|now|current_timestamp|localtimestamp|sysdate|systimestamp|'
+  r'statement_timestamp|transaction_timestamp|clock_timestamp|sysdatetimeoffset)\s*(\(\s*\d*\s*\))?$'
+  r"|^datetime\s*\(\s*'now'\s*(,[^)]*)?\)$"
+  r"|^strftime\s*\([^)]*'now'[^)]*\)$",
+  caseSensitive: false,
+);
+final _todayDefault = RegExp(r"^(current_date|curdate)\s*(\(\s*\))?$|^date\s*\(\s*'now'\s*\)$", caseSensitive: false);
+final _uuidDefault = RegExp(
+  r'^(newid|newsequentialid|gen_random_uuid|uuid|uuid_generate_v4|uuid_generate_v1|sys_guid)\s*\(\s*\)$',
+  caseSensitive: false,
+);
+
+/// The default expression [def] of a column of [from] written for [to]
+/// ([column] is the column already mapped): literals are kept, the current
+/// time, date and random UUID functions are translated, the other
+/// expressions are left out (null) since they would not be valid.
+String? mapDefaultValue(ColumnDef column, String? def, DbFamily from, DbFamily to) {
+  if (from == to) return def;
+  var s = bareDefault(def);
+  if (s == null) return null;
+  // The SQLite driver reports text defaults without the quotes; expressions
+  // are always in parentheses there.
+  if (from == DbFamily.sqlite &&
+      !def!.trim().startsWith('(') &&
+      !s.startsWith("'") &&
+      !RegExp(r'^([+-]?\d+(\.\d+)?([eE][+-]?\d+)?|true|false|current_(date|time|timestamp)|[xX]' "'" r'.*)$', caseSensitive: false)
+          .hasMatch(s)) {
+    s = "'${s.replaceAll("'", "''")}'";
+  }
+  // SQL Server N'…' and MySQL b'…' literals.
+  if (RegExp(r"^[Nn]'").hasMatch(s)) s = s.substring(1);
+  final bits = RegExp(r"^[bB]'([01]+)'$").firstMatch(s);
+  if (bits != null) s = '${int.parse(bits[1]!, radix: 2)}';
+  final lower = s.toLowerCase();
+  final boolTarget = canonicalType(column.type) == 'boolean' && to == DbFamily.postgres;
+  if (RegExp(r'^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$').hasMatch(s) || lower == 'true' || lower == 'false') {
+    final truth = lower == 'true' || (num.tryParse(s) ?? 0) != 0;
+    if (boolTarget) return truth ? 'true' : 'false';
+    if (lower == 'true' || lower == 'false') {
+      return to == DbFamily.postgres || to == DbFamily.mysql ? lower : (truth ? '1' : '0');
+    }
+    return s;
+  }
+  if (s.startsWith("'") && s.endsWith("'") && s.length >= 2) {
+    if (boolTarget && const ["'0'", "'1'"].contains(s)) return s == "'1'" ? 'true' : 'false';
+    return s;
+  }
+  if (_nowDefault.hasMatch(s)) {
+    final p = column.size;
+    if (to == DbFamily.mysql && p != null && p > 0 && p <= 6) return 'CURRENT_TIMESTAMP($p)';
+    return 'CURRENT_TIMESTAMP';
+  }
+  if (_todayDefault.hasMatch(s)) {
+    return switch (to) {
+      DbFamily.sqlServer => 'CAST(SYSDATETIME() AS date)',
+      DbFamily.mysql => '(CURRENT_DATE)',
+      DbFamily.oracle => 'TRUNC(SYSDATE)',
+      _ => 'CURRENT_DATE',
+    };
+  }
+  if (_uuidDefault.hasMatch(s)) {
+    return switch (to) {
+      DbFamily.postgres => 'gen_random_uuid()',
+      DbFamily.sqlServer => 'NEWID()',
+      DbFamily.mysql => '(UUID())',
+      DbFamily.oracle => 'SYS_GUID()',
+      _ => null,
+    };
+  }
+  return null;
 }

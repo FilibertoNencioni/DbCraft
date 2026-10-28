@@ -181,6 +181,36 @@ void main() {
       expect(CodeDdl(sqlDialects['snowflake']!).saveTrigger(null, 'trg_o', src), note('Snowflake'));
     });
 
+    test('a comment before CREATE does not prevent the replace (D-018)', () {
+      const src = '-- modificato\n/* note */\nCREATE TRIGGER trg_o ON orders AFTER UPDATE AS BEGIN SET NOCOUNT ON; END';
+      expect(
+        CodeDdl(sqlDialects['mssql']!).saveTrigger(trg, 'trg_o', src).single,
+        '-- modificato\n/* note */\nCREATE OR ALTER TRIGGER trg_o ON orders AFTER UPDATE AS BEGIN SET NOCOUNT ON; END',
+      );
+      expect(
+        CodeDdl(sqlDialects['mariadb']!)
+            .saveRoutine('-- c\nCREATE PROCEDURE p() BEGIN END', RoutineKind.procedure, existing: (catalog: 'd', schema: null, name: 'p'))
+            .single,
+        '-- c\nCREATE OR REPLACE PROCEDURE p() BEGIN END',
+      );
+    });
+
+    test('PostgreSQL: function and trigger are both replaced (D-013)', () {
+      final pgTemplate = CodeDdl(sqlDialects['pg']!).triggerTemplate(trg).replaceFirst('CREATE OR REPLACE', 'CREATE');
+      final out = CodeDdl(dialectAt('pg', '17.1')).saveTrigger(trg, 'trg_o', pgTemplate);
+      expect(out, hasLength(2));
+      expect(out[0], startsWith('CREATE OR REPLACE FUNCTION app.trg_o_fn()'));
+      expect(out[1], startsWith('CREATE OR REPLACE TRIGGER trg_o'));
+      final old = CodeDdl(dialectAt('pg', '13.4')).saveTrigger(trg, 'trg_o', pgTemplate);
+      expect(old.first, 'DROP TRIGGER trg_o ON app.orders');
+      expect(old[1], startsWith('CREATE OR REPLACE FUNCTION'));
+      expect(old[2], startsWith('CREATE TRIGGER trg_o'));
+      expect(
+        CodeDdl(dialectAt('pg', '17.1')).withReplace('CREATE CONSTRAINT TRIGGER t AFTER INSERT ON a', 'TRIGGER'),
+        'CREATE CONSTRAINT TRIGGER t AFTER INSERT ON a',
+      );
+    });
+
     test('enable, drop, templates', () {
       expect(CodeDdl(sqlDialects['pg']!).setTriggerEnabled(trg, false), [
         'ALTER TABLE app.orders DISABLE TRIGGER trg_o',

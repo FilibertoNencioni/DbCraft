@@ -314,6 +314,22 @@ class SqlEditorTab extends EditorTab {
     final session = c.main;
     if (session == null) return;
 
+    // ODBC read-only mode is only a hint that many drivers ignore.
+    if (c.config.readOnly) {
+      final blocked = statements.where(isModifyingSql).toList();
+      if (blocked.isNotEmpty) {
+        final msg =
+            'La connessione "${c.config.name}" è in sola lettura: '
+            'istruzioni che modificano dati o struttura non vengono eseguite.\n\n${blocked.first.trim()}';
+        addLog(LogLevel.error, msg);
+        if (!newTab) await _clearResults();
+        results.add(ResultTab(title: 'Sola lettura', error: msg));
+        selectedResult = results.length - 1;
+        notifyListeners();
+        return;
+      }
+    }
+
     // Safety confirmations
     if (c.config.type.confirmExecute && statements.any(isModifyingSql)) {
       final ok = await ui.confirm(

@@ -306,6 +306,8 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
       dc,
       statements,
       scope: SchemaScope.schema(tab.target.catalog, tab.target.schema),
+      // A migration stopped halfway leaves the target in between.
+      transactional: true,
     );
     if (ok && mounted) await _compare();
   }

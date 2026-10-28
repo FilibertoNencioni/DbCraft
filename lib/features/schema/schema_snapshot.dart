@@ -71,6 +71,10 @@ class SchemaSnapshot {
         .where((t) => t.type.toUpperCase().contains('TABLE'))
         .where((t) => filter == null || filter(t))
         .toList();
+    final declared = md.dialect.family == DbFamily.mysql && !withExtras
+        ? await _mysqlDeclaredTypes(md, catalog)
+        : const <String, String>{};
+    cancel?.check();
     final result = List<TableDef?>.filled(tables.length, null);
     var next = 0, done = 0;
     onProgress?.call(0, tables.length, '');
@@ -90,6 +94,17 @@ class SchemaSnapshot {
           foreignKeys: parts[2] as List<DbForeignKey>,
           indexes: parts[3] as List<DbIndex>,
         );
+        if (declared.isNotEmpty) {
+          def = def.copyWith(
+            columns: [
+              for (final c in def.columns)
+                switch (declared['${t.name.toLowerCase()}\u0000${c.name.toLowerCase()}']) {
+                  null => c,
+                  final d => c.withDeclaredType(d),
+                },
+            ],
+          );
+        }
         if (withExtras) {
           try {
             def = applyTableExtras(def, await DesignCatalog(md).tableExtras(t));
@@ -112,5 +127,25 @@ class SchemaSnapshot {
       family: md.dialect.family,
       label: label,
     );
+  }
+  /// MySQL COLUMN_TYPE of every column of [catalog] (table and column
+  /// lower case, NUL separated): ODBC drops ENUM/SET values and the
+  /// precision of BIT and DATETIME.
+  static Future<Map<String, String>> _mysqlDeclaredTypes(MetadataService md, String? catalog) async {
+    try {
+      final db = catalog == null || catalog.isEmpty ? 'DATABASE()' : md.dialect.stringLiteral(catalog);
+      final r = await md.session.execute(
+        'SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = $db',
+        fetchSize: 1000000,
+      );
+      if (r.cursorId != null) await md.session.closeCursor(r.cursorId!);
+      return {
+        for (final row in r.rows)
+          if (row[0] != null && row[1] != null && row[2] != null)
+            '${row[0].toString().toLowerCase()}\u0000${row[1].toString().toLowerCase()}': row[2].toString(),
+      };
+    } catch (_) {
+      return const {};
+    }
   }
 }

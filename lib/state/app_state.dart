@@ -38,8 +38,10 @@ class AppState extends ChangeNotifier {
     final configs = await ws.loadConnections();
     final history = await ws.loadHistory();
     final state = AppState(ws, vault, settings, configs, history);
-    // Passwords saved in clear text by older versions move to the vault.
-    if (configs.any((c) => c.password.isNotEmpty) && await ws.connectionsContainPasswords()) {
+    // Passwords saved in clear text by older versions, or written in a
+    // connection string, move to the vault.
+    final inStrings = configs.where((c) => c.movePasswordToVault()).length;
+    if (inStrings > 0 || configs.any((c) => c.password.isNotEmpty) && await ws.connectionsContainPasswords()) {
       await state._saveConnections();
     }
     return state;
@@ -104,6 +106,7 @@ class AppState extends ChangeNotifier {
   Future<void> _saveConnections() async {
     for (final dc in connections) {
       final c = dc.config;
+      c.movePasswordToVault();
       await vault.set('${_secretPrefix(c)}password', c.savePassword ? c.password : null);
       await vault.setAll('${_secretPrefix(c)}secret:', c.secretParams);
     }

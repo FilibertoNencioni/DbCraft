@@ -137,18 +137,28 @@ class _DbCraftAppState extends State<DbCraftApp> {
                 return KeyEventResult.ignored;
               },
               child: Stack(children: [
-                ?child,
+                // While locked the window content keeps its state but cannot
+                // hold the keyboard focus (keys would reach the editors).
+                if (child != null) ExcludeFocus(excluding: app.locked, child: child),
                 if (app.locked)
+                  // Above the navigator: the password field needs an Overlay
+                  // of its own (selection, tooltips).
                   Positioned.fill(
-                    child: Material(
-                      child: LockScreen(
-                        message: 'Finestra bloccata. Inserisci la master password per continuare.',
-                        onUnlock: (p) async {
-                          final ok = await app.unlockUi(p);
-                          if (ok) _armIdleTimer();
-                          return ok;
-                        },
-                      ),
+                    child: Overlay(
+                      initialEntries: [
+                        OverlayEntry(
+                          builder: (_) => Material(
+                            child: LockScreen(
+                              message: 'Finestra bloccata. Inserisci la master password per continuare.',
+                              onUnlock: (p) async {
+                                final ok = await app.unlockUi(p);
+                                if (ok) _armIdleTimer();
+                                return ok;
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ]),

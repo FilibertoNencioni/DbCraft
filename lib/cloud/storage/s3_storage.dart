@@ -146,7 +146,7 @@ class S3Storage extends CloudStorage {
     }
     final def = await _defaultRegion();
     final loc = await _request('GET', bucket, '', query: {'location': ''}, region: def, operation: 'GetBucketLocation');
-    final txt = XmlDocument.parse(loc.body).rootElement.innerText.trim();
+    final txt = XmlDocument.parse(loc.text).rootElement.innerText.trim();
     return _bucketRegions[bucket] = txt.isEmpty ? 'us-east-1' : (txt == 'EU' ? 'eu-west-1' : txt);
   }
 
@@ -192,7 +192,7 @@ class S3Storage extends CloudStorage {
       }
       if (r.statusCode == 403 && attempt == 0) auth.invalidate();
       final ok = accept?.call(r.statusCode) ?? (r.statusCode >= 200 && r.statusCode < 300);
-      if (!ok) throw responseError(r, r.body, operation: operation);
+      if (!ok) throw responseError(r, r.text, operation: operation);
       return r;
     }
   }
@@ -211,7 +211,7 @@ class S3Storage extends CloudStorage {
         query: {if (endpoint == null) 'max-buckets': '1000', 'continuation-token': ?token},
         operation: 'ListBuckets',
       );
-      final (list, next) = parseS3Buckets(r.body);
+      final (list, next) = parseS3Buckets(r.text);
       out.addAll(list);
       token = next;
     } while (token != null);
@@ -250,7 +250,7 @@ class S3Storage extends CloudStorage {
       },
       operation: 'ListObjects',
     );
-    return parseS3ListObjects(r.body, bucket);
+    return parseS3ListObjects(r.text, bucket);
   }
 
   @override
@@ -358,7 +358,7 @@ class S3Storage extends CloudStorage {
       region: region,
       operation: 'CreateMultipartUpload',
     );
-    final uploadId = XmlDocument.parse(init.body).findAllElements('UploadId').first.innerText;
+    final uploadId = XmlDocument.parse(init.text).findAllElements('UploadId').first.innerText;
     final etags = <int, String>{};
     try {
       var part = 1;
@@ -399,7 +399,7 @@ class S3Storage extends CloudStorage {
         operation: 'CompleteMultipartUpload',
       );
       // Errors can come with status 200 in the body.
-      if (done.body.contains('<Error>')) throw responseError(done, done.body, operation: 'CompleteMultipartUpload');
+      if (done.text.contains('<Error>')) throw responseError(done, done.text, operation: 'CompleteMultipartUpload');
     } catch (_) {
       try {
         await _request('DELETE', bucket, key, query: {'uploadId': uploadId}, region: region);
@@ -437,7 +437,7 @@ class S3Storage extends CloudStorage {
         headers: {'Content-Type': 'application/xml', 'Content-MD5': base64Encode(md5.convert(body).bytes)},
         operation: 'DeleteObjects',
       );
-      final errors = XmlDocument.parse(r.body).findAllElements('Error').toList();
+      final errors = XmlDocument.parse(r.text).findAllElements('Error').toList();
       if (errors.isNotEmpty) {
         final e = errors.first;
         throw CloudException(
@@ -458,7 +458,7 @@ class S3Storage extends CloudStorage {
       headers: {'x-amz-copy-source': '/$bucket/${uriEncode(key, keepSlash: true)}'},
       operation: 'CopyObject',
     );
-    if (r.body.contains('<Error>')) throw responseError(r, r.body, operation: 'CopyObject');
+    if (r.text.contains('<Error>')) throw responseError(r, r.text, operation: 'CopyObject');
   }
 
   @override

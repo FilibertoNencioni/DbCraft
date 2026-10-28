@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import '../odbc/odbc_types.dart';
 import '../cloud/ui/cloud_account_dialog.dart';
 import '../cloud/ui/cloud_explorer_panel.dart';
 import '../features/ai/ai.dart';
@@ -600,7 +601,7 @@ class _HomePageState extends State<HomePage> {
         if (dc.status == ConnectionStatus.connecting) const Text('Connessione in corso…'),
         if (dc.status == ConnectionStatus.error)
           Flexible(
-            child: Text('Errore: ${dc.error?.split('\n').first ?? ''}',
+            child: Text('Errore: ${mainErrorLine(dc.error ?? '')}',
                 style: uiText(TypeSize.caption, color: c.danger)),
           ),
       ] else

@@ -300,7 +300,7 @@ Future<http.StreamedResponse> sendFileRange(
 /// Reads a whole response body and throws a [CloudException] on errors.
 Future<http.Response> checkResponse(http.StreamedResponse s, {String? operation}) async {
   final r = await http.Response.fromStream(s);
-  if (r.statusCode < 200 || r.statusCode >= 300) throw responseError(r, r.body, operation: operation);
+  if (r.statusCode < 200 || r.statusCode >= 300) throw responseError(r, r.text, operation: operation);
   return r;
 }
 

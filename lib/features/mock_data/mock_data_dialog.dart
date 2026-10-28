@@ -104,6 +104,35 @@ class _MockDataDialogState extends State<_MockDataDialog> {
     }
     _configs = mockConfigsFor(widget.details, foreignKeys: fkMap);
     if (_samples.isNotEmpty) _loadSamples();
+    _loadSequenceStarts();
+  }
+
+  /// Sequences on key columns start after the existing values, which would
+  /// collide otherwise (keys not recognised as auto increment by the driver,
+  /// e.g. SQLite INTEGER PRIMARY KEY or MySQL AUTO_INCREMENT).
+  Future<void> _loadSequenceStarts() async {
+    final seq = [for (final c in _configs) if (c.autoKind == MockKind.sequence) c];
+    if (seq.isEmpty) return;
+    DbSession? s;
+    try {
+      s = await dc.openSession(readOnly: true);
+      final page = await s.execute(
+        'SELECT ${[for (final c in seq) 'MAX(${d.quoteIdent(c.column.name)})'].join(', ')} FROM ${d.tableName(table)}',
+      );
+      if (page.cursorId != null) await s.closeCursor(page.cursorId!);
+      if (page.rows.isEmpty || !mounted) return;
+      setState(() {
+        for (final (i, c) in seq.indexed) {
+          final max = num.tryParse('${page.rows.first[i] ?? ''}')?.toInt();
+          if (max != null && c.seqStart <= max) c.seqStart = max + 1;
+        }
+        if (_page == 2) _buildPreview();
+      });
+    } catch (_) {
+      // The defaults stay: the insert reports the duplicate keys.
+    } finally {
+      await s?.close();
+    }
   }
 
   @override

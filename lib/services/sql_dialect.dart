@@ -126,7 +126,9 @@ class SqlDialect {
       return '${quoteIdent(catalog)}..${quoteIdent(name)}';
     }
     final path = [if (hasSchema) quoteIdent(schema), quoteIdent(name)].join('.');
-    if (!hasCatalog) return path;
+    // PostgreSQL reads a two part name as schema.name and only accepts the
+    // current database: without a schema the search_path picks it.
+    if (!hasCatalog || (!hasSchema && family == DbFamily.postgres)) return path;
     // Catalogs placed at the end use a different separator (e.g. Informix '@').
     return catalogSeparator == '.'
         ? '${quoteIdent(catalog)}.$path'

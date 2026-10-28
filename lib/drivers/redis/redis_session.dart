@@ -581,7 +581,9 @@ class RedisSession extends NativeSessionBase {
   Future<List<StatementOutcome>> runScript(String sql, List<Object?> params, int fetchSize, int queryTimeoutSec) async {
     final text = sql.trim();
     if (text.isEmpty) return [StatementOutcome.update(-1)];
-    final subset = parseSqlSubset(text, params: params);
+    // The native SELECT <db> is not the SQL SELECT.
+    final nativeSelect = RegExp(r'^select\s+\d+\s*;?$', caseSensitive: false).hasMatch(text);
+    final subset = nativeSelect ? null : parseSqlSubset(text, params: params);
     if (subset != null) return [await _runSubset(subset, fetchSize)];
     final out = <StatementOutcome>[];
     for (final line in splitRedisScript(text)) {

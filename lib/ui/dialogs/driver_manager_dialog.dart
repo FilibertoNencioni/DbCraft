@@ -93,7 +93,12 @@ class _DriverManagerDialogState extends State<_DriverManagerDialog> {
                     _driversPage(data),
                     _dsnPage(data),
                     if (canInstallDrivers)
-                      DriverInstallTab(drivers: data.drivers, onChanged: () => setState(() => _data = _load()))
+                      DriverInstallTab(
+                        drivers: data.drivers,
+                        onChanged: () => setState(() {
+                          _data = _load();
+                        }),
+                      )
                     else
                       const SizedBox.shrink(),
                   ],

@@ -163,7 +163,7 @@ class DbConnection extends ChangeNotifier {
         await openDbSession(config, libPath: libPath, password: _password, readOnly: config.readOnly),
         _recordStatement,
       );
-      final inf = await md.info();
+      final inf = normalizeServerInfo(await md.info());
       if (config.defaultCatalog.isNotEmpty) {
         await m.setCurrentCatalog(config.defaultCatalog);
         inf['currentCatalog'] = config.defaultCatalog;
@@ -296,7 +296,7 @@ class DbConnection extends ChangeNotifier {
 }
 
 final _modifying = RegExp(
-  r'^\s*(insert|update|delete|merge|drop|truncate|alter|create|replace|grant|revoke|rename|upsert|exec|execute|call)\b',
+  r'^\s*(insert|update|delete|merge|drop|truncate|alter|create|replace|grant|revoke|rename|upsert|exec|execute|call|copy|load|comment|refresh|do)\b',
   caseSensitive: false,
 );
 
@@ -322,4 +322,16 @@ bool isDangerousSql(String sql) {
     return true;
   }
   return false;
+}
+
+/// The MySQL and MariaDB ODBC drivers report the version in the ODBC format
+/// (`08.04.000003`): shown as the server does (`8.4.3`).
+Map<String, Object?> normalizeServerInfo(Map<String, Object?> info) {
+  final name = (info['dbmsName'] as String? ?? '').toLowerCase();
+  final v = info['dbmsVersion'] as String? ?? '';
+  final m = RegExp(r'^0*(\d+)\.0*(\d+)\.0*(\d+)$').firstMatch(v.trim());
+  if (m != null && (name.contains('mysql') || name.contains('mariadb'))) {
+    info['dbmsVersion'] = '${m[1]}.${m[2]}.${m[3]}';
+  }
+  return info;
 }
