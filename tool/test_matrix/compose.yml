@@ -1,0 +1,36 @@
+# Extra servers of the test matrix (docs/test-plan.md). The other DBMS come
+# from tool/design_db/compose.yml; this "pg" replaces that one (same port and
+# credentials) and adds pldebugger and pg_stat_statements.
+#
+#   docker compose -f tool/test_matrix/compose.yml up -d --wait
+#   docker compose -f tool/test_matrix/compose.yml down -v
+
+name: dbcraft-matrix
+
+services:
+  pg:
+    build: ./pg
+    image: dbcraft-matrix-pg:17.2
+    environment:
+      POSTGRES_USER: dbcraft
+      POSTGRES_PASSWORD: DbCraft_Test1
+      POSTGRES_DB: dbcraft
+    ports: ["55432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbcraft -d dbcraft"]
+      interval: 2s
+      retries: 60
+
+  s3:
+    # RustFS: S3-compatible (MinIO no longer publishes images on Docker Hub).
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: dbcraft
+      RUSTFS_SECRET_KEY: DbCraft_Test1
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports: ["59000:9000", "59001:9001"]
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0-arm64
+    command: ["azurite-blob", "--blobHost", "0.0.0.0", "--blobPort", "10000", "--loose", "--skipApiVersionCheck"]
+    ports: ["60000:10000"]
