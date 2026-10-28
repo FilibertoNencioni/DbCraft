@@ -182,7 +182,9 @@ Future<DdlResult> runDdlScript(
           : failedAt > 1
           ? ' (le $failedAt precedenti sono state eseguite)'
           : '';
-      showErrorDialog(
+      // Awaited: the script sheet closes itself after a partial run, which
+      // would otherwise pop this alert instead of the sheet.
+      await showErrorDialog(
         context,
         failedAt < 0
             ? 'Impossibile eseguire lo script:\n\n$failure'

@@ -50,10 +50,11 @@ Future<String?> runScriptSheet(WidgetTester tester, {String shotName = '', bool 
         await settle(tester, 400);
       }
       if (shotName.isNotEmpty) await shot(tester, '${shotName}_error');
-      final texts = find
-          .byWidgetPredicate((w) => w is RichText)
-          .evaluate()
-          .map((e) => (e.widget as RichText).text.toPlainText())
+      // The alert message is selectable text (an EditableText, no RichText).
+      final texts = [
+        ...find.byWidgetPredicate((w) => w is RichText).evaluate().map((e) => (e.widget as RichText).text.toPlainText()),
+        ...find.byType(EditableText).evaluate().map((e) => (e.widget as EditableText).controller.text),
+      ]
           .where((x) => x.contains('non riuscita') || x.contains('ERROR') || x.contains('rror') || x.startsWith('['))
           .join(' ‖ ');
       lastScriptError = texts;
@@ -102,7 +103,8 @@ void main() {
       await settle(tester, 1500);
       final tab = app.currentTab as TableEditorTab;
       final d = tab.design!;
-      d.update(d.working.copyWith(name: 'dbc_menu'));
+      // As the name field does: the generated key name follows the table.
+      d.rename('dbc_menu');
       await settle(tester, 500);
       await shot(tester, 'des03a_new_from_menu');
       unawaited(saveTableDesign(ctx(), tab));
@@ -140,8 +142,8 @@ void main() {
         const ColumnDef(name: 'obbligatorio', type: 'varchar', size: 20, nullable: false, defaultValue: "'x'"),
         const ColumnDef(name: 'reparto_id', type: 'integer'),
       ];
+      d.rename('dbc_tipi');
       d.update(d.working.copyWith(
-        name: 'dbc_tipi',
         columns: cols,
         foreignKeys: [ForeignKeyDef(name: 'fk_dbc_tipi_reparto', columns: const ['reparto_id'], refSchema: schema, refTable: 'reparti', refColumns: const ['id'])],
         indexes: const [IndexDef(name: 'ix_dbc_tipi_ob', columns: ['obbligatorio'])],

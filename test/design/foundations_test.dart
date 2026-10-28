@@ -576,6 +576,34 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('a partial run shows the error, then the script sheet closes', (tester) async {
+      final ctx = await host(tester);
+      final s = ScriptedSession()..on('CREATE TABLE b', odbcError('relation "b" already exists', state: '42P07'));
+      final dc = scriptedConnection(s);
+      bool? result;
+      showDdlScriptDialog(ctx, dc: dc, title: 'Script con errore', statements: ['CREATE TABLE a (id int)', 'CREATE TABLE b (id int)'])
+          .then((r) => result = r);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Esegui').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Esegui').last); // "Eseguire lo script?"
+      // The sheet's spinner keeps running under the alert.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      // The alert stays until it is read (it used to be popped by the sheet).
+      expect(find.text('Esecuzione interrotta'), findsOneWidget);
+      expect(find.textContaining('la precedente è stata eseguita'), findsWidgets);
+      expect(find.text('Script con errore'), findsOneWidget);
+      await tester.tap(find.text('OK').last);
+      await tester.pump(const Duration(seconds: 5)); // toasts
+      await tester.pumpAndSettle();
+      // Part of it ran: the sheet closes instead of offering to run it again.
+      expect(find.text('Script con errore'), findsNothing);
+      expect(result, isFalse);
+      expect(s.executed, ['CREATE TABLE a (id int)', 'CREATE TABLE b (id int)']);
+    });
+
     testWidgets('the script sheet masks the passwords', (tester) async {
       final ctx = await host(tester);
       final dc = scriptedConnection(ScriptedSession());
