@@ -9,6 +9,7 @@ import '../../features/design/model/security_defs.dart';
 import '../../features/schema/schema_model.dart';
 import '../../model/db_objects.dart';
 import '../../services/sql_dialect.dart';
+import '../../services/system_objects.dart';
 import '../../state/db_connection.dart';
 import '../theme/app_icons.dart';
 
@@ -55,6 +56,60 @@ class FolderNode extends NavNode {
   Future<List<NavNode>> load() async => items;
 }
 
+/// The system databases or schemas of a list (master, pg_catalog…), kept
+/// apart at the end of it.
+class SystemFolderNode extends FolderNode {
+  SystemFolderNode(this._key, List<NavNode> items) : super('Sistema', items) {
+    children = items;
+  }
+  final String _key;
+
+  @override
+  String? get detail => '${items.length}';
+  @override
+  IconData get icon => AppIcons.settings;
+  @override
+  String get key => _key;
+}
+
+/// [nodes] with those matching [isSystem] moved into a [SystemFolderNode]
+/// at the end (no folder when none matches).
+List<NavNode> groupSystem(String key, List<NavNode> nodes, bool Function(NavNode) isSystem) {
+  final system = nodes.where(isSystem).toList();
+  if (system.isEmpty) return nodes;
+  return [...nodes.where((n) => !isSystem(n)), SystemFolderNode(key, system)];
+}
+
+/// Whether a schema of [dc] belongs to the DBMS. Oracle: the users flagged
+/// ORACLE_MAINTAINED, when readable, besides the built-in list. The schema
+/// of the user of the connection is never one (Oracle SYSTEM login).
+Future<bool Function(String)> systemSchemaTest(DbConnection dc) async {
+  final user = dc.config.user.trim().toLowerCase();
+  var builtIn = const <String>{};
+  if (dc.dialect.family == DbFamily.oracle) {
+    try {
+      builtIn = {
+        for (final p in await DesignCatalog.of(dc)?.principals() ?? const <PrincipalDef>[])
+          if (p.builtIn && p.kind == PrincipalKind.user) p.name.toLowerCase(),
+      };
+    } catch (_) {
+      // Built-in list only.
+    }
+  }
+  return (s) {
+    final n = s.toLowerCase();
+    return n != user && (builtIn.contains(n) || isSystemSchema(dc.dialect, s));
+  };
+}
+
+/// Schema nodes of [catalog] with the system ones grouped.
+Future<List<NavNode>> schemaNodes(DbConnection dc, String? catalog, List<String> schemas) async {
+  final isSystem = await systemSchemaTest(dc);
+  return groupSystem('sys:${dc.config.id}:${catalog ?? ''}', [
+    for (final s in schemas) SchemaNode(dc, catalog, s),
+  ], (n) => isSystem((n as SchemaNode).schema));
+}
+
 class ConnectionNode extends NavNode {
   ConnectionNode(DbConnection super.connection);
 
@@ -79,15 +134,21 @@ class ConnectionNode extends NavNode {
     if (md.supportsCatalogs) {
       final cats = await md.catalogs();
       if (cats.isNotEmpty) {
+        final current = dc.defaultCatalog ?? md.currentCatalog;
         return [
-          for (final c in cats) CatalogNode(dc, c, current: c == (dc.defaultCatalog ?? md.currentCatalog)),
+          ...groupSystem(
+            'sys:${dc.config.id}',
+            [for (final c in cats) CatalogNode(dc, c, current: c == current)],
+            // The database the connection opens stays in sight.
+            (n) => !(n as CatalogNode).current && isSystemCatalog(dc.dialect, n.catalog),
+          ),
           ...security,
         ];
       }
     }
     if (md.supportsSchemas) {
       final schemas = await listSchemas(dc, null);
-      if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(dc, null, s), ...security];
+      if (schemas.isNotEmpty) return [...await schemaNodes(dc, null, schemas), ...security];
     }
     return [...objectFolders(dc, null, null), ...security];
   }
@@ -160,7 +221,7 @@ class CatalogNode extends NavNode {
         if (connection!.dialect.family == DbFamily.sqlServer && hasSecurity(connection!))
           SecurityNode(connection!, catalog: catalog),
       ];
-      if (schemas.isNotEmpty) return [for (final s in schemas) SchemaNode(connection!, catalog, s), ...security];
+      if (schemas.isNotEmpty) return [...await schemaNodes(connection!, catalog, schemas), ...security];
     }
     return objectFolders(connection!, catalog, null);
   }

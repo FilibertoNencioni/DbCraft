@@ -226,9 +226,11 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     final out = <_VisibleNode>[];
     final f = _filter.text.trim().toLowerCase();
     // Simplified view for analysts: only tables and views, no table parts.
-    final simple = AppScope.read(context).settings.simpleMode;
+    final settings = AppScope.read(context).settings;
+    final simple = settings.simpleMode;
     void walk(NavNode n, int depth) {
       if (f.isNotEmpty && n.filterable && !n.label.toLowerCase().contains(f)) return;
+      if (n is SystemFolderNode && settings.hideSystemObjects) return;
       if (simple &&
           n is ObjectFolderNode &&
           (n.kind == ObjectKind.system || n.kind == ObjectKind.procedures || n.kind == ObjectKind.sequences)) {
@@ -513,7 +515,9 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
             ...connectionDesignMenu(
               context,
               d,
-              schemasAtRoot: c.children?.any((x) => x is SchemaNode) ?? false,
+              schemasAtRoot:
+                  c.children?.any((x) => x is SchemaNode || (x is SystemFolderNode && x.items.first is SchemaNode)) ??
+                  false,
             ),
           ],
           const MenuEntry.divider(),

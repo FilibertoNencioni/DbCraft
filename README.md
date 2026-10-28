@@ -15,7 +15,7 @@ Oracle, Db2, SQLite, Snowflake, Access, Firebird, DuckDB, …) è utilizzabile.
 | Connessioni | Wizard, driver JDBC | Wizard con 3 modalità: **Driver ODBC** (host/porta/db con template per i DBMS più diffusi), **DSN**, **stringa di connessione** libera; test connessione; parametri extra del driver; password salvata o richiesta al login |
 | | Tipo connessione (dev/test/prod), cartelle, sola lettura, auto-commit, catalogo di default, bootstrap query | ✓ tutti (conferma prima di modificare dati su connessioni di *Produzione*) |
 | Driver Manager | Driver JDBC | Elenco driver ODBC installati (`SQLDrivers`) e DSN utente/sistema (`SQLDataSources`); su macOS **installazione dei driver** SQL Server, PostgreSQL, MariaDB/MySQL e SQLite via Homebrew (licenza Microsoft, log in tempo reale, registrazione in `odbcinst.ini`) |
-| Database Navigator | Albero lazy | Connessione → catalogo → schema → Tabelle/Viste/Altri/Procedure/Sequenze → Colonne/Chiavi/CHECK/FK/Riferimenti/Indici/Trigger; cartelle **Sicurezza** (utenti, ruoli, login) e degli oggetti specifici del DBMS; filtro; menu contestuali con "Nuovo…/Modifica…/Rinomina…/Elimina…"; F5, ⌥⌘N crea un oggetto nel contesto selezionato |
+| Database Navigator | Albero lazy | Connessione → catalogo → schema → Tabelle/Viste/Altri/Procedure/Sequenze → Colonne/Chiavi/CHECK/FK/Riferimenti/Indici/Trigger; cartelle **Sicurezza** (utenti, ruoli, login) e degli oggetti specifici del DBMS; database e schemi di sistema (master, msdb, pg_catalog, information_schema…) raccolti in una cartella **Sistema** o nascosti; filtro; menu contestuali con "Nuovo…/Modifica…/Rinomina…/Elimina…"; F5, ⌥⌘N crea un oggetto nel contesto selezionato |
 | Editor SQL | Evidenziazione, autocompletamento, esecuzione | Evidenziazione sintassi, numeri di riga, **autocompletamento** (keyword, funzioni, tabelle, colonne anche via alias), trova/sostituisci, commenti, formattazione, maiuscolo/minuscolo |
 | | Esecuzione | Istruzione sotto il cursore o selezione (Ctrl/⌘+Invio), in nuova scheda (Ctrl/⌘+\\), **script** (Alt+X / F5) con statistiche e gestione errori, **piano di esecuzione**, **annullamento** (`SQLCancel`), **parametri** `:nome` e `?` con dialogo, output del server (PRINT/NOTICE), log di esecuzione, più result set per istruzione |
 | | Script | Script salvati automaticamente nel workspace, pannello *Script*, apri/salva come |
@@ -30,7 +30,7 @@ Oracle, Db2, SQLite, Snowflake, Access, Firebird, DuckDB, …) è utilizzabile.
 | Data transfer | Export/Import | Esporta in CSV, TSV, JSON, XML, HTML, Markdown, SQL INSERT, testo (su file o appunti, streaming di tabelle intere); **import CSV** con mappatura colonne |
 | Query Manager | Cronologia | Cronologia persistente con ricerca, filtro errori, riapertura in editor |
 | Generazione SQL | ✓ | SELECT / INSERT / UPDATE / DELETE / DDL / CALL, TRUNCATE, DROP, conteggio righe |
-| Preferenze | ✓ | Tema chiaro/scuro/sistema, font, fetch size, testo NULL, autocompletamento, delimitatore a riga vuota, libreria Driver Manager personalizzata |
+| Preferenze | ✓ | Tema chiaro/scuro/sistema, font, fetch size, testo NULL, autocompletamento, delimitatore a riga vuota, oggetti di sistema nel navigator, libreria Driver Manager personalizzata |
 
 ### Funzionalità PRO (equivalenti a DBeaver Pro / Team / Enterprise / Ultimate)
 

@@ -118,6 +118,20 @@ class _SettingsWindowState extends State<SettingsWindow> {
               _slider('Griglia risultati', s.gridFontSize, 10, 20, (v) => s.gridFontSize = v),
             ],
           ),
+          FormGroup(
+            title: 'Navigator',
+            footer: 'Database e schemi del DBMS, come master, msdb, pg_catalog e information_schema.',
+            children: [
+              FormRow(
+                label: 'Oggetti di sistema',
+                child: Segmented<bool>(
+                  value: s.hideSystemObjects,
+                  items: const [(false, 'In una cartella', null), (true, 'Nascosti', null)],
+                  onChanged: (v) => _apply(() => s.hideSystemObjects = v),
+                ),
+              ),
+            ],
+          ),
         ];
       case 1:
         return [
