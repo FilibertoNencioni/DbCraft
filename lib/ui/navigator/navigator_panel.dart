@@ -480,11 +480,24 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     if (i >= 0) items[i].onSelected!();
   }
 
+  /// Database of the object a node shows (null at the connection level).
+  static String? _catalogOf(NavNode n) => switch (n) {
+    CatalogNode c => c.catalog,
+    SchemaNode s => s.catalog,
+    ObjectFolderNode f => f.catalog,
+    TableNode t => t.table.catalog,
+    TablePartNode p => p.table.catalog,
+    ConstraintNode k => k.table.catalog,
+    TriggerNode t => t.table.catalog,
+    ProcedureNode p => p.procedure.catalog,
+    _ => null,
+  };
+
   List<MenuEntry<void>> _menuItems(BuildContext context, NavNode n) {
     final app = AppScope.read(context);
     final items = <MenuEntry<void>>[];
     final dc = n.connection;
-    void sqlWith(String sql) => app.sqlEditorWith(dc!, sql);
+    void sqlWith(String sql) => app.sqlEditorWith(dc!, sql, catalog: _catalogOf(n));
 
     final simple = app.settings.simpleMode;
     switch (n) {
@@ -883,7 +896,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
 
   Future<void> _countRows(DbConnection dc, DbTable t) async {
     await guarded(context, () async {
-      final r = await dc.meta!.execute(dc.dialect.countSql(t));
+      final r = await dc.metaFor(t.catalog)!.execute(dc.dialect.countSql(t));
       if (!mounted) return;
       showToast(context, '${t.name}: ${r.rows.first.first} righe');
     });

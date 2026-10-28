@@ -39,14 +39,14 @@ Future<ResultPage> _all(DbSession s, String sql) async {
 /// Runs the plan of [sql] on a new session of [dc] (closed afterwards).
 /// With [analyze] the statement is executed inside a transaction that is
 /// rolled back.
-Future<PlanTree> runVisualPlan(DbConnection dc, String sql, {bool analyze = false}) async {
+Future<PlanTree> runVisualPlan(DbConnection dc, String sql, {bool analyze = false, String? catalog}) async {
   final family = dc.dialect.family;
   if (!visualPlanSupported(family)) {
     throw UnsupportedError('Il piano visuale non è disponibile per ${dc.serverLabel}: usa "Piano" nell\'editor SQL.');
   }
   final stmt = cleanPlanSql(sql);
   if (stmt.isEmpty) throw ArgumentError('Nessuna istruzione da analizzare');
-  final s = await dc.openSession();
+  final s = await dc.openSession(catalog: catalog);
   try {
     switch (family) {
       case DbFamily.postgres:

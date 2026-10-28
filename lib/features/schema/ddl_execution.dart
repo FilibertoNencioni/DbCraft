@@ -98,6 +98,9 @@ Future<DdlResult> runDdlScript(
   }
   final main = dc.main;
   if (main == null) return const DdlResult.skipped();
+  // With one session per database (PostgreSQL) a script runs in the
+  // database of the objects it changes, whichever an editor last used.
+  final catalog = script.catalog ?? (dc.routesDatabases ? script.scope.catalog : null);
 
   // Sessions: [session] records to the history, [plain] runs the statements
   // with secrets. A separate auto-commit session when the script cannot run
@@ -110,13 +113,13 @@ Future<DdlResult> runDdlScript(
   var rolledBack = false;
   try {
     if (script.autocommitOnly && !dc.autoCommit) {
-      own = await dc.openSession();
-      final cat = script.catalog ?? dc.mainCatalog;
+      final cat = catalog ?? dc.mainCatalog;
+      own = await dc.openSession(catalog: cat);
       if (cat != null && cat.isNotEmpty) await own.setCurrentCatalog(cat);
       session = dc.withHistory(own);
       plain = own;
-    } else if (script.catalog != null) {
-      await dc.useCatalog(script.catalog);
+    } else if (catalog != null) {
+      await dc.useCatalog(catalog);
     }
     if (tx && fkChecksOff) await _run(session, 'PRAGMA foreign_keys = OFF');
     if (tx) await session.setAutoCommit(false);
@@ -179,7 +182,9 @@ Future<DdlResult> runDdlScript(
           : failedAt > 1
           ? ' (le $failedAt precedenti sono state eseguite)'
           : '';
-      showErrorDialog(
+      // Awaited: the script sheet closes itself after a partial run, which
+      // would otherwise pop this alert instead of the sheet.
+      await showErrorDialog(
         context,
         failedAt < 0
             ? 'Impossibile eseguire lo script:\n\n$failure'

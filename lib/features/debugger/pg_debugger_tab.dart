@@ -42,7 +42,7 @@ class PgDebuggerTab extends FeatureTab {
   /// Resolves the pg_proc OID of [p] (asks which overload to use when the
   /// name is ambiguous). Null when not found or cancelled.
   static Future<int?> resolveFunctionOid(BuildContext context, DbConnection dc, DbProcedure p) async {
-    final s = await dc.openSession(readOnly: true);
+    final s = await dc.openSession(readOnly: true, catalog: p.catalog);
     try {
       final list = await findPgFunctions(s, p);
       if (list.isEmpty) return null;

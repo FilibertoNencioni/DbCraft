@@ -31,6 +31,7 @@ Future<List<ExtraObjectDef>> readExtras(
         for (final r in rows)
           ExtensionDef(
             name: rowText(r, 'extname')!,
+            catalog: catalog,
             schema: rowText(r, 'nspname'),
             version: rowText(r, 'extversion'),
             defaultVersion: rowText(r, 'default_version'),

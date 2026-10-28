@@ -101,7 +101,25 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
       cfg.loginTimeout != 15 ||
       cfg.queryTimeout != 0 ||
       cfg.bootstrapQueries.trim().isNotEmpty ||
-      (!cfg.isNative && cfg.extraParams.isNotEmpty);
+      (!cfg.isNative && cfg.extraParams.isNotEmpty) ||
+      (_allDatabasesInAdvanced && !cfg.allDatabases);
+
+  /// DSN and connection strings may reach PostgreSQL: its "every database"
+  /// switch waits under Avanzate (the driver row shows it otherwise).
+  bool get _allDatabasesInAdvanced => cfg.mode == ConnectionMode.dsn || cfg.mode == ConnectionMode.connectionString;
+
+  Widget _allDatabasesRow({bool postgresOnly = false}) => _switchRow(
+        'Mostra tutti i database',
+        [
+          if (postgresOnly) 'Solo PostgreSQL.',
+          cfg.allDatabases ? 'Ognuno si apre con sessioni proprie' : 'Solo il database indicato',
+        ].join(' '),
+        cfg.allDatabases,
+        (v) => setState(() {
+          cfg.allDatabases = v;
+          _result = null;
+        }),
+      );
 
   /// "Integrato" is offered only when this build ships native drivers.
   bool get _offerNative => nativeDrivers.isNotEmpty || cfg.mode == ConnectionMode.native;
@@ -423,6 +441,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     final c = DbColors.of(context);
     final t = DriverTemplate.forDriver(_driver.text);
     final generic = t == DriverTemplate.generic;
+    final postgres = t.id == 'postgres';
     return [
       FormGroup(
         title: 'Connessione',
@@ -477,11 +496,12 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
           if (t.hostKey != null) _hostRow(t.defaultPort, withPort: t.portKey != null || t.portInServer),
           if (t.databaseKey != null)
             FormRow(
-              label: t.fileBased ? 'File' : 'Database',
+              label: t.fileBased ? 'File' : (postgres && cfg.allDatabases ? 'Database iniziale' : 'Database'),
               child: t.fileBased
                   ? _pathField(_database, '/percorso/del/file.db')
-                  : _field(_database, 'Nome del database'),
+                  : _field(_database, postgres ? 'Facoltativo' : 'Nome del database'),
             ),
+          if (postgres) _allDatabasesRow(),
         ],
       ),
       if (t.userKey != null || supportedAuthMethods(cfg).length > 1) _authFields(),
@@ -728,6 +748,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
           FormRow(label: 'Catalogo predefinito', child: _field(_defaultCatalog, 'Quello del login')),
           FormRow(label: 'Timeout di login', child: seconds(_loginTimeout, '15')),
           FormRow(label: 'Timeout query', help: '0 = nessun limite', child: seconds(_queryTimeout, '0')),
+          if (_allDatabasesInAdvanced) _allDatabasesRow(postgresOnly: true),
         ],
       ),
       if (cfg.mode != ConnectionMode.native)

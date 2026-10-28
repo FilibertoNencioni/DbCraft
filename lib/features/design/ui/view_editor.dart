@@ -94,7 +94,7 @@ class _ViewDefinitionPageState extends State<ViewDefinitionPage> {
       _checkResult = null;
     });
     try {
-      final session = dc.meta!;
+      final session = dc.metaFor(d.working.catalog)!;
       final sql = dc.dialect.limit('SELECT * FROM ($q) dbc_check', 20);
       final r = await session.execute(sql, fetchSize: 20, queryTimeoutSec: 30);
       if (r.cursorId != null) await session.closeCursor(r.cursorId!);

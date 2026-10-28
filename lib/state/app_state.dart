@@ -306,12 +306,12 @@ class AppState extends ChangeNotifier {
     return tab;
   }
 
-  /// Opens a SQL editor bound to [c] (re-uses the most recent one when
-  /// [reuse] is true) and appends [sql].
-  Future<SqlEditorTab> sqlEditorWith(DbConnection c, String sql, {bool reuse = false}) async {
+  /// Opens a SQL editor bound to [c] and [catalog] (re-uses the most recent
+  /// one when [reuse] is true) and appends [sql].
+  Future<SqlEditorTab> sqlEditorWith(DbConnection c, String sql, {bool reuse = false, String? catalog}) async {
     if (reuse) {
       for (final t in tabs.reversed) {
-        if (t is SqlEditorTab && t.connection == c) {
+        if (t is SqlEditorTab && t.connection == c && (catalog == null || t.catalog == catalog)) {
           final cur = t.controller.text;
           t.controller.text = cur.trim().isEmpty ? sql : '$cur\n\n$sql';
           activate(t);
@@ -319,7 +319,7 @@ class AppState extends ChangeNotifier {
         }
       }
     }
-    return openSqlEditor(c, initialSql: sql);
+    return openSqlEditor(c, initialSql: sql, catalog: catalog);
   }
 
   void openTable(DbConnection c, DbTable table, {int page = 0}) {

@@ -43,6 +43,7 @@ class ConnectionConfig {
     this.readOnly = false,
     this.autoCommit = true,
     this.defaultCatalog = '',
+    this.allDatabases = true,
     this.loginTimeout = 15,
     this.queryTimeout = 0,
     this.bootstrapQueries = '',
@@ -73,6 +74,10 @@ class ConnectionConfig {
   bool readOnly;
   bool autoCommit;
   String defaultCatalog;
+
+  /// PostgreSQL: list every database of the server, each opened on its own
+  /// sessions, instead of only [database].
+  bool allDatabases;
   int loginTimeout;
   int queryTimeout;
 
@@ -93,6 +98,30 @@ class ConnectionConfig {
   Map<String, String> secretParams;
 
   bool get isNative => mode == ConnectionMode.native;
+
+  static final _databaseKeyword = RegExp(r'^\s*(DATABASE|DBNAME)\s*=', caseSensitive: false);
+
+  /// A copy opening [db] instead of [database]: the database field, a
+  /// `DATABASE=` added to a DSN, or the keyword of a connection string.
+  ConnectionConfig forDatabase(String db) {
+    final c = copy()..extraParams = {
+      for (final e in extraParams.entries)
+        if (!_databaseKeyword.hasMatch('${e.key}=')) e.key: e.value,
+    };
+    switch (mode) {
+      case ConnectionMode.driver || ConnectionMode.native:
+        c.database = db;
+      case ConnectionMode.dsn:
+        c.extraParams['DATABASE'] = db;
+      case ConnectionMode.connectionString:
+        final segments = [
+          for (final e in splitOdbcSegments(connectionString))
+            if (e.trim().isNotEmpty && !_databaseKeyword.hasMatch(e)) e,
+        ];
+        c.connectionString = [...segments, 'Database=${odbcEscape(db)}'].join(';');
+    }
+    return c;
+  }
 
   ConnectionConfig copy({String? id, String? name}) => ConnectionConfig.fromJson({
     ...toJson(includePassword: true),
@@ -243,6 +272,7 @@ class ConnectionConfig {
     'readOnly': readOnly,
     'autoCommit': autoCommit,
     'defaultCatalog': defaultCatalog,
+    'allDatabases': allDatabases,
     'loginTimeout': loginTimeout,
     'queryTimeout': queryTimeout,
     'bootstrapQueries': bootstrapQueries,
@@ -271,6 +301,7 @@ class ConnectionConfig {
     readOnly: j['readOnly'] as bool? ?? false,
     autoCommit: j['autoCommit'] as bool? ?? true,
     defaultCatalog: j['defaultCatalog'] as String? ?? '',
+    allDatabases: j['allDatabases'] as bool? ?? true,
     loginTimeout: j['loginTimeout'] as int? ?? 15,
     queryTimeout: j['queryTimeout'] as int? ?? 0,
     bootstrapQueries: j['bootstrapQueries'] as String? ?? '',

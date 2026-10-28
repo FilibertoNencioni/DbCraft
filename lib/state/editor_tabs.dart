@@ -503,6 +503,7 @@ class SqlEditorTab extends EditorTab {
         sql: sql,
         fetchSize: settings.fetchSize,
         params: params,
+        catalog: c.mainCatalog,
       );
       final tables = p.columns.map((e) => e.baseTable).toSet();
       final single = tables.length == 1 && tables.first != null ? tables.first : null;

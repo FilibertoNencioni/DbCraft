@@ -43,9 +43,10 @@ class CompareSide {
 
 /// Rows of a database query as a [RowSource] (dedicated read-only session).
 class _DbRowSource implements RowSource {
-  _DbRowSource(this.dc, this.sql);
+  _DbRowSource(this.dc, this.sql, {this.catalog});
   final DbConnection dc;
   final String sql;
+  final String? catalog;
   final int pageSize = 2000;
   DbSession? _s;
   List<List<Object?>>? _first;
@@ -53,7 +54,7 @@ class _DbRowSource implements RowSource {
   bool _end = false;
 
   Future<List<ColumnInfo>> open() async {
-    _s = await dc.openSession(readOnly: true);
+    _s = await dc.openSession(readOnly: true, catalog: catalog);
     final p = await _s!.execute(sql, fetchSize: pageSize);
     _first = p.rows;
     _cursor = p.cursorId;
@@ -446,8 +447,8 @@ class DataCompareTab extends FeatureTab {
     var hash = orderIndependent;
     try {
       while (true) {
-        final a = _DbRowSource(src.conn!, _select(src, srcNames, !hash));
-        final b = _DbRowSource(tgt.conn!, _select(tgt, tgtNames, !hash));
+        final a = _DbRowSource(src.conn!, _select(src, srcNames, !hash), catalog: src.catalog);
+        final b = _DbRowSource(tgt.conn!, _select(tgt, tgtNames, !hash), catalog: tgt.catalog);
         _open
           ..clear()
           ..addAll([a, b]);

@@ -60,7 +60,7 @@ class _ProcedureViewState extends State<ProcedureView> {
                 PushButton(
                   label: 'Genera chiamata in editor SQL',
                   icon: AppIcons.run,
-                  onPressed: () => AppScope.read(context).sqlEditorWith(c, c.dialect.procedureCall(p, params)),
+                  onPressed: () => AppScope.read(context).sqlEditorWith(c, c.dialect.procedureCall(p, params), catalog: p.catalog),
                 ),
               ],
             ),

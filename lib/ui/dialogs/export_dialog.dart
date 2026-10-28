@@ -25,6 +25,7 @@ Future<void> showResultExportDialog(BuildContext context, ResultSetModel m) {
       hasMore: m.hasMore,
       sql: m.sql,
       params: m.params,
+      catalog: table?.catalog ?? m.catalog,
     ),
   );
 }
@@ -44,19 +45,22 @@ Future<void> showTableExportDialog(BuildContext context, DbConnection dc, DbTabl
       hasMore: true,
       sql: 'SELECT * FROM ${dc.dialect.tableName(t)}',
       params: const [],
+      catalog: t.catalog,
     ),
   );
 }
 
-/// Streams every row of [sql] page by page using a dedicated session, so the
-/// export never interferes with the editor transaction.
+/// Streams every row of [sql] page by page using a dedicated session (on
+/// [catalog] when known), so the export never interferes with the editor
+/// transaction.
 Stream<List<List<Object?>>> streamQuery(
   DbConnection dc,
   String sql,
   List<Object?> params, {
   int pageSize = 2000,
+  String? catalog,
 }) async* {
-  final session = await dc.openSession(readOnly: true);
+  final session = await dc.openSession(readOnly: true, catalog: catalog);
   try {
     var page = await session.execute(sql, params: params, fetchSize: pageSize);
     yield page.rows;
@@ -79,6 +83,7 @@ class _ExportDialog extends StatefulWidget {
     required this.hasMore,
     required this.sql,
     required this.params,
+    this.catalog,
   });
 
   final DbConnection connection;
@@ -89,6 +94,7 @@ class _ExportDialog extends StatefulWidget {
   final bool hasMore;
   final String sql;
   final List<Object?> params;
+  final String? catalog;
 
   @override
   State<_ExportDialog> createState() => _ExportDialogState();
@@ -119,7 +125,7 @@ class _ExportDialogState extends State<_ExportDialog> {
     if (!_allRows && widget.loadedRows != null) {
       return Stream.value(widget.loadedRows!());
     }
-    return streamQuery(widget.connection, widget.sql, widget.params).map((p) {
+    return streamQuery(widget.connection, widget.sql, widget.params, catalog: widget.catalog).map((p) {
       _exported += p.length;
       if (mounted) setState(() {});
       return p;
