@@ -414,10 +414,13 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       tooltip: n.error ?? (dc?.config.subtitle ?? n.label),
       onTap: () => _select(n),
       onDoubleTap: () => _open(n),
-      onMenu: (pos) {
-        setState(() => _selected = n);
-        _contextMenu(context, n, pos);
-      },
+      // No "⋯" (nor right click) on nodes without actions, e.g. connection folders.
+      onMenu: _menuItems(context, n).isEmpty
+          ? null
+          : (pos) {
+              setState(() => _selected = n);
+              _contextMenu(context, n, pos);
+            },
     );
   }
 
