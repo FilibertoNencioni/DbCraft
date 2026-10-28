@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../model/connection_config.dart';
+import '../drivers/database_router_session.dart';
 import '../drivers/db_session.dart';
 import '../drivers/recording_session.dart';
 import '../drivers/session_factory.dart';
@@ -65,6 +66,11 @@ enum SchemaLevel { connection, catalog, schema, object, security }
 /// Two ODBC sessions are opened: one for metadata reading (navigator,
 /// autocompletion) and one for SQL editors / data editors, so that browsing
 /// the navigator never waits for a running query.
+///
+/// PostgreSQL binds a session to one database: with
+/// [ConnectionConfig.allDatabases] both are [DatabaseRouterSession]s that
+/// open a session per database on first use, and the databases of the
+/// server appear as catalogs.
 class DbConnection extends ChangeNotifier {
   DbConnection(this.config);
 
@@ -118,10 +124,34 @@ class DbConnection extends ChangeNotifier {
 
   String? get _password => config.savePassword ? null : _sessionPassword;
 
-  /// Opens an additional independent session (exports, imports, …).
-  Future<DbSession> openSession({bool readOnly = false}) =>
+  /// Opens an additional independent session (exports, imports, …), on
+  /// [catalog] when every database has its own sessions.
+  Future<DbSession> openSession({bool readOnly = false, String? catalog}) =>
       sessionOpener?.call(readOnly) ??
-      openDbSession(config, libPath: _libPath, password: _password, readOnly: readOnly);
+      openDbSession(
+        routesDatabases && catalog != null && catalog.isNotEmpty ? config.forDatabase(catalog) : config,
+        libPath: _libPath,
+        password: _password,
+        readOnly: readOnly,
+      );
+
+  /// Every database has its own sessions (PostgreSQL, see [DbConnection]).
+  bool get routesDatabases => meta is DatabaseRouterSession;
+
+  /// The main session working on [catalog] without moving the database of
+  /// the SQL editors (same transaction and history as [main]): [main]
+  /// itself unless every database has its own sessions.
+  DbSession? mainFor(String? catalog) {
+    final m = unrecordedMain;
+    return m is DatabaseRouterSession && catalog != null && catalog.isNotEmpty ? withHistory(m.pinned(catalog)) : main;
+  }
+
+  /// The metadata session working on [catalog]: [meta] itself unless every
+  /// database has its own sessions.
+  DbSession? metaFor(String? catalog) {
+    final md = meta;
+    return md is DatabaseRouterSession && catalog != null && catalog.isNotEmpty ? md.pinned(catalog) : md;
+  }
 
   /// Replaces the driver in [openSession] (tests).
   @visibleForTesting
@@ -159,22 +189,39 @@ class DbConnection extends ChangeNotifier {
       // Open the metadata session first: it validates the parameters
       // without opening two failing logins.
       md = await openDbSession(config, libPath: libPath, password: _password);
-      m = RecordingSession(
-        await openDbSession(config, libPath: libPath, password: _password, readOnly: config.readOnly),
-        _recordStatement,
-      );
+      DbSession raw = await openDbSession(config, libPath: libPath, password: _password, readOnly: config.readOnly);
+      m = raw;
+      if (await _bindsDatabase(md)) {
+        final initial = await _currentDatabase(md);
+        if (initial != null) {
+          md = DatabaseRouterSession(
+            md,
+            initial,
+            open: (db) => openDbSession(config.forDatabase(db), libPath: libPath, password: _password),
+            listDatabases: _postgresDatabases,
+          );
+          m = raw = DatabaseRouterSession(
+            raw,
+            initial,
+            open: (db) => openDbSession(
+              config.forDatabase(db),
+              libPath: libPath,
+              password: _password,
+              readOnly: config.readOnly,
+            ),
+            listDatabases: _postgresDatabases,
+            onOpened: _bootstrap,
+          );
+        }
+      }
+      m = RecordingSession(raw, _recordStatement);
       final inf = normalizeServerInfo(await md.info());
       if (config.defaultCatalog.isNotEmpty) {
         await m.setCurrentCatalog(config.defaultCatalog);
         inf['currentCatalog'] = config.defaultCatalog;
       }
       if (!config.autoCommit) await m.setAutoCommit(false);
-      if (config.bootstrapQueries.trim().isNotEmpty) {
-        for (final s in SqlSplitter().split(config.bootstrapQueries)) {
-          final r = await m.execute(s.text);
-          if (r.cursorId != null) await m.closeCursor(r.cursorId!);
-        }
-      }
+      await _bootstrap(m);
       main = m;
       meta = md;
       info = inf;
@@ -194,6 +241,42 @@ class DbConnection extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  /// Runs the bootstrap queries on a new main session.
+  Future<void> _bootstrap(DbSession s) async {
+    if (config.bootstrapQueries.trim().isEmpty) return;
+    for (final q in SqlSplitter().split(config.bootstrapQueries)) {
+      final r = await s.execute(q.text);
+      if (r.cursorId != null) await s.closeCursor(r.cursorId!);
+    }
+  }
+
+  /// Whether sessions of [s] are bound to one database and every database
+  /// gets its own (PostgreSQL itself, not Redshift or Greenplum).
+  Future<bool> _bindsDatabase(DbSession s) async {
+    if (!config.allDatabases || config.isNative) return false;
+    final name = '${(await s.info())['dbmsName'] ?? ''}'.trim().toLowerCase();
+    return name == 'postgresql';
+  }
+
+  static Future<List<String>> _rows(DbSession s, String sql) async {
+    final r = await s.execute(sql, fetchSize: 10000);
+    if (r.cursorId != null) await s.closeCursor(r.cursorId!);
+    return [for (final row in r.rows) if (row.isNotEmpty && row.first != null) '${row.first}'];
+  }
+
+  static Future<String?> _currentDatabase(DbSession s) async {
+    try {
+      final r = await _rows(s, 'SELECT current_database()');
+      return r.isEmpty ? null : r.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Databases that accept connections, templates last.
+  static Future<List<String>> _postgresDatabases(DbSession s) =>
+      _rows(s, 'SELECT datname FROM pg_database WHERE datallowconn ORDER BY datistemplate, datname');
 
   Future<void> disconnect() async {
     final m = main, md = meta;
@@ -219,6 +302,17 @@ class DbConnection extends ChangeNotifier {
     if (m == null || catalog == null || catalog.isEmpty || catalog == mainCatalog) return;
     await m.setCurrentCatalog(catalog);
     mainCatalog = catalog;
+  }
+
+  /// Closes the sessions of [catalog] before renaming or dropping it (one
+  /// session per database only): the SQL editors on it go back to the
+  /// initial database.
+  Future<void> closeDatabase(String catalog) async {
+    final m = unrecordedMain;
+    for (final s in [m, meta]) {
+      if (s is DatabaseRouterSession) await s.closeDatabase(catalog);
+    }
+    if (m is DatabaseRouterSession && mainCatalog == catalog) mainCatalog = m.current;
   }
 
   /// Re-reads the main session catalog (after a `USE xxx` in a script).

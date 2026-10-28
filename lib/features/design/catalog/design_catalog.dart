@@ -123,7 +123,15 @@ class DesignCatalog {
   DesignCatalog(this.metadata) : queries = CatalogQueries(metadata.session);
 
   final MetadataService metadata;
+
+  /// Queries on the metadata session; for what belongs to a database use
+  /// [queriesFor] (PostgreSQL reads it on that database's session).
   final CatalogQueries queries;
+
+  CatalogQueries queriesFor(String? catalog) {
+    final s = metadata.sessionFor(catalog);
+    return identical(s, metadata.session) ? queries : CatalogQueries(s);
+  }
 
   SqlDialect get dialect => metadata.dialect;
 
@@ -137,15 +145,16 @@ class DesignCatalog {
   /// Extras of table [t] (empty for DBMS without a reader). Cached until the
   /// next schema change.
   Future<TableExtras> tableExtras(DbTable t) => metadata.cached('design:table:${t.key}', () async {
+    final q = queriesFor(t.catalog);
     return switch (dialect.family) {
-      DbFamily.postgres => readPostgresTable(queries, t),
-      DbFamily.sqlServer => readSqlServerTable(queries, t),
-      DbFamily.mysql => readMySqlTable(queries, dialect, t),
-      DbFamily.oracle => readOracleTable(queries, t),
-      DbFamily.db2 => readDb2Table(queries, t),
-      DbFamily.sqlite => readSqliteTable(queries, t),
-      DbFamily.firebird => readFirebirdTable(queries, t),
-      DbFamily.snowflake => readSnowflakeTable(queries, dialect, t),
+      DbFamily.postgres => readPostgresTable(q, t),
+      DbFamily.sqlServer => readSqlServerTable(q, t),
+      DbFamily.mysql => readMySqlTable(q, dialect, t),
+      DbFamily.oracle => readOracleTable(q, t),
+      DbFamily.db2 => readDb2Table(q, t),
+      DbFamily.sqlite => readSqliteTable(q, t),
+      DbFamily.firebird => readFirebirdTable(q, t),
+      DbFamily.snowflake => readSnowflakeTable(q, dialect, t),
       _ => TableExtras.none,
     };
   });
@@ -166,7 +175,7 @@ class DesignCatalog {
   Future<ViewDef?> viewDef(DbTable t) async {
     final r = await metadata.cached<Object>(
       'design:view:${t.key}',
-      () async => await readViewDef(queries, dialect, t) ?? false,
+      () async => await readViewDef(queriesFor(t.catalog), dialect, t) ?? false,
     );
     return r is ViewDef ? r : null;
   }
@@ -174,19 +183,19 @@ class DesignCatalog {
   /// Sequences of [catalog].[schema].
   Future<List<SequenceDef>> sequences(String? catalog, String? schema) => metadata.cached(
     'design:seq:${catalog ?? ''}:${schema ?? ''}',
-    () => readSequences(queries, dialect, catalog, schema),
+    () => readSequences(queriesFor(catalog), dialect, catalog, schema),
   );
 
   /// Triggers of the table [t].
   Future<List<TriggerDef>> triggers(DbTable t) =>
-      metadata.cached('design:trg:${t.key}', () => readTriggers(queries, dialect, t));
+      metadata.cached('design:trg:${t.key}', () => readTriggers(queriesFor(t.catalog), dialect, t));
 
   /// Source of the procedure or function [p] (null when not exposed).
   Future<RoutineSource?> routineSource(DbProcedure p) async {
     final params = dialect.family == DbFamily.firebird ? await metadata.procedureParams(p) : const <DbProcedureParam>[];
     final r = await metadata.cached<Object>(
       'design:src:${p.key}',
-      () async => await readRoutineSource(queries, dialect, p, params: params) ?? false,
+      () async => await readRoutineSource(queriesFor(p.catalog), dialect, p, params: params) ?? false,
     );
     return r is RoutineSource ? r : null;
   }
@@ -203,7 +212,7 @@ class DesignCatalog {
 
   /// Schemas of [catalog] with owner and comment.
   Future<List<SchemaDef>> schemaDefs(String? catalog) =>
-      metadata.cached('design:schemas:${catalog ?? ''}', () => readSchemas(queries, dialect, catalog));
+      metadata.cached('design:schemas:${catalog ?? ''}', () => readSchemas(queriesFor(catalog), dialect, catalog));
 
   Future<SchemaDef?> schemaDef(String? catalog, String name) async {
     for (final s in await schemaDefs(catalog)) {
@@ -216,16 +225,16 @@ class DesignCatalog {
       metadata.cached('design:dbchoices', () => readDatabaseChoices(queries, dialect));
 
   Future<List<String>> schemaOwners(String? catalog) =>
-      metadata.cached('design:schemaowners:${catalog ?? ''}', () => readSchemaOwners(queries, dialect, catalog));
+      metadata.cached('design:schemaowners:${catalog ?? ''}', () => readSchemaOwners(queriesFor(catalog), dialect, catalog));
 
   /// Users, roles and logins (SQL Server: users and roles of [catalog]).
   Future<List<PrincipalDef>> principals({String? catalog}) =>
-      metadata.cached('design:principals:${catalog ?? ''}', () => readPrincipals(queries, dialect, catalog: catalog));
+      metadata.cached('design:principals:${catalog ?? ''}', () => readPrincipals(queriesFor(catalog), dialect, catalog: catalog));
 
   /// Every role membership (SQL Server: server roles and the roles of
   /// [catalog]).
   Future<List<RoleMembership>> memberships({String? catalog}) =>
-      metadata.cached('design:members:${catalog ?? ''}', () => readMemberships(queries, dialect, catalog: catalog));
+      metadata.cached('design:members:${catalog ?? ''}', () => readMemberships(queriesFor(catalog), dialect, catalog: catalog));
 
   /// Roles and privileges of [p].
   Future<PrincipalAccess> access(PrincipalDef p, {String? catalog}) =>
@@ -236,7 +245,7 @@ class DesignCatalog {
         } on CatalogPermissionException {
           all = const [];
         }
-        return readAccess(queries, dialect, p, catalog: catalog, memberships: all);
+        return readAccess(queriesFor(catalog), dialect, p, catalog: catalog, memberships: all);
       });
 
   /// Who holds which privileges on the table or view [t].
@@ -254,14 +263,14 @@ class DesignCatalog {
       schema: t.schema,
       object: t.name,
     );
-    return readObjectGrants(queries, dialect, target, known);
+    return readObjectGrants(queriesFor(t.catalog), dialect, target, known);
   });
 
   /// DBMS specific objects of [kind] in [catalog].[schema] (or of [table]).
   Future<List<ExtraObjectDef>> extras(ExtraKind kind, {String? catalog, String? schema, DbTable? table}) =>
       metadata.cached(
         'design:extra:${kind.name}:${catalog ?? ''}:${schema ?? ''}:${table?.key ?? ''}',
-        () => readExtras(queries, dialect, kind, catalog: catalog, schema: schema, table: table),
+        () => readExtras(queriesFor(catalog ?? table?.catalog), dialect, kind, catalog: catalog, schema: schema, table: table),
       );
 
   Future<PackageSource?> packageSource(PackageDef p) async {
@@ -273,7 +282,7 @@ class DesignCatalog {
   }
 
   Future<RowSecurity> rowSecurity(DbTable t) =>
-      metadata.cached('design:rls:${t.key}', () => readRowSecurity(queries, t));
+      metadata.cached('design:rls:${t.key}', () => readRowSecurity(queriesFor(t.catalog), t));
 
   /// Cached rows of the first working alternative.
   Future<List<CatalogRow>> cachedRows(String key, List<String> alternatives, {List<Object?> params = const []}) =>

@@ -311,7 +311,7 @@ class PgDebugController extends ChangeNotifier {
     _notify();
     DbSession? s;
     try {
-      s = await dc.openSession(readOnly: true);
+      s = await dc.openSession(readOnly: true, catalog: procedure.catalog);
       availability = await checkPgDebugger(s);
       candidates = await findPgFunctions(s, procedure);
       if (candidates.isEmpty) throw StateError('Funzione "${procedure.cleanName}" non trovata in pg_proc');
@@ -384,10 +384,10 @@ class PgDebugController extends ChangeNotifier {
     _notify();
     try {
       callSql = opts.indirect ? null : buildCall(f, opts.values);
-      _proxy = await dc.openSession();
+      _proxy = await dc.openSession(catalog: procedure.catalog);
       int? pid;
       if (!opts.indirect) {
-        _target = await dc.openSession();
+        _target = await dc.openSession(catalog: procedure.catalog);
         pid = asInt((await _q(_target!, 'SELECT pg_backend_pid()')).rows.first.first);
         if (opts.rollback) await _target!.setAutoCommit(false);
       }

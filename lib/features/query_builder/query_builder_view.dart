@@ -231,7 +231,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
     if (sql.isEmpty || tab.running) return;
     final c = tab.dc;
     if (!await ensureConnected(context, c)) return;
-    final s = c.main;
+    final s = c.mainFor(tab.catalog);
     if (s == null || !mounted) return;
     final app = AppScope.read(context);
     final fetch = app.settings.fetchSize;
@@ -246,7 +246,7 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       tab.result = null;
       final page = await s.execute(sql, fetchSize: fetch, queryTimeoutSec: c.config.queryTimeout);
       if (page.isResultSet) {
-        final m = ResultSetModel(connection: c, first: page, sql: sql, fetchSize: fetch);
+        final m = ResultSetModel(connection: c, first: page, sql: sql, fetchSize: fetch, catalog: tab.catalog);
         tab.result = m;
         unawaited(m.detectEditTarget());
       } else {

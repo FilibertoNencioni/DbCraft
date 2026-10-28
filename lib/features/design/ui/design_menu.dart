@@ -100,7 +100,7 @@ List<MenuEntry<void>> constraintMenu(BuildContext context, ConstraintNode n, {re
     _item('Genera DDL', () {
       final b = DdlBuilder(dc.dialect);
       final sql = def is IndexDef ? b.createIndex(tableDef, def) : b.addConstraint(tableDef, def);
-      app.sqlEditorWith(dc, b.render(sql));
+      app.sqlEditorWith(dc, b.render(sql), catalog: n.table.catalog);
     }),
     if (n.name != null) _item('Copia nome', () => Clipboard.setData(ClipboardData(text: n.name!))),
     const MenuEntry.divider(),

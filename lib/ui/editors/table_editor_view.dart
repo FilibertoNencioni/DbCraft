@@ -309,13 +309,14 @@ class _TableEditorViewState extends State<TableEditorView> {
     final app = mounted ? AppScope.read(context) : null;
     try {
       await tab.data?.close();
-      final page = await c.main!.execute(_dataSql, fetchSize: app?.settings.fetchSize ?? 200);
+      final page = await c.mainFor(table.catalog)!.execute(_dataSql, fetchSize: app?.settings.fetchSize ?? 200);
       final m = ResultSetModel(
         connection: c,
         first: page,
         sql: _dataSql,
         fetchSize: app?.settings.fetchSize ?? 200,
         table: table,
+        catalog: table.catalog,
       );
       tab.data = m;
       await m.detectEditTarget();
@@ -350,7 +351,7 @@ class _TableEditorViewState extends State<TableEditorView> {
 
   Future<void> _countRows() async {
     await guarded(context, () async {
-      final r = await tab.connection.meta!.execute(tab.connection.dialect.countSql(table));
+      final r = await tab.connection.metaFor(table.catalog)!.execute(tab.connection.dialect.countSql(table));
       setState(() => _rowCount = (r.rows.first.first as num?)?.toInt());
     });
   }
@@ -533,7 +534,11 @@ class _TableEditorViewState extends State<TableEditorView> {
                     icon: AppIcons.script,
                     tooltip: 'Apri in un editor SQL',
                     onPressed: () =>
-                        app.sqlEditorWith(tab.connection, 'SELECT * FROM ${tab.connection.dialect.tableName(table)}'),
+                        app.sqlEditorWith(
+                          tab.connection,
+                          'SELECT * FROM ${tab.connection.dialect.tableName(table)}',
+                          catalog: table.catalog,
+                        ),
                   ),
                 if (!tab.isNew)
                   ToolButton(
@@ -864,7 +869,7 @@ class _TableEditorViewState extends State<TableEditorView> {
               icon: AppIcons.openExternal,
               label: 'Apri in editor SQL',
               tooltip: 'Apri il DDL in un editor SQL',
-              onPressed: () => AppScope.read(context).sqlEditorWith(tab.connection, ddl),
+              onPressed: () => AppScope.read(context).sqlEditorWith(tab.connection, ddl, catalog: table.catalog),
             ),
           ],
         ),

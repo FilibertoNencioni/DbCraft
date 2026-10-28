@@ -115,7 +115,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
     if (seq.isEmpty) return;
     DbSession? s;
     try {
-      s = await dc.openSession(readOnly: true);
+      s = await dc.openSession(readOnly: true, catalog: table.catalog);
       final page = await s.execute(
         'SELECT ${[for (final c in seq) 'MAX(${d.quoteIdent(c.column.name)})'].join(', ')} FROM ${d.tableName(table)}',
       );
@@ -149,7 +149,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
     setState(() => _samplesLoading = true);
     DbSession? s;
     try {
-      s = await dc.openSession(readOnly: true);
+      s = await dc.openSession(readOnly: true, catalog: table.catalog);
       for (final sample in _samples) {
         final cols = sample.refColumns.map(d.quoteIdent).join(', ');
         final notNull = sample.refColumns.map((c) => '${d.quoteIdent(c)} IS NOT NULL').join(' AND ');
@@ -284,7 +284,7 @@ class _MockDataDialogState extends State<_MockDataDialog> {
     }
 
     try {
-      s = await dc.openSession();
+      s = await dc.openSession(catalog: table.catalog);
       if (transactional) await s.setAutoCommit(false);
       if (_truncate) {
         setState(() => _status = 'Svuotamento della tabella…');

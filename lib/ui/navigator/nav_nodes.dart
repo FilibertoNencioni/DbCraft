@@ -128,7 +128,9 @@ class ConnectionNode extends NavNode {
   Future<List<NavNode>> load() async {
     final md = dc.metadata!;
     final security = [
-      for (final k in extraKinds(dc, ExtraLevel.connection)) ExtraFolderNode(dc, k),
+      // With one session per database these belong to each database.
+      if (!dc.routesDatabases)
+        for (final k in extraKinds(dc, ExtraLevel.connection)) ExtraFolderNode(dc, k),
       if (hasSecurity(dc)) SecurityNode(dc, server: dc.dialect.family == DbFamily.sqlServer),
     ];
     if (md.supportsCatalogs) {
@@ -218,6 +220,8 @@ class CatalogNode extends NavNode {
       final schemas = await listSchemas(connection!, catalog);
       // SQL Server users and roles belong to a database.
       final security = [
+        if (connection!.routesDatabases)
+          for (final k in extraKinds(connection!, ExtraLevel.connection)) ExtraFolderNode(connection!, k, catalog: catalog),
         if (connection!.dialect.family == DbFamily.sqlServer && hasSecurity(connection!))
           SecurityNode(connection!, catalog: catalog),
       ];
@@ -805,7 +809,7 @@ List<NavNode> nodesForSchemaChanges(NavNode root, List<SchemaScope> scopes) {
         CatalogNode c => catalogs.any((s) => s.covers(c.catalog, null)),
         ObjectFolderNode f => objects.any((s) => s.covers(f.catalog, f.schema)),
         ExtraFolderNode f when f.kind.level == ExtraLevel.connection => objects.any(
-          (s) => s.catalog == null && s.schema == null,
+          (s) => s.schema == null && (s.catalog == null || s.catalog == f.catalog),
         ),
         ExtraFolderNode f => objects.any(
           (s) => f.table == null

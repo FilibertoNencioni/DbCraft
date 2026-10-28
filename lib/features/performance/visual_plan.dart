@@ -17,7 +17,7 @@ import 'plan_model.dart';
 import 'plan_runner.dart';
 
 /// Opens the visual plan of [sql] in a new editor tab.
-Future<void> showVisualPlan(BuildContext context, DbConnection dc, String sql) async {
+Future<void> showVisualPlan(BuildContext context, DbConnection dc, String sql, {String? catalog}) async {
   if (sql.trim().isEmpty) {
     showToast(context, 'Seleziona o posiziona il cursore su un\'istruzione', error: true);
     return;
@@ -28,15 +28,18 @@ Future<void> showVisualPlan(BuildContext context, DbConnection dc, String sql) a
     showToast(context, 'Piano visuale non disponibile per ${dc.serverLabel}: usa "Piano" nell\'editor', error: true);
     return;
   }
-  AppScope.read(context).openFeatureTab(VisualPlanTab(dc, sql));
+  AppScope.read(context).openFeatureTab(VisualPlanTab(dc, sql, catalog: catalog));
 }
 
 enum PlanViewMode { graph, table, text, source }
 
 class VisualPlanTab extends FeatureTab {
-  VisualPlanTab(this.dc, this.sql);
+  VisualPlanTab(this.dc, this.sql, {this.catalog});
   final DbConnection dc;
   final String sql;
+
+  /// Database the statement runs on (the editor's).
+  final String? catalog;
 
   PlanTree? plan;
   Object? error;
@@ -74,7 +77,7 @@ class VisualPlanTab extends FeatureTab {
     error = null;
     _notify();
     try {
-      final p = await runVisualPlan(dc, sql, analyze: analyze);
+      final p = await runVisualPlan(dc, sql, analyze: analyze, catalog: catalog);
       plan = p;
       selected = null;
     } catch (e) {

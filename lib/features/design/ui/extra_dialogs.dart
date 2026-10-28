@@ -169,6 +169,7 @@ class _ExtensionDialogState extends State<_ExtensionDialog> {
 
   ExtensionDef get _current => ExtensionDef(
     name: _name.text.trim(),
+    catalog: i?.catalog,
     schema: _text(_schema),
     version: _text(_version),
     comment: i == null ? null : _text(_comment),

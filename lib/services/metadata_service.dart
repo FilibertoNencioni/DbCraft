@@ -1,4 +1,5 @@
 import '../model/db_objects.dart';
+import '../drivers/database_router_session.dart';
 import '../drivers/db_session.dart';
 import '../odbc/odbc_types.dart';
 import 'sql_dialect.dart';
@@ -49,6 +50,13 @@ class MetadataService {
 
   String? get currentCatalog => _str(info['currentCatalog']);
 
+  /// The session that reads [catalog]: with one session per database
+  /// (PostgreSQL) the one of that database, otherwise [session].
+  DbSession sessionFor(String? catalog) {
+    final s = session;
+    return s is DatabaseRouterSession && catalog != null && catalog.isNotEmpty ? s.pinned(catalog) : s;
+  }
+
   void clearCache([String? prefix]) {
     if (prefix == null) {
       _cache.clear();
@@ -87,7 +95,8 @@ class MetadataService {
   Future<List<String>> schemas(String? catalog) => _cached('schemas:${catalog ?? ''}', () async {
     if (!supportsSchemas) return <String>[];
     final set = <String>{};
-    if (catalog != null && supportsCatalogs) {
+    final routed = sessionFor(catalog);
+    if (catalog != null && supportsCatalogs && identical(routed, session)) {
       try {
         await session.setCurrentCatalog(catalog);
       } catch (_) {
@@ -95,7 +104,7 @@ class MetadataService {
       }
     }
     try {
-      final r = await session.catalog('tables', ['', '%', '', '']);
+      final r = await routed.catalog('tables', ['', '%', '', '']);
       for (final row in r.rows) {
         final cat = _str(row[0]);
         final s = _str(row[1]);

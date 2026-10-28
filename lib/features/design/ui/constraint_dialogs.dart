@@ -275,7 +275,7 @@ class _DataCheckBarState extends State<_DataCheckBar> {
       _failed = null;
     });
     try {
-      final session = dc.meta!;
+      final session = dc.metaFor(widget.ctx.table.catalog)!;
       for (final check in checks) {
         final n = await countViolations(session, check);
         if (n > 0) {
@@ -313,7 +313,8 @@ class _DataCheckBarState extends State<_DataCheckBar> {
               detailsLabel: 'Apri le righe',
               onDetails: _failed == null
                   ? null
-                  : () => AppScope.read(context).sqlEditorWith(widget.ctx.connection!, _failed!.rowsSql),
+                  : () => AppScope.read(context)
+                        .sqlEditorWith(widget.ctx.connection!, _failed!.rowsSql, catalog: widget.ctx.table.catalog),
             ),
           ),
       ],

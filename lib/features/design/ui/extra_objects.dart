@@ -28,7 +28,8 @@ import 'package_editor.dart';
 
 /// What a script on objects of [kind] changes.
 SchemaScope extraScope(ExtraKind kind, {String? catalog, String? schema, DbTable? table}) => switch (kind.level) {
-  ExtraLevel.connection => const SchemaScope.schema(null, null),
+  // [catalog] with one session per database (PostgreSQL extensions).
+  ExtraLevel.connection => SchemaScope.schema(catalog, null),
   ExtraLevel.schema => SchemaScope.schema(catalog, schema),
   ExtraLevel.table => SchemaScope.object(table!.catalog, table.schema, table.name),
 };
@@ -102,8 +103,8 @@ Future<bool> createExtra(
   final title = 'Crea ${kind.singular}';
   switch (kind) {
     case ExtraKind.extensions:
-      final available = await _orElse(readAvailableExtensions(cat.queries), const <ExtensionDef>[]);
-      final schemas = await _orElse(listSchemas(dc, null), const <String>[]);
+      final available = await _orElse(readAvailableExtensions(cat.queriesFor(catalog)), const <ExtensionDef>[]);
+      final schemas = await _orElse(listSchemas(dc, catalog), const <String>[]);
       if (!context.mounted) return false;
       final r = await showExtensionDialog(context, dialect: d, available: available, schemas: schemas);
       if (r == null || !context.mounted) return false;
@@ -229,7 +230,7 @@ Future<bool> editExtra(
   var transactional = true;
   switch (o) {
     case ExtensionDef e:
-      final schemas = await _orElse(listSchemas(dc, null), const <String>[]);
+      final schemas = await _orElse(listSchemas(dc, e.catalog), const <String>[]);
       if (!context.mounted) return false;
       to = (await showExtensionDialog(context, dialect: d, initial: e, schemas: schemas))?.$1;
     case EnumTypeDef t:
@@ -367,11 +368,11 @@ Future<void> extraDdlInEditor(BuildContext context, DbConnection dc, ExtraObject
     final s = src;
     if (s == null) return;
     statements = [s.spec, if (s.body.isNotEmpty) s.body];
-    await app.sqlEditorWith(dc, statements.join('\n/\n\n'));
+    await app.sqlEditorWith(dc, statements.join('\n/\n\n'), catalog: o.catalog);
     return;
   }
   statements = ExtraDdl(dc.dialect).create(o);
-  await app.sqlEditorWith(dc, DdlBuilder(dc.dialect).render(statements));
+  await app.sqlEditorWith(dc, DdlBuilder(dc.dialect).render(statements), catalog: o.catalog);
 }
 
 // ---------------------------------------------------------------------------

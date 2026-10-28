@@ -27,6 +27,7 @@ class ResultSetModel extends ChangeNotifier {
     required this.sql,
     this.fetchSize = 200,
     this.table,
+    this.catalog,
     this.params = const [],
   }) : columns = first.columns,
        _cursorId = first.cursorId,
@@ -53,6 +54,9 @@ class ResultSetModel extends ChangeNotifier {
   /// Source table (for editing). Detected from the query or provided by the
   /// table data editor.
   DbTable? table;
+
+  /// Database the statement ran on, when known.
+  final String? catalog;
   List<String> keyColumns = [];
   bool keyIsVirtual = false;
 
@@ -192,12 +196,15 @@ class ResultSetModel extends ChangeNotifier {
   Future<void> detectEditTarget() async {
     final md = connection.metadata;
     if (md == null) return;
+    // With one session per database (PostgreSQL) an unqualified name belongs
+    // to the database the statement ran on, not to the metadata session's.
+    final cat = connection.routesDatabases ? catalog : null;
     if (table == null && columns.every((c) => c.baseTable == null)) {
       // The driver does not report the base table (SQL Server without a
       // server cursor): a plain SELECT of columns from one table.
       final from = singleTableSelect(sql);
       if (from == null) return;
-      final t = await md.findTable(from.catalog, from.schema, from.name);
+      final t = await md.findTable(from.catalog ?? cat, from.schema, from.name);
       if (t == null) return;
       final tableColumns = {for (final c in await md.columns(t)) c.name.toLowerCase()};
       if (!columns.every((c) => tableColumns.contains(c.name.toLowerCase()))) return;
@@ -212,8 +219,8 @@ class ResultSetModel extends ChangeNotifier {
       if (RegExp(r'\b(group\s+by|distinct|union)\b', caseSensitive: false).hasMatch(sql)) return;
       final c0 = columns.firstWhere((c) => c.baseTable != null);
       table =
-          await md.findTable(c0.catalog, c0.schema, c0.baseTable!) ??
-          await md.findTable(null, null, c0.baseTable!);
+          await md.findTable(c0.catalog ?? cat, c0.schema, c0.baseTable!) ??
+          await md.findTable(cat, null, c0.baseTable!);
       if (table == null) return;
     }
     final pk = await md.primaryKey(table!);
@@ -356,7 +363,7 @@ class ResultSetModel extends ChangeNotifier {
   /// Persists the pending changes. In auto-commit mode the changes are
   /// applied in a single transaction.
   Future<int> saveChanges() async {
-    final s = connection.main;
+    final s = connection.mainFor(table?.catalog);
     if (s == null) throw StateError('Connessione non attiva');
     final changes = buildChanges();
     if (changes.isEmpty) return 0;

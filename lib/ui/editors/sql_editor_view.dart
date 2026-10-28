@@ -239,7 +239,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     final c = tab.connection;
     final sql = _aiSql;
     if (c == null || sql.isEmpty) return;
-    await showVisualPlan(context, c, sql);
+    await showVisualPlan(context, c, sql, catalog: tab.catalog);
   }
 
   Future<void> _aiExplain() async {

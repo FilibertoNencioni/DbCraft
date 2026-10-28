@@ -57,6 +57,7 @@ abstract class ExtraObjectDef {
 class ExtensionDef extends ExtraObjectDef {
   const ExtensionDef({
     required this.name,
+    this.catalog,
     this.schema,
     this.version,
     this.defaultVersion,
@@ -66,6 +67,10 @@ class ExtensionDef extends ExtraObjectDef {
 
   @override
   final String name;
+
+  /// Database it is installed in (set with one session per database).
+  @override
+  final String? catalog;
   @override
   final String? schema;
   final String? version;

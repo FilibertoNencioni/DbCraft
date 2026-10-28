@@ -131,7 +131,7 @@ class _ImportDialogState extends State<_ImportDialog> {
       _running = true;
       _done = 0;
     });
-    final session = await widget.dc.openSession();
+    final session = await widget.dc.openSession(catalog: widget.table.catalog);
     try {
       await session.setAutoCommit(false);
       if (_truncate) await session.execute(d.truncateSql(widget.table));

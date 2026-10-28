@@ -111,7 +111,7 @@ class _SyncScriptDialogState extends State<_SyncScriptDialog> {
     final app = AppScope.read(context);
     final sql = _script();
     Navigator.pop(context);
-    await app.openSqlEditor(widget.target, initialSql: sql);
+    await app.openSqlEditor(widget.target, initialSql: sql, catalog: widget.table.catalog);
   }
 
   Future<void> _execute() async {
@@ -136,7 +136,7 @@ class _SyncScriptDialogState extends State<_SyncScriptDialog> {
     DbSession? s;
     var noMatch = 0;
     try {
-      s = await dc.openSession();
+      s = await dc.openSession(catalog: widget.table.catalog);
       await s.setAutoCommit(false);
       for (final st in _statements) {
         if (_cancel) break;

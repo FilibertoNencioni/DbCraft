@@ -105,7 +105,10 @@ Future<bool> renameDatabase(BuildContext context, DbConnection dc, String name) 
   if (name == connectedDatabase(dc) && dc.dialect.family == DbFamily.postgres) {
     await showErrorDialog(
       context,
-      'La connessione usa il database $name: PostgreSQL non lo può rinominare. Connettiti a un altro database.',
+      dc.routesDatabases
+          ? '$name è il database iniziale della connessione: PostgreSQL non lo può rinominare. '
+                'Indica un altro database iniziale in Modifica connessione.'
+          : 'La connessione usa il database $name: PostgreSQL non lo può rinominare. Connettiti a un altro database.',
       title: 'Impossibile rinominare',
     );
     return false;
@@ -113,6 +116,7 @@ Future<bool> renameDatabase(BuildContext context, DbConnection dc, String name) 
   final to = await promptText(context, 'Rinomina il database $name', label: 'Nuovo nome', initial: name);
   if (to == null || to.trim().isEmpty || to.trim() == name || !context.mounted) return false;
   if (dc.dialect.family == DbFamily.sqlServer) await _leaveDatabase(dc, name);
+  if (dc.routesDatabases) await dc.closeDatabase(name);
   if (!context.mounted) return false;
   final ok = await _run(
     context,
@@ -136,11 +140,15 @@ Future<void> _leaveDatabase(DbConnection dc, String name) async {
 
 Future<bool> dropDatabase(BuildContext context, DbConnection dc, String name) async {
   final family = dc.dialect.family;
-  final inUse = name == connectedDatabase(dc) || name == dc.mainCatalog;
+  // With one session per database (PostgreSQL) only the initial one is held.
+  final inUse = name == connectedDatabase(dc) || (!dc.routesDatabases && name == dc.mainCatalog);
   if (inUse && family == DbFamily.postgres) {
     await showErrorDialog(
       context,
-      'La connessione è collegata al database $name: PostgreSQL non può eliminarlo. Connettiti a un altro database (ad esempio postgres).',
+      dc.routesDatabases
+          ? '$name è il database iniziale della connessione: PostgreSQL non può eliminarlo. '
+                'Indica un altro database iniziale (ad esempio postgres) in Modifica connessione.'
+          : 'La connessione è collegata al database $name: PostgreSQL non può eliminarlo. Connettiti a un altro database (ad esempio postgres).',
       title: 'Impossibile eliminare',
     );
     return false;
@@ -162,10 +170,9 @@ Future<bool> dropDatabase(BuildContext context, DbConnection dc, String name) as
   );
   if (chosen == null || !context.mounted) return false;
   // SQL Server: the sessions of this connection must leave the database.
-  if (family == DbFamily.sqlServer) {
-    await _leaveDatabase(dc, name);
-    if (!context.mounted) return false;
-  }
+  if (family == DbFamily.sqlServer) await _leaveDatabase(dc, name);
+  if (dc.routesDatabases) await dc.closeDatabase(name);
+  if (!context.mounted) return false;
   final ok = await _run(
     context,
     dc,
