@@ -311,7 +311,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
           Expanded(child: _field(_host, 'localhost')),
           if (withPort) ...[
             const SizedBox(width: Gap.md),
-            Text('Porta', style: TextStyle(fontSize: TypeSize.body, color: c.textSecondary)),
+            Text('Porta', style: uiText(TypeSize.body, color: c.textSecondary)),
             const SizedBox(width: Gap.sm),
             NumberField(
               controller: _port,

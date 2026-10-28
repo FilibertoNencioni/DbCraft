@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import 'buttons.dart';
+import 'selection.dart';
 
 // ---------------------------------------------------------------------------
 // Form groups
@@ -181,7 +182,8 @@ class _FormGroupState extends State<FormGroup> {
   double _measureLabels(BuildContext context, {bool help = true}) => measureLabelWidth(context, [
     for (final row in widget.children.whereType<FormRow>()) ...[
       (row.label, TypeSize.body),
-      if (help && row.help != null) (row.help!, TypeSize.caption),
+      // A switch row lays out its help across the row (see [FormRow]).
+      if (help && row.help != null && !row._switch) (row.help!, TypeSize.caption),
     ],
   ]);
 
@@ -263,7 +265,8 @@ class _FormGroupState extends State<FormGroup> {
 /// space; wrap the control in an [Align] to place it elsewhere.
 ///
 /// The label width comes from the enclosing [FormGroup] unless [labelWidth]
-/// is given.
+/// is given. With a [DbSwitch] the label and help take the whole row up to
+/// the switch, as in System Settings, instead of wrapping in the column.
 class FormRow extends StatelessWidget {
   const FormRow({super.key, required this.label, required this.child, this.help, this.labelWidth});
 
@@ -272,26 +275,27 @@ class FormRow extends StatelessWidget {
   final String? help;
   final double? labelWidth;
 
+  bool get _switch => child is DbSwitch;
+
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: uiText(TypeSize.body, color: c.text)),
+        if (help != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Text(help!, style: uiText(TypeSize.caption, color: c.textSecondary, height: 1.3)),
+          ),
+      ],
+    );
+    if (_switch) return Row(children: [Expanded(child: text), const SizedBox(width: Gap.md), child]);
     return Row(
       children: [
-        SizedBox(
-          width: labelWidth ?? _FormLabelWidth.maybeOf(context) ?? 150,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label, style: uiText(TypeSize.body, color: c.text)),
-              if (help != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: Text(help!, style: uiText(TypeSize.caption, color: c.textSecondary, height: 1.3)),
-                ),
-            ],
-          ),
-        ),
+        SizedBox(width: labelWidth ?? _FormLabelWidth.maybeOf(context) ?? 150, child: text),
         const SizedBox(width: Gap.md),
         Expanded(child: Align(alignment: AlignmentDirectional.centerEnd, child: child)),
       ],
