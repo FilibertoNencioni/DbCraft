@@ -239,35 +239,6 @@ void main() {
       expect(tester.getRect(toggle).right, lessThanOrEqualTo(side.right));
       expect(status.left, greaterThanOrEqualTo(side.right));
     }, variant: _mac);
-
-    testWidgets("the active connection menu changes the active editor's connection", (tester) async {
-      final state = await _fakeState(tester);
-      final demo = state.byId('demo')!;
-      final prod = state.byId('prod')!;
-      final tab = (await tester.runAsync(() => state.openSqlEditor(demo)))!;
-      await _pumpShell(tester, state);
-      expect(state.currentTab, same(tab));
-      expect(find.widgetWithText(ActivityView, 'Demo SQLite'), findsOneWidget);
-
-      await tester.tap(find.byType(ActivityView));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(find.text('SQL Server Produzione').last);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      expect(tab.connection, same(prod));
-      expect(state.selectedConnection, same(prod));
-      // Not connected and the password is not saved: it asks, and Annulla
-      // leaves the connection alone.
-      expect(find.text('Password per SQL Server Produzione'), findsOneWidget);
-      await tester.tap(find.text('Annulla'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(prod.isConnected, isFalse);
-      expect(find.widgetWithText(ActivityView, 'SQL Server Produzione'), findsOneWidget);
-      expect(state.activeConnection, same(prod));
-    }, variant: _mac);
   });
 }
 

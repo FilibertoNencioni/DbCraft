@@ -783,24 +783,7 @@ class _AppToolbar extends StatelessWidget {
             extent: ControlSize.toolbar,
             onPressed: () => openSqlEditor(context),
           ),
-          // Centered between the side groups; the activity view gives way first.
-          Expanded(
-            child: Center(
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Flexible(child: _ActiveConnection(dc: dc)),
-                if (dc != null) ...[
-                  const SizedBox(width: Gap.xs),
-                  ToolButton(
-                    icon: connected ? AppIcons.power : AppIcons.connect,
-                    tooltip: connected ? 'Disconnetti' : 'Connetti',
-                    color: connected ? c.success : null,
-                    extent: ControlSize.toolbar,
-                    onPressed: () => connected ? disconnectWithCheck(context, dc) : ensureConnected(context, dc),
-                  ),
-                ],
-              ]),
-            ),
-          ),
+          const Spacer(),
           if (connected) ...[
             _TransactionControl(dc: dc!, onToggle: () => onToggleAutoCommit(dc)),
             const SizedBox(width: Gap.sm),
@@ -820,77 +803,6 @@ class _AppToolbar extends StatelessWidget {
             ),
         ]),
       ),
-    );
-  }
-}
-
-/// The active connection as an Xcode activity view; it opens the connection
-/// menu (status dot, name, environment).
-class _ActiveConnection extends StatelessWidget {
-  const _ActiveConnection({required this.dc});
-  final DbConnection? dc;
-
-  Future<void> _menu(BuildContext context) async {
-    final app = AppScope.read(context);
-    final c = DbColors.of(context);
-    final x = await showMacMenu<DbConnection>(
-      context,
-      anchor: anchorRect(context),
-      minWidth: 320,
-      alignInitial: false,
-      initial: dc,
-      entries: [
-        if (app.connections.isEmpty) const MenuEntry('Nessuna connessione configurata', enabled: false),
-        for (final x in app.connections)
-          MenuEntry.connection(
-            name: x.config.name,
-            status: x.isConnected ? c.success : c.textTertiary,
-            environment: x.config.type == ConnectionType.development ? null : x.config.type.label,
-            environmentColor: x.config.type.colorOf(c),
-            value: x,
-            checked: x == dc,
-          ),
-        const MenuEntry.divider(),
-        MenuEntry('Nuova connessione…', onSelected: () => newConnection(context)),
-      ],
-    );
-    if (x == null || !context.mounted) return;
-    final tab = app.currentTab;
-    if (tab is SqlEditorTab && !tab.running) tab.connection = x;
-    app.select(x);
-    await ensureConnected(context, x);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    final d = dc;
-    if (d == null) {
-      return ActivityView(
-        title: 'Scegli una connessione',
-        tooltip: 'Connessione attiva',
-        minWidth: 200,
-        onPressed: () => _menu(context),
-      );
-    }
-    final (status, color) = switch (d.status) {
-      ConnectionStatus.connected => (d.serverLabel.isEmpty ? 'Connesso' : d.serverLabel, null),
-      ConnectionStatus.connecting => ('Connessione in corso…', null),
-      ConnectionStatus.error => ('Errore di connessione', c.danger),
-      ConnectionStatus.disconnected => ('Non connesso', null),
-    };
-    final env = d.config.type;
-    return ActivityView(
-      title: d.config.name,
-      status: status,
-      statusColor: color,
-      dot: d.isConnected ? c.success : c.textTertiary,
-      busy: d.status == ConnectionStatus.connecting,
-      environment: env == ConnectionType.development ? null : env.label,
-      environmentColor: env.colorOf(c),
-      tooltip: d.config.subtitle,
-      minWidth: 200,
-      onPressed: () => _menu(context),
     );
   }
 }

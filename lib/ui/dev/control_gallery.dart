@@ -780,17 +780,6 @@ class _ControlGalleryState extends State<ControlGallery> {
         const KeyCaps([SingleActivator(LogicalKeyboardKey.keyX, alt: true), SingleActivator(LogicalKeyboardKey.f5)]),
         const ShortcutText(SingleActivator(LogicalKeyboardKey.keyN, meta: true, shift: true)),
       ]),
-      _Row([
-        ActivityView(
-          title: 'demo_pg',
-          dot: c.success,
-          status: 'PostgreSQL 16.2',
-          environment: 'Produzione',
-          environmentColor: c.danger,
-          onPressed: () {},
-        ),
-        ActivityView(title: 'erp_test', dot: c.textTertiary, status: 'Connessione in corso…', busy: true, onPressed: () {}),
-      ]),
     ];
   }
 

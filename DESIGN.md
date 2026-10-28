@@ -163,7 +163,6 @@ Sheets and alerts are centered over a dimmed window (`Elevation.scrim`) and fade
 | `Tag` | Status and type labels (vista, nuova, pericoloso, Produzione): radius 4, tinted. | Counts. |
 | `StatusDot`, `EnvDot`, `IconBadge` | Connection state, environment (test and production only), state over an icon. | — |
 | `StatusLetter` | Git-style letters (M, A, D). | — |
-| `ActivityView` | The connection pill in the window toolbar (Xcode activity view). | — |
 | `KeyCap` / `KeyCaps` / `ShortcutText` | Shortcuts in sheets, welcome and tooltips. | — |
 | `TypeLabel`, `DirtyDot`, `Capsule`, `RowTint` | SQL types (with a state `color` for modified columns); unsaved marker; base capsule; white accessories on accent rows. | — |
 
@@ -224,7 +223,7 @@ Sheets and alerts are centered over a dimmed window (`Elevation.scrim`) and fade
 
 - **macOS**: transparent title bar with a full-size content view (`MainFlutterWindow.swift`). An empty unified `NSToolbar` makes AppKit center the traffic lights on the 52pt toolbar; in full screen the toolbar auto-hides with the menu bar. AppKit's own title-bar double click is off (it also fired over Flutter buttons): Flutter counts clicks on the empty bar and zooms through the `dbcraft/window` channel, which also delivers the key state and the accent color. Menus are native (`PlatformMenuBar`): app, File, Database, SQL, Vista, Finestra, Aiuto.
 - **Windows/Linux**: the same menu model as an in-window menu bar; no traffic-light inset.
-- **Layout**: `SplitView` at the root. The sidebar runs the full window height: a 52pt strip under the traffic lights, `SidebarTabs`, then the panels. The content column has the toolbar (create actions on the left, `ActivityView` centered, transaction mode and history on the right), the `WindowTabBar`, the editor and the `StatusBar`, which sits under the content only.
+- **Layout**: `SplitView` at the root. The sidebar runs the full window height: a 52pt strip under the traffic lights, `SidebarTabs`, then the panels. The content column has the toolbar (create actions on the left; transaction mode and history on the right), the `WindowTabBar`, the editor and the `StatusBar`, which sits under the content only.
 - **Sidebar toggle**: fixed to the right of the traffic lights, over the sidebar strip or, with the sidebar closed, over the toolbar (Xcode 15); the toolbar padding animates with the slide.
 - **SQL editor bar**: "Esegui" `PushButton.primary` small (or "Interrompi" destructive), `PulldownButton`s for "…" and AI, `PopUpButton(style: toolbar)` for catalog and connection.
 

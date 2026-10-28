@@ -55,8 +55,8 @@ Stile nativo macOS (vedi [DESIGN.md](DESIGN.md)):
 * **macOS**: barra dei menu nativa (DbCraft, File, Database, SQL, Vista, Finestra, Aiuto)
   e toolbar unificata nella barra del titolo, accanto ai semafori della finestra.
 * **Windows / Linux**: gli stessi menu in una barra all'interno della finestra.
-* La toolbar mostra la connessione attiva (con stato e ambiente Test/Produzione), la modalità
-  transazioni e il pulsante di connessione; l'editor SQL ha un unico pulsante primario **Esegui**.
+* La toolbar mostra la modalità transazioni (con Commit e Rollback quando c'è una transazione
+  aperta); l'editor SQL ha un unico pulsante primario **Esegui**.
 * Tema chiaro/scuro/automatico, impostazioni applicate subito.
 
 ## Architettura

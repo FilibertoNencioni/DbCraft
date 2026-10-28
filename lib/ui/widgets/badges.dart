@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../model/connection_config.dart';
 import '../theme/app_theme.dart';
-import 'control_base.dart';
 import 'menus.dart';
-import 'progress.dart';
 
 // ---------------------------------------------------------------------------
 // Row context
@@ -124,8 +122,7 @@ class Tag extends StatelessWidget {
   }
 }
 
-/// Base of every capsule (radius h/2): the activity view, join and drag
-/// chips, tokens. `raised` fill by default, or [color]; optional
+/// Base of every capsule (radius h/2): join and drag chips, tokens. `raised` fill by default, or [color]; optional
 /// [Elevation.control] shadow.
 class Capsule extends StatelessWidget {
   const Capsule({
@@ -410,103 +407,6 @@ class KeyCaps extends StatelessWidget {
           KeyCap.shortcut(activators[i]),
         ],
       ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Activity view
-// ---------------------------------------------------------------------------
-
-/// The toolbar pill that shows the active connection (Xcode activity view):
-/// 28pt, radius 6, `hover` fill, "name · status" centered, a spinner while
-/// [busy], the environment [Tag] and ⌃⌄. [onPressed] opens the connection
-/// menu (`showMacMenu` with `MenuEntry.connection` rows).
-class ActivityView extends StatelessWidget {
-  const ActivityView({
-    super.key,
-    required this.title,
-    this.status,
-    this.statusColor,
-    this.dot,
-    this.busy = false,
-    this.environment,
-    this.environmentColor,
-    this.onPressed,
-    this.tooltip,
-    this.minWidth = 260,
-    this.maxWidth = 420,
-  });
-
-  /// Connection name, or a placeholder ("Scegli una connessione").
-  final String title;
-  final String? status;
-
-  /// Status text color (danger on errors); secondary when null.
-  final Color? statusColor;
-
-  /// Status dot before the name.
-  final Color? dot;
-  final bool busy;
-  final String? environment;
-  final Color? environmentColor;
-  final VoidCallback? onPressed;
-  final String? tooltip;
-  final double minWidth;
-  final double maxWidth;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DbColors.of(context);
-    return Pressable(
-      onPressed: onPressed,
-      focusable: false,
-      tooltip: tooltip,
-      semanticLabel: [title, ?status].join(', '),
-      builder: (context, s) {
-        var fill = c.hover;
-        if (s.contains(WidgetState.pressed)) {
-          fill = c.pressed;
-        } else if (s.contains(WidgetState.hovered)) {
-          fill = Color.alphaBlend(c.hover, c.hover);
-        }
-        return Container(
-          height: ControlSize.toolbar,
-          constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-          decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(Radii.menu)),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (dot != null) ...[StatusDot(dot!, size: 8), const SizedBox(width: Gap.sm)],
-              Flexible(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: uiText(TypeSize.body, weight: FontWeight.w600, color: c.text),
-                ),
-              ),
-              if (environment != null) ...[const SizedBox(width: 6), Tag(environment!, color: environmentColor)],
-              if (status != null) ...[
-                Text('  ·  ', style: uiText(TypeSize.small, color: c.textTertiary)),
-                if (busy) ...[const Spinner(size: 10), const SizedBox(width: 6)],
-                Flexible(
-                  child: Text(
-                    status!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: uiText(TypeSize.small, color: statusColor ?? c.textSecondary),
-                  ),
-                ),
-              ],
-              const SizedBox(width: 6),
-              Icon(AppIcons.upDown, size: 11, color: c.textTertiary),
-            ],
-          ),
-        );
-      },
     );
   }
 }

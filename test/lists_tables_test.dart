@@ -788,39 +788,6 @@ void main() {
     expect(bar, paints..rrect(color: series), reason: 'a fixed color ignores the thresholds');
   });
 
-  testWidgets('activity view: name, environment, spinner while busy, opens the menu', (tester) async {
-    final c = DbColors.light;
-    var opened = 0;
-    Widget view({required bool busy}) => _app(
-      Center(
-        child: ActivityView(
-          title: 'erp_prod',
-          status: busy ? 'Connessione…' : 'Errore',
-          statusColor: busy ? null : c.danger,
-          busy: busy,
-          dot: c.success,
-          environment: 'Produzione',
-          environmentColor: c.danger,
-          onPressed: () => opened++,
-        ),
-      ),
-    );
-    await tester.pumpWidget(view(busy: true));
-    expect(tester.getSize(find.byType(ActivityView)).height, ControlSize.toolbar);
-    expect(tester.widget<Text>(find.text('erp_prod')).style?.fontWeight, FontWeight.w600);
-    expect(find.widgetWithText(Tag, 'Produzione'), findsOneWidget);
-    expect(find.byType(StatusDot), findsOneWidget);
-    expect(find.byType(Spinner), findsOneWidget);
-    expect(find.byIcon(AppIcons.upDown), findsOneWidget);
-    await tester.tap(find.text('erp_prod'));
-    await tester.pump();
-    expect(opened, 1);
-
-    await tester.pumpWidget(view(busy: false));
-    expect(find.byType(Spinner), findsNothing);
-    expect(tester.widget<Text>(find.text('Errore')).style?.color, c.danger);
-  });
-
   testWidgets('window tabs reorder by dragging', (tester) async {
     final order = ['a.sql', 'b.sql', 'c.sql'];
     final moves = <(int, int)>[];
