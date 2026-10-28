@@ -252,6 +252,7 @@ void main() {
     Future<(TableEditorTab, ScriptedSession)> open(
       WidgetTester tester, {
       TableEditorTab Function(ScriptedSession, AppState)? make,
+      bool settle = true,
     }) async {
       tester.view.physicalSize = const Size(1500, 1000);
       tester.view.devicePixelRatio = 1;
@@ -290,9 +291,34 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      if (settle) await tester.pumpAndSettle();
       return (tab, s);
     }
+
+    testWidgets('opens straight on the designer, without the read-only page first', (tester) async {
+      // The designer reads the catalog with queries, slower than the ODBC
+      // metadata of the read-only page.
+      await open(
+        tester,
+        settle: false,
+        make: (s, _) {
+          s.latency = (_) => const Duration(milliseconds: 100);
+          return TableEditorTab(
+            scriptedConnection(s),
+            DbTable(catalog: null, schema: 'app', name: 'orders', type: 'TABLE'),
+          );
+        },
+      );
+      for (var i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        final readOnly =
+            find.byType(PropertyTable).evaluate().isNotEmpty && find.byType(DesignPropertiesPage).evaluate().isEmpty;
+        expect(readOnly, isFalse, reason: 'frame $i: proprietà in sola lettura prima del designer');
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(DesignPropertiesPage), findsOneWidget);
+      await drain(tester);
+    });
 
     testWidgets('edit a column and save', (tester) async {
       final (tab, s) = await open(tester);

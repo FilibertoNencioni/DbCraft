@@ -51,6 +51,11 @@ class _TableEditorViewState extends State<TableEditorView> {
   late final _where = TextEditingController(text: tab.dataFilter);
   late final _order = TextEditingController(text: tab.dataOrder);
   bool _loadingData = false;
+
+  /// The designer definition is being read for the first time: the
+  /// structure pages wait for it instead of showing the read-only version
+  /// and then swapping it.
+  bool _designLoading = false;
   Object? _dataError;
   int? _rowCount;
   int _lastInitialPage = -1;
@@ -187,6 +192,7 @@ class _TableEditorViewState extends State<TableEditorView> {
     if (!_designable) return;
     final cat = DesignCatalog.of(tab.connection);
     if (cat == null) return;
+    if (tab.design == null) _designLoading = true;
     try {
       final def = await cat.loadTable(table);
       if (!mounted) return;
@@ -197,12 +203,14 @@ class _TableEditorViewState extends State<TableEditorView> {
       } else if (!d.isDirty) {
         d.saved(def);
       }
+      if (_designLoading) setState(() => _designLoading = false);
       final incoming = await incomingForeignKeys(tab.connection, def);
       tab.design?.incoming = incoming;
       tab.design?.refresh();
     } catch (_) {
       // The pages stay read-only.
     }
+    _designLoading = false;
     if (mounted) setState(() {});
   }
 
@@ -394,7 +402,8 @@ class _TableEditorViewState extends State<TableEditorView> {
                     if (snap.hasError) {
                       return EmptyState.error(snap.error!, title: 'Impossibile leggere la struttura della tabella');
                     }
-                    final det = snap.data;
+                    // Structure pages: nothing until the designer is ready.
+                    final det = _designLoading ? null : snap.data;
                     final design = _designable ? _design : null;
                     return IndexedStack(
                       index: _page,
@@ -410,7 +419,7 @@ class _TableEditorViewState extends State<TableEditorView> {
                             : _properties(det),
                         _dataPage(),
                         det == null
-                            ? const SizedBox()
+                            ? const Center(child: Spinner(size: Spinner.large))
                             : design != null
                             ? DesignColumnsPage(design: design, connection: tab.connection)
                             : _columns(det),

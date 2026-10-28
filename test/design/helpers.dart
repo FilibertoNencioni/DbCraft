@@ -72,6 +72,10 @@ class ScriptedSession implements DbSession {
   var _nextCursor = 1;
   bool closed = false;
 
+  /// Simulated server time of each statement (catalog functions stay
+  /// immediate).
+  Duration Function(String sql)? latency;
+
   /// Statements matching [pattern] return [response]: a [Rows], an
   /// exception (thrown) or a function of the SQL returning either.
   void on(String pattern, Object response) => _rules.add((RegExp(pattern, caseSensitive: false), response));
@@ -107,6 +111,8 @@ class ScriptedSession implements DbSession {
     int queryTimeoutSec = 0,
   }) async {
     log.add('exec: $sql');
+    final wait = latency?.call(sql);
+    if (wait != null && wait > Duration.zero) await Future<void>.delayed(wait);
     for (final (re, response) in _rules) {
       if (!re.hasMatch(sql)) continue;
       var r = response;
