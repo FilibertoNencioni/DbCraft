@@ -226,7 +226,32 @@ class AppState extends ChangeNotifier {
 
   DbConnection _newConnection(ConnectionConfig c) => DbConnection(c)
     ..onHistory = addHistory
+    ..onHistoryRolledBack = markHistoryRolledBack
     ..addListener(notifyListeners);
+
+  /// Marks [entries] as failed with [reason] (their transaction was rolled
+  /// back by the server).
+  void markHistoryRolledBack(List<HistoryEntry> entries, String reason) {
+    var changed = false;
+    for (final e in entries) {
+      final i = history.indexWhere((h) => identical(h, e));
+      if (i < 0) continue;
+      history[i] = HistoryEntry(
+        sql: e.sql,
+        connectionId: e.connectionId,
+        connectionName: e.connectionName,
+        time: e.time,
+        durationMs: e.durationMs,
+        rows: e.rows,
+        error: reason,
+      );
+      changed = true;
+    }
+    if (!changed) return;
+    _historySave?.cancel();
+    _historySave = Timer(const Duration(seconds: 1), () => workspace.saveHistory(history));
+    notifyListeners();
+  }
 
   void addHistory(HistoryEntry e) {
     history.insert(0, e);

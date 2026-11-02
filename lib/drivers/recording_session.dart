@@ -13,10 +13,14 @@ typedef StatementRecorder = void Function(
 );
 
 class RecordingSession implements DbSession {
-  RecordingSession(this.inner, this.onStatement);
+  RecordingSession(this.inner, this.onStatement, {this.onAutoCommit});
 
   final DbSession inner;
   final StatementRecorder onStatement;
+
+  /// Told about each successful auto-commit switch (transaction tracking
+  /// of the history).
+  final void Function(bool autoCommit)? onAutoCommit;
 
   @override
   String get completedConnectionString => inner.completedConnectionString;
@@ -66,7 +70,10 @@ class RecordingSession implements DbSession {
   @override
   Future<Map<String, Object?>> info() => inner.info();
   @override
-  Future<void> setAutoCommit(bool value) => inner.setAutoCommit(value);
+  Future<void> setAutoCommit(bool value) async {
+    await inner.setAutoCommit(value);
+    onAutoCommit?.call(value);
+  }
   @override
   Future<void> setCurrentCatalog(String catalog) => inner.setCurrentCatalog(catalog);
   @override

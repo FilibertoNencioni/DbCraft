@@ -113,6 +113,16 @@ class DbConnection extends ChangeNotifier {
   /// Receives every statement run on the [main] session (query history).
   void Function(HistoryEntry e)? onHistory;
 
+  /// The manual transaction of [entries] was rolled back (ROLLBACK, or by
+  /// the server with the lost connection): the history marks them with
+  /// [reason].
+  void Function(List<HistoryEntry> entries, String reason)? onHistoryRolledBack;
+
+  /// Manual transaction of each recorded session: the [main] one (shared by
+  /// [mainFor]) and the separate ones of [withHistory].
+  final _transactions = Expando<_HistoryTransaction>('transactions');
+  final _mainTransaction = Object();
+
   /// Incremented by [schemaChanged]; the navigator and the object editors
   /// compare it with the last value they saw.
   int schemaGeneration = 0;
@@ -158,7 +168,9 @@ class DbConnection extends ChangeNotifier {
   /// itself unless every database has its own sessions.
   DbSession? mainFor(String? catalog) {
     final m = unrecordedMain;
-    return m is DatabaseRouterSession && catalog != null && catalog.isNotEmpty ? withHistory(m.pinned(catalog)) : main;
+    return m is DatabaseRouterSession && catalog != null && catalog.isNotEmpty
+        ? _recording(m.pinned(catalog), _mainTransaction)
+        : main;
   }
 
   /// The metadata session working on [catalog]: [meta] itself unless every
@@ -173,7 +185,14 @@ class DbConnection extends ChangeNotifier {
   Future<DbSession> Function(bool readOnly)? sessionOpener;
 
   /// [session] reporting its statements to the query history, like [main].
-  DbSession withHistory(DbSession session) => RecordingSession(session, _recordStatement);
+  DbSession withHistory(DbSession session) => _recording(session, session);
+
+  /// Records the statements of [session], whose transaction is [scope].
+  RecordingSession _recording(DbSession session, Object scope) => RecordingSession(
+    session,
+    (sql, params, page, error, ms) => _recordStatement(sql, params, page, error, ms, scope),
+    onAutoCommit: (value) => _autoCommitChanged(scope, value),
+  );
 
   /// The [main] session without the query history recorder: for statements
   /// that carry secrets (CREATE USER … PASSWORD). Same transaction and
@@ -244,7 +263,8 @@ class DbConnection extends ChangeNotifier {
           onOpened: _bootstrap,
         );
       }
-      m = RecordingSession(raw, _recordStatement);
+      _transactions[_mainTransaction] = _HistoryTransaction();
+      m = _recording(raw, _mainTransaction);
       final inf = normalizeServerInfo(await md.info());
       if (config.defaultCatalog.isNotEmpty) {
         await m.setCurrentCatalog(config.defaultCatalog);
@@ -391,6 +411,7 @@ class DbConnection extends ChangeNotifier {
   /// A manual transaction with pending changes was lost with the connection.
   void _transactionLost(bool reported) {
     pendingStatements = 0;
+    _rolledBack(_mainTransaction, 'Annullata dal server: transazione persa con la connessione');
     if (!reported) transactionNotice = transactionLostMessage;
     notifyListeners();
   }
@@ -487,18 +508,60 @@ class DbConnection extends ChangeNotifier {
     }
   }
 
-  void _recordStatement(String sql, List<Object?> params, ResultPage? page, Object? error, int durationMs) {
-    onHistory?.call(
-      HistoryEntry(
-        sql: dialect.inlineParams(sql, params),
-        connectionId: config.id,
-        connectionName: config.name,
-        time: DateTime.now(),
-        durationMs: durationMs,
-        rows: page == null ? -1 : (page.isResultSet ? page.rows.length : page.rowsAffected),
-        error: error == null ? null : (error is OdbcException ? error.message : error.toString()),
-      ),
+  void _recordStatement(
+    String sql,
+    List<Object?> params,
+    ResultPage? page,
+    Object? error,
+    int durationMs, [
+    Object? scope,
+  ]) {
+    final entry = HistoryEntry(
+      sql: dialect.inlineParams(sql, params),
+      connectionId: config.id,
+      connectionName: config.name,
+      time: DateTime.now(),
+      durationMs: durationMs,
+      rows: page == null ? -1 : (page.isResultSet ? page.rows.length : page.rowsAffected),
+      error: error == null ? null : (error is OdbcException ? error.message : error.toString()),
     );
+    onHistory?.call(entry);
+    final tx = scope == null ? null : _transactions[scope];
+    if (tx == null || error != null) return;
+    if (sql == 'COMMIT') {
+      tx.entries.clear();
+    } else if (sql == 'ROLLBACK') {
+      _rolledBack(scope!, 'Annullata (rollback)');
+    } else if (tx.manual && isModifyingSql(sql)) {
+      if (_implicitCommit.hasMatch(sql.trimLeft()) &&
+          (dialect.family == DbFamily.mysql || dialect.family == DbFamily.oracle)) {
+        // DDL commits the transaction on MySQL and Oracle: a later rollback
+        // undoes neither it nor what came before.
+        tx.entries.clear();
+      } else {
+        tx.entries.add(entry);
+      }
+    }
+  }
+
+  static final _implicitCommit = RegExp(
+    r'^(create|alter|drop|truncate|rename|grant|revoke|comment)\b',
+    caseSensitive: false,
+  );
+
+  void _autoCommitChanged(Object scope, bool value) {
+    final tx = _transactions[scope] ??= _HistoryTransaction();
+    // Back to auto-commit: the pending statements were committed.
+    tx.entries.clear();
+    tx.manual = !value;
+  }
+
+  /// The history marks the statements of the transaction of [scope].
+  void _rolledBack(Object scope, String reason) {
+    final tx = _transactions[scope];
+    if (tx == null || tx.entries.isEmpty) return;
+    onHistoryRolledBack?.call(List.of(tx.entries), reason);
+    tx.entries.clear();
   }
 
   void refreshMetadata() {
@@ -517,6 +580,11 @@ class DbConnection extends ChangeNotifier {
   }
 
   void touch() => notifyListeners();
+}
+
+class _HistoryTransaction {
+  bool manual = false;
+  final List<HistoryEntry> entries = [];
 }
 
 final _modifying = RegExp(
