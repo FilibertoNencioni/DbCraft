@@ -33,25 +33,36 @@ Future<bool> ensureConnected(BuildContext context, DbConnection dc) async {
   }
 }
 
+/// Asks to commit or roll back the pending changes of [dc] before closing
+/// its sessions. False: the user cancelled (or the commit failed).
+Future<bool> resolvePendingTransaction(BuildContext context, DbConnection dc) async {
+  if (!dc.isConnected || dc.autoCommit || dc.pendingStatements == 0) return true;
+  final commit = await showAlert<bool?>(
+    context,
+    title: 'Transazione aperta',
+    message: 'Ci sono ${dc.pendingStatements} istruzioni non confermate su "${dc.config.name}".',
+    style: AlertStyle.warning,
+    buttons: const [
+      AlertButton('Commit', true, role: AlertRole.defaultAction),
+      AlertButton('Rollback', false, role: AlertRole.destructive),
+      AlertButton('Annulla', null, role: AlertRole.cancel),
+    ],
+  );
+  if (commit == null || !context.mounted) return false;
+  return guarded(context, () => commit ? dc.commit() : dc.rollback());
+}
+
+/// [resolvePendingTransaction] for every connection (before quitting).
+Future<bool> resolveAllPendingTransactions(BuildContext context, Iterable<DbConnection> connections) async {
+  for (final dc in connections.toList()) {
+    if (!context.mounted || !await resolvePendingTransaction(context, dc)) return false;
+  }
+  return true;
+}
+
 Future<void> disconnectWithCheck(BuildContext context, DbConnection dc) async {
   if (!dc.isConnected) return;
-  if (!dc.autoCommit && dc.pendingStatements > 0) {
-    final commit = await showAlert<bool?>(
-      context,
-      title: 'Transazione aperta',
-      message: 'Ci sono ${dc.pendingStatements} istruzioni non confermate su "${dc.config.name}".',
-      style: AlertStyle.warning,
-      buttons: const [
-        AlertButton('Commit', true, role: AlertRole.defaultAction),
-        AlertButton('Rollback', false, role: AlertRole.destructive),
-        AlertButton('Annulla', null, role: AlertRole.cancel),
-      ],
-    );
-    if (commit == null) return;
-    if (!context.mounted) return;
-    final ok = await guarded(context, () => commit ? dc.commit() : dc.rollback());
-    if (!ok) return;
-  }
+  if (!await resolvePendingTransaction(context, dc)) return;
   await dc.disconnect();
 }
 

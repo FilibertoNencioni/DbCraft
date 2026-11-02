@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import '../model/connection_config.dart';
 import '../drivers/database_router_session.dart';
 import '../drivers/db_session.dart';
 import '../drivers/recording_session.dart';
+import '../drivers/resilient_session.dart';
 import '../drivers/session_factory.dart';
 import '../odbc/odbc_types.dart';
 import '../services/metadata_service.dart';
@@ -94,6 +98,17 @@ class DbConnection extends ChangeNotifier {
 
   /// Statements executed in manual commit mode since the last commit.
   int pendingStatements = 0;
+
+  /// Set when the keep-alive found the connection lost with a manual
+  /// transaction pending: the next [commit] fails with this message instead
+  /// of committing an empty transaction.
+  String? transactionNotice;
+
+  /// Idle timeout of the server sessions in seconds (MySQL wait_timeout,
+  /// PostgreSQL idle_session_timeout, Oracle IDLE_TIME…), when known.
+  int? serverIdleTimeout;
+
+  Timer? _keepAliveTimer;
 
   /// Receives every statement run on the [main] session (query history).
   void Function(HistoryEntry e)? onHistory;
@@ -186,33 +201,48 @@ class DbConnection extends ChangeNotifier {
     _libPath = libPath;
     DbSession? m, md;
     try {
+      Future<DbSession> openMeta(ConnectionConfig c) => openDbSession(c, libPath: libPath, password: _password);
+      Future<DbSession> openMain(ConnectionConfig c) =>
+          openDbSession(c, libPath: libPath, password: _password, readOnly: config.readOnly);
       // Open the metadata session first: it validates the parameters
       // without opening two failing logins.
-      md = await openDbSession(config, libPath: libPath, password: _password);
-      DbSession raw = await openDbSession(config, libPath: libPath, password: _password, readOnly: config.readOnly);
+      md = await openMeta(config);
+      DbSession raw = await openMain(config);
       m = raw;
-      if (await _bindsDatabase(md)) {
-        final initial = await _currentDatabase(md);
-        if (initial != null) {
-          md = DatabaseRouterSession(
-            md,
-            initial,
-            open: (db) => openDbSession(config.forDatabase(db), libPath: libPath, password: _password),
-            listDatabases: _postgresDatabases,
-          );
-          m = raw = DatabaseRouterSession(
-            raw,
-            initial,
-            open: (db) => openDbSession(
-              config.forDatabase(db),
-              libPath: libPath,
-              password: _password,
-              readOnly: config.readOnly,
-            ),
-            listDatabases: _postgresDatabases,
-            onOpened: _bootstrap,
-          );
-        }
+      final initial = await _bindsDatabase(md) ? await _currentDatabase(md) : null;
+      final dialect = SqlDialect(dbmsName: '${(await md.info())['dbmsName'] ?? ''}');
+      final ping = _pingSql(dialect);
+      // ODBC sessions reopen themselves when the server drops them (native
+      // drivers already reconnect on their own).
+      DbSession resilient(DbSession s, Future<DbSession> Function() reopen, {bool isMain = false, bool hint = false}) =>
+          config.isNative
+          ? s
+          : ResilientSession(
+              s,
+              reopen: reopen,
+              isReadOnly: isReadOnlySql,
+              pingSql: ping,
+              onReopened: isMain ? _bootstrap : null,
+              catalogHint: hint ? () => mainCatalog : null,
+              onTransactionLost: isMain ? _transactionLost : null,
+            );
+      md = resilient(md, () => openMeta(config));
+      m = raw = resilient(raw, () => openMain(config), isMain: true, hint: initial == null);
+      if (initial != null) {
+        md = DatabaseRouterSession(
+          md,
+          initial,
+          open: (db) async => resilient(await openMeta(config.forDatabase(db)), () => openMeta(config.forDatabase(db))),
+          listDatabases: _postgresDatabases,
+        );
+        m = raw = DatabaseRouterSession(
+          raw,
+          initial,
+          open: (db) async =>
+              resilient(await openMain(config.forDatabase(db)), () => openMain(config.forDatabase(db)), isMain: true),
+          listDatabases: _postgresDatabases,
+          onOpened: _bootstrap,
+        );
       }
       m = RecordingSession(raw, _recordStatement);
       final inf = normalizeServerInfo(await md.info());
@@ -222,6 +252,8 @@ class DbConnection extends ChangeNotifier {
       }
       if (!config.autoCommit) await m.setAutoCommit(false);
       await _bootstrap(m);
+      // Not through [m]: kept out of the query history.
+      serverIdleTimeout = config.isNative ? null : await _idleTimeout(raw, dialect);
       main = m;
       meta = md;
       info = inf;
@@ -229,8 +261,10 @@ class DbConnection extends ChangeNotifier {
       defaultCatalog = mainCatalog = inf['currentCatalog'] as String?;
       autoCommit = config.autoCommit;
       pendingStatements = 0;
+      transactionNotice = null;
       status = ConnectionStatus.connected;
       connectedAt = DateTime.now();
+      _startKeepAlive();
     } catch (e) {
       await m?.close();
       await md?.close();
@@ -278,7 +312,92 @@ class DbConnection extends ChangeNotifier {
   static Future<List<String>> _postgresDatabases(DbSession s) =>
       _rows(s, 'SELECT datname FROM pg_database WHERE datallowconn ORDER BY datistemplate, datname');
 
+  /// Light statement keeping a session alive; null for file databases.
+  static String? _pingSql(SqlDialect d) => switch (d.family) {
+    DbFamily.sqlite || DbFamily.mongodb || DbFamily.redis || DbFamily.cassandra || DbFamily.bigquery => null,
+    DbFamily.oracle => 'SELECT 1 FROM DUAL',
+    DbFamily.db2 => 'SELECT 1 FROM SYSIBM.SYSDUMMY1',
+    DbFamily.firebird => r'SELECT 1 FROM RDB$DATABASE',
+    _ => d.dbmsName.toUpperCase().contains('ACCESS') ? null : 'SELECT 1',
+  };
+
+  /// Idle timeout of the server sessions in seconds, null when unknown or
+  /// disabled.
+  static Future<int?> _idleTimeout(DbSession s, SqlDialect d) async {
+    int? positive(num? v) => v == null || v <= 0 ? null : v.round();
+    try {
+      switch (d.family) {
+        case DbFamily.mysql:
+          final r = await _rows(s, 'SELECT @@SESSION.wait_timeout');
+          return positive(r.isEmpty ? null : num.tryParse(r.first));
+        case DbFamily.postgres:
+          // Milliseconds; 0 = disabled. idle_session_timeout exists from 14.
+          final r = await _rows(
+            s,
+            "SELECT setting FROM pg_settings WHERE name IN ('idle_session_timeout', 'idle_in_transaction_session_timeout')",
+          );
+          final ms = [for (final v in r) num.tryParse(v) ?? 0].where((v) => v > 0);
+          return ms.isEmpty ? null : positive(ms.reduce(math.min) / 1000);
+        case DbFamily.oracle:
+          // Minutes, or UNLIMITED / DEFAULT.
+          final r = await _rows(s, "SELECT LIMIT FROM USER_RESOURCE_LIMITS WHERE RESOURCE_NAME = 'IDLE_TIME'");
+          return positive(r.isEmpty ? null : (num.tryParse(r.first) ?? 0) * 60);
+        default:
+          return null;
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Seconds of inactivity before the sessions are pinged: the configured
+  /// interval, shortened to half of the server idle timeout. 0 = disabled.
+  int get keepAliveInterval {
+    final configured = config.keepAlive;
+    if (configured <= 0 || config.isNative) return 0;
+    final server = serverIdleTimeout;
+    return server == null ? configured : math.min(configured, math.max(1, server ~/ 2));
+  }
+
+  void _startKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = Timer.periodic(const Duration(seconds: 1), (_) => keepAlive());
+  }
+
+  /// Pings the sessions idle for at least [keepAliveInterval].
+  @visibleForTesting
+  void keepAlive() {
+    final interval = keepAliveInterval;
+    if (interval <= 0 || !isConnected) return;
+    for (final s in _resilientSessions()) {
+      if (s.wantsPing && s.idleFor.inSeconds >= interval) unawaited(s.ping());
+    }
+  }
+
+  Iterable<ResilientSession> _resilientSessions() sync* {
+    for (final s in [unrecordedMain, meta]) {
+      final inner = s is DatabaseRouterSession ? s.sessions.toList() : [s];
+      yield* inner.whereType<ResilientSession>();
+    }
+  }
+
+  /// The user saw [transactionNotice]: the next commit runs normally.
+  void acknowledgeTransactionNotice() {
+    if (transactionNotice == null) return;
+    transactionNotice = null;
+    notifyListeners();
+  }
+
+  /// A manual transaction with pending changes was lost with the connection.
+  void _transactionLost(bool reported) {
+    pendingStatements = 0;
+    if (!reported) transactionNotice = transactionLostMessage;
+    notifyListeners();
+  }
+
   Future<void> disconnect() async {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
     final m = main, md = meta;
     main = null;
     meta = null;
@@ -286,6 +405,7 @@ class DbConnection extends ChangeNotifier {
     defaultCatalog = mainCatalog = null;
     status = ConnectionStatus.disconnected;
     pendingStatements = 0;
+    transactionNotice = null;
     connectedAt = null;
     notifyListeners();
     await Future.wait([if (m != null) m.close(), if (md != null) md.close()]);
@@ -334,10 +454,19 @@ class DbConnection extends ChangeNotifier {
     await m.setAutoCommit(value);
     autoCommit = value;
     pendingStatements = 0;
+    transactionNotice = null;
     notifyListeners();
   }
 
   Future<void> commit() async {
+    final notice = transactionNotice;
+    if (notice != null) {
+      // The changes the user means to commit are gone: say so once instead
+      // of committing what came after.
+      transactionNotice = null;
+      notifyListeners();
+      throw ConnectionLostException(notice, transactionLost: true);
+    }
     await main?.commit();
     pendingStatements = 0;
     notifyListeners();
@@ -346,6 +475,7 @@ class DbConnection extends ChangeNotifier {
   Future<void> rollback() async {
     await main?.rollback();
     pendingStatements = 0;
+    transactionNotice = null;
     notifyListeners();
   }
 
@@ -396,16 +526,20 @@ final _modifying = RegExp(
 
 /// Rough check used for the "production" confirmation and transaction count.
 bool isModifyingSql(String sql) {
-  final stripped = sql
-      .replaceAll(RegExp(r'--[^\n]*'), '')
-      .replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '')
-      .trimLeft();
+  final stripped = sql.replaceAll(RegExp(r'--[^\n]*'), '').replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '').trimLeft();
   if (_modifying.hasMatch(stripped)) return true;
   // WITH … DELETE/UPDATE/INSERT
-  return RegExp(
-    r'^\s*with\b[\s\S]*\b(insert|update|delete|merge)\b',
-    caseSensitive: false,
-  ).hasMatch(stripped);
+  return RegExp(r'^\s*with\b[\s\S]*\b(insert|update|delete|merge)\b', caseSensitive: false).hasMatch(stripped);
+}
+
+final _reading = RegExp(r'^\s*(select|with|show|describe|desc|explain|values|table)\b', caseSensitive: false);
+
+/// Whether [sql] only reads: it may run again after a reconnection.
+bool isReadOnlySql(String sql) {
+  final stripped = sql.replaceAll(RegExp(r'--[^\n]*'), '').replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '').trimLeft();
+  if (!_reading.hasMatch(stripped) || isModifyingSql(stripped)) return false;
+  // EXPLAIN ANALYZE runs the statement; SELECT … INTO / FOR UPDATE write or lock.
+  return !RegExp(r'\b(analyze|into|for\s+update|for\s+share|lock)\b', caseSensitive: false).hasMatch(stripped);
 }
 
 bool isDangerousSql(String sql) {

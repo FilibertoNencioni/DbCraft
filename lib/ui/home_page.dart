@@ -50,6 +50,51 @@ class _HomePageState extends State<HomePage> {
 
   bool get _mac => Platform.isMacOS;
 
+  AppState? _app;
+
+  /// Connections whose lost-transaction alert is on screen.
+  final _alerting = <DbConnection>{};
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = AppScope.read(context);
+    if (!identical(app, _app)) {
+      _app?.removeListener(_checkTransactionNotices);
+      _app = app..addListener(_checkTransactionNotices);
+    }
+  }
+
+  @override
+  void dispose() {
+    _app?.removeListener(_checkTransactionNotices);
+    super.dispose();
+  }
+
+  /// The keep-alive found a manual transaction lost with the connection
+  /// (server timeout while the Mac slept, network drop…): tell the user
+  /// right away, not only at the next commit.
+  void _checkTransactionNotices() {
+    for (final dc in _app?.connections ?? const <DbConnection>[]) {
+      final notice = dc.transactionNotice;
+      if (notice == null || _alerting.contains(dc)) continue;
+      _alerting.add(dc);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted) {
+          await showAlert<void>(
+            context,
+            title: 'Transazione annullata su "${dc.config.name}"',
+            message: notice,
+            style: AlertStyle.warning,
+            buttons: const [AlertButton('OK', null, role: AlertRole.defaultAction)],
+          );
+        }
+        _alerting.remove(dc);
+        dc.acknowledgeTransactionNotice();
+      });
+    }
+  }
+
   SingleActivator _a(LogicalKeyboardKey k, {bool shift = false, bool alt = false}) =>
       SingleActivator(k, control: !_mac, meta: _mac, shift: shift, alt: alt);
 
@@ -832,6 +877,10 @@ class _TransactionControl extends StatelessWidget {
         ),
       ),
       if (manual) ...[
+        if (dc.transactionNotice case final notice?) ...[
+          const SizedBox(width: Gap.sm),
+          Tooltip(message: notice, child: Icon(AppIcons.warningFill, size: 16, color: c.danger)),
+        ],
         const SizedBox(width: Gap.sm),
         PushButton(
           label: dc.pendingStatements > 0 ? 'Commit (${dc.pendingStatements})' : 'Commit',

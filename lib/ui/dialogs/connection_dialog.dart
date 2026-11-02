@@ -73,6 +73,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   late final _folder = TextEditingController(text: cfg.folder);
   late final _defaultCatalog = TextEditingController(text: cfg.defaultCatalog);
   late final _loginTimeout = TextEditingController(text: '${cfg.loginTimeout}');
+  late final _keepAlive = TextEditingController(text: '${cfg.keepAlive}');
   late final _queryTimeout = TextEditingController(text: '${cfg.queryTimeout}');
   late final _bootstrap = TextEditingController(text: cfg.bootstrapQueries);
   late final _description = TextEditingController(text: cfg.description);
@@ -100,6 +101,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
       cfg.defaultCatalog.isNotEmpty ||
       cfg.loginTimeout != 15 ||
       cfg.queryTimeout != 0 ||
+      cfg.keepAlive != 60 ||
       cfg.bootstrapQueries.trim().isNotEmpty ||
       (!cfg.isNative && cfg.extraParams.isNotEmpty) ||
       (_allDatabasesInAdvanced && !cfg.allDatabases);
@@ -174,6 +176,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
       ..defaultCatalog = _defaultCatalog.text.trim()
       ..loginTimeout = int.tryParse(_loginTimeout.text) ?? 15
       ..queryTimeout = int.tryParse(_queryTimeout.text) ?? 0
+      ..keepAlive = int.tryParse(_keepAlive.text) ?? 60
       ..bootstrapQueries = _bootstrap.text
       ..description = _description.text;
     // Authentication parameters: secrets go to the vault, the rest to JSON.
@@ -752,6 +755,12 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
           FormRow(label: 'Catalogo predefinito', child: _field(_defaultCatalog, 'Quello del login')),
           FormRow(label: 'Timeout di login', child: seconds(_loginTimeout, '15')),
           FormRow(label: 'Timeout query', help: '0 = nessun limite', child: seconds(_queryTimeout, '0')),
+          if (cfg.mode != ConnectionMode.native)
+            FormRow(
+              label: 'Keep-alive',
+              help: 'Mantiene attiva la connessione inattiva (e le transazioni aperte). 0 = disattivato',
+              child: seconds(_keepAlive, '60'),
+            ),
           if (_allDatabasesInAdvanced) _allDatabasesRow(postgresOnly: true),
         ],
       ),
@@ -793,7 +802,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   void dispose() {
     for (final c in [
       _name, _driver, _dsn, _host, _port, _database, _user, _password, _connStr, _extra, //
-      _folder, _defaultCatalog, _loginTimeout, _queryTimeout, _bootstrap, _description,
+      _folder, _defaultCatalog, _loginTimeout, _queryTimeout, _keepAlive, _bootstrap, _description,
       ..._params.values,
     ]) {
       c.dispose();

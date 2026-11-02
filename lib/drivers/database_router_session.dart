@@ -60,6 +60,9 @@ class DatabaseRouterSession implements DbSession {
   /// Databases with an open session.
   Iterable<String> get openDatabases => _sessions.keys;
 
+  /// The open sessions (one per database).
+  Iterable<DbSession> get sessions => _sessions.values;
+
   DbSession get _initial => _sessions[initialDatabase]!;
 
   /// The session of [database], opened on first use. Concurrent callers

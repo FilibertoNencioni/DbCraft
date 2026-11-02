@@ -46,6 +46,7 @@ class ConnectionConfig {
     this.allDatabases = true,
     this.loginTimeout = 15,
     this.queryTimeout = 0,
+    this.keepAlive = 60,
     this.bootstrapQueries = '',
     this.description = '',
     this.nativeDriver = '',
@@ -80,6 +81,12 @@ class ConnectionConfig {
   bool allDatabases;
   int loginTimeout;
   int queryTimeout;
+
+  /// Seconds of inactivity after which the ODBC sessions are pinged so that
+  /// the server (wait_timeout, idle_session_timeout, IDLE_TIME…) or the
+  /// network does not drop them. Shortened to half of the server idle
+  /// timeout when that is lower. 0 disables it.
+  int keepAlive;
 
   /// Statements executed right after connecting (one per line / `;`).
   String bootstrapQueries;
@@ -274,6 +281,7 @@ class ConnectionConfig {
     'allDatabases': allDatabases,
     'loginTimeout': loginTimeout,
     'queryTimeout': queryTimeout,
+    'keepAlive': keepAlive,
     'bootstrapQueries': bootstrapQueries,
     'description': description,
     if (nativeDriver.isNotEmpty) 'nativeDriver': nativeDriver,
@@ -303,6 +311,7 @@ class ConnectionConfig {
     allDatabases: j['allDatabases'] as bool? ?? true,
     loginTimeout: j['loginTimeout'] as int? ?? 15,
     queryTimeout: j['queryTimeout'] as int? ?? 0,
+    keepAlive: j['keepAlive'] as int? ?? 60,
     bootstrapQueries: j['bootstrapQueries'] as String? ?? '',
     description: j['description'] as String? ?? '',
     nativeDriver: j['nativeDriver'] as String? ?? '',

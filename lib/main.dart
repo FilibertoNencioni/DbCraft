@@ -9,6 +9,7 @@ import 'drivers/session_factory.dart';
 import 'services/storage.dart';
 import 'services/vault.dart';
 import 'state/app_state.dart';
+import 'ui/actions.dart';
 import 'ui/home_page.dart';
 import 'ui/platform/window_bridge.dart';
 import 'ui/security/lock_screen.dart';
@@ -81,6 +82,7 @@ class DbCraftApp extends StatefulWidget {
 class _DbCraftAppState extends State<DbCraftApp> {
   late final AppLifecycleListener _lifecycle;
   final _window = WindowBridge.instance;
+  final _navigator = GlobalKey<NavigatorState>();
   Timer? _idle;
 
   @override
@@ -88,6 +90,12 @@ class _DbCraftAppState extends State<DbCraftApp> {
     super.initState();
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
+        // Quitting closes the sessions: pending manual changes would be
+        // rolled back without a word.
+        final ctx = _navigator.currentContext;
+        if (ctx != null && !await resolveAllPendingTransactions(ctx, widget.state.connections)) {
+          return AppExitResponse.cancel;
+        }
         await widget.state.shutdown();
         return AppExitResponse.exit;
       },
@@ -119,6 +127,7 @@ class _DbCraftAppState extends State<DbCraftApp> {
       child: ListenableBuilder(
         listenable: Listenable.merge([app, _window.isKey, _window.accentColor]),
         builder: (context, _) => MaterialApp(
+          navigatorKey: _navigator,
           title: 'DbCraft',
           debugShowCheckedModeBanner: false,
           themeMode: app.settings.themeMode,
