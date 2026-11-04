@@ -30,7 +30,7 @@ A surface has a hairline or a shadow, never both, except menus, popovers and she
 - **One accent**: the user's system accent color (`NSColor.controlAccentColor`, default blue), delivered by `WindowBridge`. Use it only for the default action, selection, focus rings and the "on" state.
 - **Inactive window**: when the window is not key, `DbColors.resolve` turns `selection`, `selectionEmphasized` and `defaultButton` gray, as AppKit does. Use those tokens, never `accent`, for selections and the default button.
 - **Semantic colors**: `success` (connected, commit, added), `warning` (pending changes, changed), `danger` (errors, destructive actions, removed). Diffs and edit states use the aliases `diffAdded`, `diffRemoved`, `diffChanged`, `diffHunk`.
-- **Environment** (`ConnectionType.colorOf(c)`): green development, orange test, red production. A dot or `Tag` appears **only for test and production**; development stays silent.
+- **Environment** (`ConnectionType.colorOf(c)`): green development, orange test, red production. A dot or `Tag` appears **only for test and production**; development stays silent. Connection lists (navigator, welcome) use a `Tag` with the short label (Test, Prod); document tabs, where space is tight, use the dot.
 - **Connection state** is a separate signal: a solid green dot means connected, an empty ring disconnected. Never reuse the environment dot for state.
 - **Data colors**: `keyIcon` (primary keys), `foreignKeyIcon`, `codeKeyword`/`codeFunction`/`codeTable`/`codeColumn`/`codeType` (completion kinds). Driver and cloud brand colors appear only on connection and account icons.
 - **Tints** (`Tint`): `subtle` 0.08 (notice fills), `regular` 0.14 (tags, tokens), `strong` 0.22 (grid selection, changed cells), `border` 0.35 (tinted hairlines). No other alphas.
@@ -47,14 +47,14 @@ A surface has a hairline or a shadow, never both, except menus, popovers and she
 
 - 4pt grid (`Gap`: 4, 8, 12, 16, 24, 32).
 - Radii (`Radii`): 4 small (tags, keycaps, tooltips), 5 controls and rows, 6 menus, 8 panels, form groups, notices and code boxes, 10 sheets, alerts and popovers.
-- Control heights (`ControlSize` / `ControlScale`): 22 regular (buttons, fields, pop-ups, segmented controls in forms and bars), 19 small (dense bars), 16 mini (inline accessories), 28 toolbar.
+- Control heights (`ControlSize` / `ControlScale`): 22 regular (every push button, text field and pop-up, in forms and bars alike: there is no small field or push button), 19 small (segmented controls and toggles in dense bars), 16 mini (inline accessories), 28 toolbar.
 - Bars (`BarHeight`): 52 window toolbar, 36 pane toolbar (`PaneBar`), 28 pane header and inner strips (`PaneHeader`, `PaneTabs`), 30 document tabs, 22 status bar.
 - Rows: 28 source list (`kSidebarRowHeight`), 24 dense lists and tables (`kDenseRowHeight`, `GridMetrics`); 38 for two-line `ListRow`s.
 - Focus: a 3.5px outer halo in `focusRing` (`FocusRing`, `MacFieldBorder`), shown only for keyboard focus. Never a thicker inner border.
 
 ### Icons
 
-Only `AppIcons` (`lib/ui/theme/app_icons.dart`): the Phosphor font bundled in `assets/fonts/phosphor`, Regular by default, Bold for chevrons and tiny marks, Fill for selected states. Sizes: 16 in controls, 18 in the window toolbar, 14 in dense rows. Action menus have no icons; value menus (pop-ups, combo fields) may show an item image, such as the driver icon, in its own column after the checkmark.
+Only `AppIcons` (`lib/ui/theme/app_icons.dart`): the Phosphor font bundled in `assets/fonts/phosphor`, Regular by default, Bold for chevrons and tiny marks, Fill for selected states. Sizes: 16 in controls, 18 in the window toolbar, 14 in dense rows. Action menus follow macOS 26: every command that has a natural glyph shows it (`MenuEntry.icon`, 16pt in the label color) in its own column after the checkmark; destructive commands (Elimina, Rimuovi, Svuota, Scarta…) are `destructive: true`, red label and icon. Value menus (pop-ups, combo fields) may show an item image, such as the driver icon, in the same column.
 
 ### Elevation and motion tokens
 
@@ -69,11 +69,11 @@ One line per component: what it is for, and what to use instead when it is not t
 
 | Component | Use it for | Not for |
 |---|---|---|
-| `PushButton` | Bezel buttons: Annulla, secondary actions, row actions. `small` in bars. | Toolbar icons (`ToolButton`), links (`LinkButton`). |
-| `PushButton.primary` | The single default action of a sheet, alert or bar (Invio): Esegui, Crea, Salva. Gray when the window is inactive. | More than one per surface. |
+| `PushButton` | Bezel buttons: Annulla, secondary actions, row actions. One size and one bezel everywhere (the look of Annulla: 22pt, 13 regular label, hairline and soft shadow); disabled buttons keep the bezel with a gray label. | Toolbar icons (`ToolButton`), links (`LinkButton`). |
+| `PushButton.primary` | The single default action of a sheet, alert or bar (Invio): Esegui, Crea, Salva. The Annulla bezel with a flat accent fill (no gradient, regular weight); gray when the window is inactive. | More than one per surface. |
 | `PushButton(kind: destructive)` | Interrompi, Elimina. Filled red only inside alerts. | Undoable actions. |
 | `ToolButton` | Icon buttons in toolbars and pane bars: bezel on hover and press only, accent glyph when `active`. `label:` only when the text adds meaning (Commit). | Primary actions; it is outside the Tab order, as in AppKit. |
-| `PulldownButton` | An icon or text plus ⌄ that opens a menu of actions ("…", AI). | Choosing a value (`PopUpButton`). |
+| `PulldownButton` | An icon or text plus ⌄ that opens a menu of actions ("…", AI); `bordered` takes the `PushButton` bezel; `commandIcons: false` when the menu lists values (columns, pages). | Choosing a value (`PopUpButton`). |
 | `LinkButton` | Inline links in prose and rows: Dettagli…, Apri, Vai a. | Sheet footers. |
 | `DisclosureButton` / `DisclosureChevron` | Show/hide a section (Avanzate, groups); with `icon`/`subtitle` it is an item row (ODBC drivers) and `contentIndent` aligns the disclosed content. | Navigation. |
 | `ToolSeparator` | 1×16 divider between toolbar groups. | Lists. |
@@ -108,7 +108,7 @@ One line per component: what it is for, and what to use instead when it is not t
 
 | Component | Use it for | Not for |
 |---|---|---|
-| `showMacMenu` + `MenuEntry` | Every context menu and pop-up menu: 22pt items, accent highlight, a checkmark column and a separate `leading` column (status dots, value images), right-aligned shortcuts, submenus, `MenuEntry.connection` rows. No action icons. | Rich content (`showPopover`). |
+| `showMacMenu` + `MenuEntry` | Every context menu and pop-up menu: 22pt items, accent highlight, a checkmark column and a separate column for action `icon`s or a `leading` mark (status dots, value images), right-aligned shortcuts, submenus, `MenuEntry.connection` rows; `destructive` items in red. | Rich content (`showPopover`). |
 | `showPopover` | Anchored editors and information (filter editor, calendar). | Choosing from a list. |
 | `CompletionList` | SQL completion, Xcode style, with letter badges in the `code*` colors. | Menus. |
 | `RichTooltip` | Tooltips with a title and key/value lines (grid header). | Plain hints (the theme `Tooltip`, 800ms delay). |
@@ -223,9 +223,9 @@ Sheets and alerts are centered over a dimmed window (`Elevation.scrim`) and fade
 
 - **macOS**: transparent title bar with a full-size content view (`MainFlutterWindow.swift`). An empty unified `NSToolbar` makes AppKit center the traffic lights on the 52pt toolbar; in full screen the toolbar auto-hides with the menu bar. AppKit's own title-bar double click is off (it also fired over Flutter buttons): Flutter counts clicks on the empty bar and zooms through the `dbcraft/window` channel, which also delivers the key state and the accent color. Menus are native (`PlatformMenuBar`): app, File, Database, SQL, Vista, Finestra, Aiuto.
 - **Windows/Linux**: the same menu model as an in-window menu bar; no traffic-light inset.
-- **Layout**: `SplitView` at the root. The sidebar runs the full window height: a 52pt strip under the traffic lights, `SidebarTabs`, then the panels. The content column has the toolbar (create actions on the left; transaction mode and history on the right), the `WindowTabBar`, the editor and the `StatusBar`, which sits under the content only.
+- **Layout**: `SplitView` at the root. The sidebar runs the full window height: a 52pt strip under the traffic lights, `SidebarTabs`, then the panels. The content column has the toolbar (create actions on the left; transaction mode and history on the right), the `WindowTabBar` and the editor, down to the window's bottom edge: there is no window-wide status bar (connection state lives in the navigator and the editor bars).
 - **Sidebar toggle**: fixed to the right of the traffic lights, over the sidebar strip or, with the sidebar closed, over the toolbar (Xcode 15); the toolbar padding animates with the slide.
-- **SQL editor bar**: "Esegui" `PushButton.primary` small (or "Interrompi" destructive), `PulldownButton`s for "…" and AI, `PopUpButton(style: toolbar)` for catalog and connection.
+- **SQL editor bar**: "Esegui" `PushButton.primary` (or "Interrompi" destructive), `PulldownButton`s for "…" and AI, `PopUpButton(style: toolbar)` for catalog and connection.
 
 ## Motion
 

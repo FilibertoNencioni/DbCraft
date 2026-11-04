@@ -534,7 +534,6 @@ class _PrincipalEditorState extends State<_PrincipalEditor> {
                   PushButton.primary(
                     label: d.isNew ? 'Crea' : 'Salva',
                     icon: AppIcons.save,
-                    size: ControlScale.small,
                     tooltip: ro
                         ? 'Connessione in sola lettura'
                         : errors.isNotEmpty

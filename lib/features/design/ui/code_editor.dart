@@ -306,7 +306,6 @@ class _CodeEditorViewState extends State<_CodeEditorView> {
               PushButton.primary(
                 label: tab.isNew ? 'Crea' : 'Salva',
                 icon: AppIcons.save,
-                size: ControlScale.small,
                 tooltip: ro ? 'Connessione in sola lettura' : 'Mostra lo script ed esegue il sorgente',
                 onPressed: ro || !tab.isDirty ? null : () => tab.save(context),
               ),

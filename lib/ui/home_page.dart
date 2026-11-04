@@ -18,7 +18,6 @@ import '../features/performance/perf_dashboard.dart';
 import '../features/query_builder/query_builder_tab.dart';
 import '../features/schema/schema_compare_view.dart';
 import '../model/connection_config.dart';
-import '../odbc/odbc_types.dart';
 import '../state/app_state.dart';
 import '../state/db_connection.dart';
 import '../state/editor_tabs.dart';
@@ -146,8 +145,8 @@ class _HomePageState extends State<HomePage> {
   /// Height of the title-bar bands (the sidebar's and the content toolbar).
   double get _barHeight => _mac ? BarHeight.toolbar : 44;
 
-  /// Full-height sidebar beside the content column (toolbar, tabs, editor,
-  /// status bar). The sidebar toggle stays put right of the traffic lights,
+  /// Full-height sidebar beside the content column (toolbar, tabs, editor).
+  /// The sidebar toggle stays put right of the traffic lights,
   /// over the sidebar band or, with the sidebar hidden, over the toolbar,
   /// which then makes room for both.
   Widget _shell(AppState app, double inset) {
@@ -168,7 +167,6 @@ class _HomePageState extends State<HomePage> {
             onToggleAutoCommit: _toggleAutoCommit,
           ),
           Expanded(child: _editorArea(app)),
-          _statusBar(app),
         ]),
       ),
       Positioned(
@@ -628,34 +626,6 @@ class _HomePageState extends State<HomePage> {
         _ => const SizedBox(),
       };
 
-  Widget _statusBar(AppState app) {
-    final c = DbColors.of(context);
-    final dc = app.activeConnection;
-    final connectedCount = app.connections.where((e) => e.isConnected).length;
-    return StatusBar(children: [
-      if (dc != null) ...[
-        StatusDot(dc.isConnected ? c.success : c.textTertiary, size: 7, ring: !dc.isConnected),
-        const SizedBox(width: 6),
-        Text(dc.config.name, style: uiText(TypeSize.caption, color: c.text, weight: FontWeight.w500)),
-        const SizedBox(width: Gap.sm),
-        if (dc.isConnected)
-          Flexible(
-            child: Text('${dc.config.type.label} · ${dc.autoCommit ? 'auto-commit' : 'commit manuale'}'
-                '${dc.config.readOnly ? ' · sola lettura' : ''}'),
-          ),
-        if (dc.status == ConnectionStatus.connecting) const Text('Connessione in corso…'),
-        if (dc.status == ConnectionStatus.error)
-          Flexible(
-            child: Text('Errore: ${mainErrorLine(dc.error ?? '')}',
-                style: uiText(TypeSize.caption, color: c.danger)),
-          ),
-      ] else
-        const Text('Nessuna connessione selezionata'),
-      const Spacer(),
-      Text('$connectedCount di ${app.connections.length} connessioni attive'),
-    ]);
-  }
-
   void _about() => showAboutPanel(
         context,
         name: 'DbCraft',
@@ -884,7 +854,6 @@ class _TransactionControl extends StatelessWidget {
         const SizedBox(width: Gap.sm),
         PushButton(
           label: dc.pendingStatements > 0 ? 'Commit (${dc.pendingStatements})' : 'Commit',
-          size: ControlScale.small,
           tooltip: 'Conferma la transazione',
           onPressed: () => guarded(context, dc.commit),
         ),
@@ -1019,7 +988,9 @@ class _RecentConnection extends StatelessWidget {
       icon: cfg.template.icon,
       title: cfg.name,
       subtitle: cfg.subtitle,
-      trailing: EnvDot(cfg.type.colorOf(DbColors.of(context)), show: cfg.type != ConnectionType.development, tooltip: cfg.type.label),
+      trailing: cfg.type == ConnectionType.development
+          ? null
+          : Tag(cfg.type.shortLabel, color: cfg.type.colorOf(DbColors.of(context)), tooltip: cfg.type.label),
       trailingOnHover: LinkButton(label: 'Apri', small: true, onPressed: () => _open(context)),
       onTap: () => _open(context),
     );
@@ -1044,7 +1015,6 @@ class _ScriptsPanel extends StatefulWidget {
 class _ScriptsPanelState extends State<_ScriptsPanel> {
   late Future<List<({File file, DateTime modified})>> _files = AppScope.read(context).workspace.listScripts();
   final _filter = TextEditingController();
-  bool _collapsed = false;
 
   /// Row picked with the arrows; follows the active editor's file otherwise.
   String? _picked;
@@ -1157,78 +1127,73 @@ class _ScriptsPanelState extends State<_ScriptsPanel> {
     return Column(children: [
       SectionLabel('Script nel workspace',
           padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
-          expanded: !_collapsed,
-          onToggle: (v) => setState(() => _collapsed = !v),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             ToolButton(icon: AppIcons.add, tooltip: 'Nuovo script', onPressed: _newScript),
             ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', onPressed: _reload),
           ])),
-      if (!_collapsed) ...[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.sm, 2, Gap.sm, Gap.sm),
-          child: SearchField(controller: _filter, hint: 'Filtra script', onChanged: (_) => setState(() {})),
-        ),
-        Expanded(
-          child: FutureBuilder<List<({File file, DateTime modified})>>(
-            future: _files,
-            builder: (context, snap) {
-              final all = snap.data ?? const <({File file, DateTime modified})>[];
-              if (all.isEmpty) {
-                return snap.connectionState == ConnectionState.done
-                    ? EmptyState(
-                        icon: AppIcons.document,
-                        title: 'Nessuno script',
-                        message: 'Gli editor SQL vengono salvati qui automaticamente.',
-                        action: PushButton(label: 'Nuovo script', onPressed: _newScript),
-                      )
-                    : const SizedBox.shrink();
-              }
-              final q = _filter.text.trim().toLowerCase();
-              final files = q.isEmpty
-                  ? all
-                  : all.where((s) => p.basenameWithoutExtension(s.file.path).toLowerCase().contains(q)).toList();
-              if (files.isEmpty) {
-                return EmptyState(
-                  icon: AppIcons.search,
-                  title: 'Nessun risultato',
-                  message: 'Nessuno script contiene "${_filter.text.trim()}".',
-                );
-              }
-              final sel = files.indexWhere((s) => s.file.path == (_picked ?? current));
-              return SourceList(
-                padding: const EdgeInsets.fromLTRB(10, 0, 10, Gap.md),
-                itemCount: files.length,
-                selectedIndex: sel < 0 ? null : sel,
-                onSelect: (i) => setState(() => _picked = files[i].file.path),
-                onActivate: (i) => _open(files[i].file),
-                itemBuilder: (context, i) {
-                  final f = files[i].file;
-                  final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
-                  final name = p.basename(f.path);
-                  return OutlineRow(
-                    icon: AppIcons.document,
-                    strong: open,
-                    title: p.basenameWithoutExtension(f.path),
-                    titleEditor: _renaming == f.path
-                        ? InlineRenameField(
-                            initial: p.basenameWithoutExtension(f.path),
-                            onSubmit: (v) => _rename(f, v),
-                            onCancel: () => setState(() => _renaming = null),
-                          )
-                        : null,
-                    detail: _ago(files[i].modified),
-                    selected: i == sel,
-                    tooltip: open ? '$name · aperto' : name,
-                    onTap: () => _open(f),
-                    onMenu: (pos) => _menu(f, pos),
-                  );
-                },
+      Padding(
+        padding: const EdgeInsets.fromLTRB(Gap.sm, 2, Gap.sm, Gap.sm),
+        child: SearchField(controller: _filter, hint: 'Filtra script', onChanged: (_) => setState(() {})),
+      ),
+      Expanded(
+        child: FutureBuilder<List<({File file, DateTime modified})>>(
+          future: _files,
+          builder: (context, snap) {
+            final all = snap.data ?? const <({File file, DateTime modified})>[];
+            if (all.isEmpty) {
+              return snap.connectionState == ConnectionState.done
+                  ? EmptyState(
+                      icon: AppIcons.document,
+                      title: 'Nessuno script',
+                      message: 'Gli editor SQL vengono salvati qui automaticamente.',
+                      action: PushButton(label: 'Nuovo script', onPressed: _newScript),
+                    )
+                  : const SizedBox.shrink();
+            }
+            final q = _filter.text.trim().toLowerCase();
+            final files = q.isEmpty
+                ? all
+                : all.where((s) => p.basenameWithoutExtension(s.file.path).toLowerCase().contains(q)).toList();
+            if (files.isEmpty) {
+              return EmptyState(
+                icon: AppIcons.search,
+                title: 'Nessun risultato',
+                message: 'Nessuno script contiene "${_filter.text.trim()}".',
               );
-            },
-          ),
+            }
+            final sel = files.indexWhere((s) => s.file.path == (_picked ?? current));
+            return SourceList(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, Gap.md),
+              itemCount: files.length,
+              selectedIndex: sel < 0 ? null : sel,
+              onSelect: (i) => setState(() => _picked = files[i].file.path),
+              onActivate: (i) => _open(files[i].file),
+              itemBuilder: (context, i) {
+                final f = files[i].file;
+                final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
+                final name = p.basename(f.path);
+                return OutlineRow(
+                  icon: AppIcons.document,
+                  strong: open,
+                  title: p.basenameWithoutExtension(f.path),
+                  titleEditor: _renaming == f.path
+                      ? InlineRenameField(
+                          initial: p.basenameWithoutExtension(f.path),
+                          onSubmit: (v) => _rename(f, v),
+                          onCancel: () => setState(() => _renaming = null),
+                        )
+                      : null,
+                  detail: _ago(files[i].modified),
+                  selected: i == sel,
+                  tooltip: open ? '$name · aperto' : name,
+                  onTap: () => _open(f),
+                  onMenu: (pos) => _menu(f, pos),
+                );
+              },
+            );
+          },
         ),
-      ] else
-        const Spacer(),
+      ),
     ]);
   }
 }

@@ -178,7 +178,6 @@ class _TablePermissionsPageState extends State<TablePermissionsPage> {
                 PushButton(
                   label: 'Aggiungi…',
                   icon: AppIcons.add,
-                  size: ControlScale.small,
                   onPressed: ro ? null : _add,
                 ),
                 const SizedBox(width: Gap.sm),
@@ -190,13 +189,12 @@ class _TablePermissionsPageState extends State<TablePermissionsPage> {
                 if (pending.isNotEmpty) ...[
                   CountBadge(pending.length),
                   const SizedBox(width: Gap.sm),
-                  PushButton(label: 'Annulla', size: ControlScale.small, onPressed: _reload),
+                  PushButton(label: 'Annulla', onPressed: _reload),
                   const SizedBox(width: Gap.sm),
                 ],
                 PushButton.primary(
                   label: 'Salva',
                   icon: AppIcons.save,
-                  size: ControlScale.small,
                   tooltip: 'Mostra lo script ed esegue GRANT e REVOKE',
                   onPressed: ro || pending.isEmpty ? null : _save,
                 ),

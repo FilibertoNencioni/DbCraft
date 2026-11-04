@@ -313,14 +313,12 @@ class _DesignColumnsPageState extends State<DesignColumnsPage> {
               case 0:
                 return MacTextField(
                   controller: _fields.of(i, 'name', c.name),
-                  small: true,
                   hint: 'nome',
                   onChanged: (v) => _set(i, c.copyWith(name: v.trim()), 'name'),
                 );
               case 1:
                 return ComboField(
                   controller: _fields.of(i, 'type', c.type),
-                  small: true,
                   hint: 'tipo',
                   options: () => types,
                   onChanged: (v) => _set(i, c.copyWith(type: v.trim()), 'type'),
@@ -332,7 +330,6 @@ class _DesignColumnsPageState extends State<DesignColumnsPage> {
               case 2:
                 return MacTextField(
                   controller: _fields.of(i, 'size', _sizeText(c)),
-                  small: true,
                   tabular: true,
                   error: _sizeErrors[i],
                   onChanged: (v) {
@@ -346,7 +343,6 @@ class _DesignColumnsPageState extends State<DesignColumnsPage> {
               case 4:
                 return MacTextField(
                   controller: _fields.of(i, 'default', c.defaultValue ?? ''),
-                  small: true,
                   mono: true,
                   enabled: !c.autoIncrement && !c.isComputed,
                   onChanged: (v) => _set(i, c.copyWith(defaultValue: v.trim().isEmpty ? null : v.trim()), 'default'),
@@ -442,7 +438,6 @@ class _ColumnInspectorState extends State<_ColumnInspector> {
                 labelWidth: 90,
                 child: MacTextField(
                   controller: _fields.of(0, 'comment', c.comment ?? ''),
-                  small: true,
                   maxLines: 3,
                   onChanged: (v) => set(c.copyWith(comment: v.trim().isEmpty ? null : v), 'comment'),
                 ),
@@ -453,7 +448,6 @@ class _ColumnInspectorState extends State<_ColumnInspector> {
                 labelWidth: 90,
                 child: MacTextField(
                   controller: _fields.of(0, 'collation', c.collation ?? ''),
-                  small: true,
                   hint: 'predefinita',
                   onChanged: (v) => set(c.copyWith(collation: v.trim().isEmpty ? null : v.trim()), 'collation'),
                 ),
@@ -465,7 +459,6 @@ class _ColumnInspectorState extends State<_ColumnInspector> {
           children: [
             MacTextField(
               controller: _fields.of(0, 'computed', c.computed ?? ''),
-              small: true,
               mono: true,
               maxLines: 3,
               hint: 'espressione, ad esempio qty * prezzo',
@@ -495,7 +488,6 @@ class _ColumnInspectorState extends State<_ColumnInspector> {
                 labelWidth: 90,
                 child: MacTextField(
                   controller: _fields.of(0, 'seed', '${c.identitySeed ?? ''}'),
-                  small: true,
                   tabular: true,
                   hint: '1',
                   onChanged: (v) => set(c.copyWith(identitySeed: number(v)), 'seed'),
@@ -506,7 +498,6 @@ class _ColumnInspectorState extends State<_ColumnInspector> {
                 labelWidth: 90,
                 child: MacTextField(
                   controller: _fields.of(0, 'step', '${c.identityIncrement ?? ''}'),
-                  small: true,
                   tabular: true,
                   hint: '1',
                   onChanged: (v) => set(c.copyWith(identityIncrement: number(v)), 'step'),

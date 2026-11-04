@@ -600,7 +600,7 @@ class _PathSegmentButton extends StatelessWidget {
             ? null
             : () {
                 if (seg.menu != null) {
-                  showMacMenu<Object?>(anchor, anchor: anchorRect(anchor), entries: seg.menu!());
+                  showMacMenu<Object?>(anchor, anchor: anchorRect(anchor), entries: seg.menu!(), commandIcons: false);
                 } else {
                   seg.onTap!();
                 }

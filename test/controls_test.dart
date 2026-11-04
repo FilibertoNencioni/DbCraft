@@ -683,7 +683,8 @@ void main() {
       expect(c.windowActive, active);
       expect(box.color, c.defaultButton);
       expect(c.defaultButton, active ? c.accent : c.controlBackground);
-      expect(box.gradient != null, active, reason: 'the accent gradient only in the key window');
+      expect(box.gradient, isNull, reason: 'a flat fill, the same bezel as Annulla');
+      expect(tester.widget<Text>(find.text('Connetti')).style?.fontWeight, isNot(FontWeight.w500));
       expect(tester.widget<Text>(find.text('Connetti')).style?.color, active ? c.onAccent : c.text);
     }
   });
@@ -922,5 +923,45 @@ void main() {
     expect(find.text('1.234.567'), findsOneWidget);
     expect(find.text('999'), findsOneWidget);
     expect(find.byTooltip('Nascondi: nuove'), findsOneWidget);
+  });
+
+  test('standard menu icons and destructive commands', () {
+    expect(standardMenuIcon('Copia nome'), AppIcons.copy);
+    expect(standardMenuIcon('Nuovo editor SQL'), AppIcons.newScript);
+    expect(standardMenuIcon('Nuova tabella…'), AppIcons.add);
+    expect(standardMenuIcon('Elimina (DROP)…'), AppIcons.delete);
+    expect(standardMenuIcon('Carica altri'), isNull);
+    expect(standardMenuIcon('public'), isNull);
+    expect(isDestructiveCommand('Elimina…'), isTrue);
+    expect(isDestructiveCommand('Svuota (TRUNCATE)…'), isTrue);
+    expect(isDestructiveCommand('Copia'), isFalse);
+  });
+
+  testWidgets('action menus show command icons; Elimina is red', (tester) async {
+    await tester.pumpWidget(_app(const MacMenuPreview(entries: [
+      MenuEntry('Copia nome'),
+      MenuEntry('Elimina'),
+      MenuEntry('Imposta valore…'),
+    ])));
+    final c = DbColors.of(tester.element(find.text('Copia nome')));
+    expect(find.byIcon(AppIcons.copy), findsOneWidget);
+    expect(find.byIcon(AppIcons.delete), findsOneWidget);
+    expect(tester.widget<Icon>(find.byIcon(AppIcons.delete)).color, c.danger);
+    expect(tester.widget<Text>(find.text('Elimina')).style?.color, c.danger);
+    expect(tester.widget<Text>(find.text('Copia nome')).style?.color, c.text);
+    // Labels line up whether or not the command has a glyph.
+    expect(tester.getTopLeft(find.text('Imposta valore…')).dx, tester.getTopLeft(find.text('Copia nome')).dx);
+  });
+
+  testWidgets('value menus get no command icons', (tester) async {
+    await tester.pumpWidget(_app(PopUpButton<String>(
+      value: 'Copia',
+      items: const [('Copia', 'Copia', null), ('Elimina', 'Elimina', null)],
+      onChanged: (_) {},
+    )));
+    await tester.tap(find.text('Copia'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(AppIcons.copy), findsNothing);
+    expect(find.byIcon(AppIcons.delete), findsNothing);
   });
 }

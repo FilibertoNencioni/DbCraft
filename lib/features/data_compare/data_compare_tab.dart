@@ -623,14 +623,12 @@ class _DataCompareViewState extends State<_DataCompareView> {
             label: 'Interrompi',
             icon: AppIcons.stop,
             kind: PushButtonKind.destructive,
-            size: ControlScale.small,
             onPressed: tab.cancel,
           )
         else
           PushButton.primary(
             label: 'Confronta',
             icon: AppIcons.compare,
-            size: ControlScale.small,
             tooltip: 'Legge le due tabelle e confronta le righe per chiave',
             onPressed: _run,
           ),
@@ -986,7 +984,6 @@ class _DataCompareViewState extends State<_DataCompareView> {
             'La destinazione è stata modificata: i risultati non sono aggiornati.',
             action: PushButton(
               label: 'Ricalcola',
-              size: ControlScale.small,
               tooltip: 'Ripeti il confronto',
               onPressed: _run,
             ),

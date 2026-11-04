@@ -896,7 +896,6 @@ class _SchemaCompareViewState extends State<SchemaCompareView> {
               PushButton.primary(
                 label: 'Esegui sulla destinazione',
                 icon: AppIcons.run,
-                size: ControlScale.small,
                 tooltip: readOnly ? 'La destinazione è in sola lettura' : 'Esegui lo script su ${tab.target.label}',
                 onPressed: count == 0 || readOnly || _running ? null : () => _execute(statements),
               ),

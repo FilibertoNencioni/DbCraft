@@ -267,7 +267,6 @@ class _ImportDialogState extends State<_ImportDialog> {
                     : PopUpButton<int?>(
                         value: _mapping[row],
                         style: PopUpStyle.inline,
-                        small: true,
                         items: [
                           (null, '— ignora —', null),
                           for (var j = 0; j < header.length; j++) (j, header[j], null),

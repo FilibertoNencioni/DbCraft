@@ -389,7 +389,7 @@ class _EnumDialogState extends State<_EnumDialog> {
             onRemove: (r) => setState(() => _values.remove(r)),
             onMove: (a, b) => setState(() => _values.move(a, b)),
             cellBuilder: (context, r, c) =>
-                MacTextField(controller: _values.rows[r].$2.first, small: true, onChanged: (_) => setState(() {})),
+                MacTextField(controller: _values.rows[r].$2.first, onChanged: (_) => setState(() {})),
           ),
         ),
       ],
@@ -557,7 +557,6 @@ class _DomainDialogState extends State<_DomainDialog> {
               emptyText: 'Nessun vincolo',
               cellBuilder: (context, r, c) => MacTextField(
                 controller: _checks.rows[r].$2[c],
-                small: true,
                 mono: c == 1,
                 onChanged: (_) => changed(),
               ),
@@ -952,7 +951,6 @@ class _ExclusionDialogState extends State<_ExclusionDialog> {
             onMove: (a, b) => setState(() => _elements.move(a, b)),
             cellBuilder: (context, r, c) => ComboField(
               controller: _elements.rows[r].$2[c],
-              small: true,
               mono: true,
               options: () => c == 0 ? widget.columns : _operators,
               onChanged: (_) => changed(),
@@ -1100,7 +1098,6 @@ class _SynonymDialogState extends State<_SynonymDialog> {
                     const SizedBox(width: Gap.sm),
                     PushButton(
                       label: 'Scegli…',
-                      size: ControlScale.small,
                       onPressed: () async {
                         final o = await widget.pickTarget!(_text(_catalog) ?? widget.catalog, _text(_schema));
                         if (o != null) setState(() => _object.text = o);

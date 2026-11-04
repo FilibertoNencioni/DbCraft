@@ -330,7 +330,6 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
         PushButton.primary(
           label: 'Esegui',
           icon: AppIcons.run,
-          size: ControlScale.small,
           tooltip: 'Esegui la query (${shortcutLabel(const SingleActivator(LogicalKeyboardKey.enter, meta: true))})',
           onPressed: hasSql && !tab.running ? _run : null,
         ),
@@ -355,7 +354,6 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
           controller: _limit,
           min: 1,
           hint: 'nessuno',
-          small: true,
           width: 64,
           onChanged: (v) {
             model.limit = int.tryParse(v);
@@ -924,7 +922,6 @@ class _QueryBuilderViewState extends State<QueryBuilderView> {
       value: value,
       items: [for (final (v, l) in items) (v, l, null)],
       style: PopUpStyle.inline,
-      small: true,
       expand: true,
       onChanged: (v) => edit(() => onChanged(v)),
     );
@@ -1010,7 +1007,7 @@ class _GridTextState extends State<_GridText> {
 
   @override
   Widget build(BuildContext context) =>
-      MacTextField(controller: _ctrl, hint: widget.hint, small: true, mono: widget.mono, onChanged: widget.onChanged);
+      MacTextField(controller: _ctrl, hint: widget.hint, mono: widget.mono, onChanged: widget.onChanged);
 }
 
 /// Join lines between column rows.

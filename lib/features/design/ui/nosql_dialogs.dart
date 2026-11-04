@@ -356,7 +356,6 @@ class _MongoIndexDialogState extends State<_MongoIndexDialog> {
             onMove: (a, b) => setState(() => _keys.move(a, b)),
             cellBuilder: (context, r, c) => ComboField(
               controller: _keys.rows[r].$2[c],
-              small: true,
               mono: c == 0,
               options: () => c == 0 ? widget.fields : mongoIndexKinds,
               optionDetail: c == 1
@@ -841,14 +840,12 @@ class _CqlTableDialogState extends State<_CqlTableDialog> {
                 case 0:
                   return MacTextField(
                     controller: _cols.rows[r].$2[0],
-                    small: true,
                     enabled: !_locked(r),
                     onChanged: (_) => changed(),
                   );
                 case 1:
                   return ComboField(
                     controller: _cols.rows[r].$2[1],
-                    small: true,
                     mono: true,
                     enabled: !locked,
                     options: () => types,
@@ -858,7 +855,6 @@ class _CqlTableDialogState extends State<_CqlTableDialog> {
                 case 2:
                   return PopUpButton<CqlColumnKind>(
                     value: _kinds[r],
-                    small: true,
                     items: [
                       for (final k in CqlColumnKind.values)
                         if (i == null || !k.key || _kinds[r] == k) (k, k.label, null),
@@ -1136,10 +1132,9 @@ class _UdtDialogState extends State<_UdtDialog> {
             onRemove: (r) => setState(() => _fields.remove(r)),
             canRemove: (r) => r >= old,
             cellBuilder: (context, r, col) => col == 0
-                ? MacTextField(controller: _fields.rows[r].$2[0], small: true, onChanged: (_) => changed())
+                ? MacTextField(controller: _fields.rows[r].$2[0], onChanged: (_) => changed())
                 : ComboField(
                     controller: _fields.rows[r].$2[1],
-                    small: true,
                     mono: true,
                     enabled: r >= old,
                     options: () => cqlTypes,

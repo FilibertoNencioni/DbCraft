@@ -295,7 +295,6 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                           // New column of an existing table: its name in the "added" color.
                           child: MacTextField(
                             controller: r.name,
-                            small: true,
                             hint: 'nome',
                             color: isNew ? c.diffAdded : null,
                           ),
@@ -305,7 +304,6 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                           flex: 3,
                           child: ComboField(
                             controller: r.type,
-                            small: true,
                             hint: 'tipo',
                             options: () => types,
                             // A type without size picked from the menu drops the size; typing
@@ -316,12 +314,12 @@ class _TableDefDialogState extends State<_TableDefDialog> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        SizedBox(width: 78, child: MacTextField(controller: r.size, small: true, tabular: true)),
+                        SizedBox(width: 78, child: MacTextField(controller: r.size, tabular: true)),
                         check(r.nullable && !r.pk, (v) => r.nullable = v, enabled: !r.pk, label: 'Null'),
                         const SizedBox(width: 6),
                         Expanded(
                           flex: 2,
-                          child: MacTextField(controller: r.def, enabled: !r.auto, small: true, mono: true),
+                          child: MacTextField(controller: r.def, enabled: !r.auto, mono: true),
                         ),
                         check(r.pk, (v) => r.pk = v, label: 'Chiave primaria'),
                         check(r.auto, (v) => r.auto = v, label: 'Auto-incremento'),

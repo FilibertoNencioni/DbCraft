@@ -172,11 +172,10 @@ class _ResultsViewerState extends State<ResultsViewer> {
                     ),
                     const SizedBox(width: Gap.xs),
                   ],
-                  PushButton(label: 'Annulla', size: ControlScale.small, onPressed: m.cancelChanges),
+                  PushButton(label: 'Annulla', onPressed: m.cancelChanges),
                   const SizedBox(width: Gap.xs),
                   PushButton.primary(
                     label: _saving ? 'Salvataggio…' : 'Salva',
-                    size: ControlScale.small,
                     tooltip: 'Salva le modifiche ($save)',
                     onPressed: _saving ? null : _save,
                   ),
@@ -314,6 +313,7 @@ class _ResultsViewerState extends State<ResultsViewer> {
             PulldownButton(
               label: m.isEditable ? 'Modifica valore' : 'Apri valore',
               tooltip: 'Apri un campo nell\'editor dei valori',
+              commandIcons: false,
               entries: () => [
                 for (var i = 0; i < m.columns.length; i++) MenuEntry(m.columns[i].name, onSelected: () => _openValue(i)),
               ],

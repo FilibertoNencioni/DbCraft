@@ -471,7 +471,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                       return dt == DriverTemplate.generic ? null : (dt.icon, dt.color);
                     },
                     actions: [
-                      if (canInstallDrivers) MenuEntry<String>('Installa driver…', onSelected: _openInstaller),
+                      if (canInstallDrivers) MenuEntry<String>('Installa driver…', icon: AppIcons.download, onSelected: _openInstaller),
                     ],
                     // Picking (or typing) a registered driver resets the port to its default.
                     onChanged: (v) {

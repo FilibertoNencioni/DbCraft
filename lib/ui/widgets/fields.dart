@@ -12,8 +12,8 @@ import 'menus.dart';
 
 const double _kLineHeight = 1.3;
 
-TextStyle _fieldText(DbColors c, {required bool small, required bool mono, bool tabular = false, Color? color}) {
-  final size = mono ? (small ? TypeSize.monoSmall : TypeSize.mono) : (small ? TypeSize.caption : TypeSize.body);
+TextStyle _fieldText(DbColors c, {required bool mono, bool tabular = false, Color? color}) {
+  final size = mono ? TypeSize.mono : TypeSize.body;
   if (mono) {
     return TextStyle(
       fontFamily: kMonoFamily,
@@ -27,7 +27,7 @@ TextStyle _fieldText(DbColors c, {required bool small, required bool mono, bool 
   return uiText(size, color: color ?? c.text, height: _kLineHeight, features: tabular ? kTabular : null);
 }
 
-/// AppKit text field (NSTextField, bezeled): 22pt (small 19), radius 5,
+/// AppKit text field (NSTextField, bezeled): 22pt, radius 5,
 /// content fill, 0.5pt hairline and the focus ring while editing.
 ///
 /// Variants: [mono] for SQL and values, multiline ([maxLines] > 1 or null),
@@ -42,7 +42,6 @@ class MacTextField extends StatelessWidget {
     this.controller,
     this.focusNode,
     this.hint,
-    this.small = false,
     this.mono = false,
     this.tabular = false,
     this.maxLines = 1,
@@ -72,7 +71,6 @@ class MacTextField extends StatelessWidget {
   final TextEditingController? controller;
   final FocusNode? focusNode;
   final String? hint;
-  final bool small;
   final bool mono;
 
   /// Fill the parent's (bounded) height; ignores [maxLines] and [minLines].
@@ -113,8 +111,8 @@ class MacTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final style = _fieldText(c, small: small, mono: mono, tabular: tabular, color: enabled ? color : c.textTertiary);
-    final h = small ? ControlSize.small : ControlSize.regular;
+    final style = _fieldText(c, mono: mono, tabular: tabular, color: enabled ? color : c.textTertiary);
+    const h = ControlSize.regular;
     final vPad = _multiline ? 4.0 : ((h - style.fontSize! * _kLineHeight) / 2).clamp(1.0, 8.0);
     final hasError = error != null;
     final line = hasError ? c.danger : c.controlBorder;
@@ -141,7 +139,7 @@ class MacTextField extends StatelessWidget {
     if (unit != null) {
       suffix = Padding(
         padding: const EdgeInsets.only(right: 6, left: 2),
-        child: Text(unit!, style: uiText(small ? TypeSize.caption : TypeSize.small, color: c.textSecondary)),
+        child: Text(unit!, style: uiText(TypeSize.small, color: c.textSecondary)),
       );
     }
 
@@ -495,7 +493,6 @@ class ComboField extends StatefulWidget {
     this.onChanged,
     this.onSelected,
     this.mono = false,
-    this.small = false,
     this.enabled = true,
     this.width,
     this.focusNode,
@@ -518,7 +515,6 @@ class ComboField extends StatefulWidget {
   /// A suggestion was chosen from the menu (after [onChanged]).
   final ValueChanged<String>? onSelected;
   final bool mono;
-  final bool small;
   final bool enabled;
   final double? width;
   final FocusNode? focusNode;
@@ -606,6 +602,7 @@ class _ComboFieldState extends State<ComboField> {
       context,
       anchor: rect,
       minWidth: rect.width,
+      commandIcons: false,
       entries: [
         for (final o in options) _entry(o),
         if (options.isNotEmpty && actions.isNotEmpty) const MenuEntry.divider(),
@@ -622,7 +619,7 @@ class _ComboFieldState extends State<ComboField> {
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final h = (widget.small ? ControlSize.small : ControlSize.regular) - 4;
+    const h = ControlSize.regular - 4;
     return KeyedSubtree(
       key: _key,
       child: CallbackShortcuts(
@@ -633,7 +630,6 @@ class _ComboFieldState extends State<ComboField> {
           hint: widget.hint,
           onChanged: _changed,
           mono: widget.mono,
-          small: widget.small,
           enabled: widget.enabled,
           width: widget.width,
           error: widget.error,
@@ -735,7 +731,7 @@ class PathField extends StatelessWidget {
             empty ? (hint ?? 'Nessun file') : path!,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: _fieldText(c, small: false, mono: mono, color: empty ? c.textTertiary : c.textSecondary),
+            style: _fieldText(c, mono: mono, color: empty ? c.textTertiary : c.textSecondary),
           ),
         ),
       );
@@ -757,16 +753,15 @@ class PathField extends StatelessWidget {
 
 /// NSStepper: 13×22 up/down arrows. Holding an arrow repeats.
 class MacStepper extends StatelessWidget {
-  const MacStepper({super.key, required this.onUp, required this.onDown, this.small = false});
+  const MacStepper({super.key, required this.onUp, required this.onDown});
 
   final VoidCallback? onUp;
   final VoidCallback? onDown;
-  final bool small;
 
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final h = small ? ControlSize.small : ControlSize.regular;
+    const h = ControlSize.regular;
     return Container(
       width: 13,
       height: h,
@@ -884,7 +879,6 @@ class NumberField extends StatefulWidget {
     this.focusNode,
     this.enabled = true,
     this.stepper = true,
-    this.small = false,
     this.error,
   });
 
@@ -902,7 +896,6 @@ class NumberField extends StatefulWidget {
   final FocusNode? focusNode;
   final bool enabled;
   final bool stepper;
-  final bool small;
   final String? error;
 
   @override
@@ -982,7 +975,6 @@ class _NumberFieldState extends State<NumberField> {
           controller: widget.controller,
           focusNode: _focus,
           hint: widget.hint,
-          small: widget.small,
           tabular: true,
           textAlign: TextAlign.right,
           enabled: widget.enabled,
@@ -1002,7 +994,6 @@ class _NumberFieldState extends State<NumberField> {
         if (widget.stepper) ...[
           const SizedBox(width: 3),
           MacStepper(
-            small: widget.small,
             onUp: widget.enabled ? () => _step(1) : null,
             onDown: widget.enabled ? () => _step(-1) : null,
           ),

@@ -940,7 +940,6 @@ class _ErDiagramViewState extends State<ErDiagramView> {
       PushButton.primary(
         label: 'Rivedi script…',
         icon: AppIcons.document,
-        size: ControlScale.small,
         onPressed: count > 0 ? _review : null,
       ),
     ],

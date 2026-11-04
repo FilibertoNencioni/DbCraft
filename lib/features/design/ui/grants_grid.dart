@@ -162,7 +162,6 @@ class _GrantsPageState extends State<GrantsPage> {
           children: [
             PopUpButton<GrantTarget>(
               value: _target,
-              small: true,
               items: [for (final t in _targets) (t, _plural(t), null)],
               onChanged: (t) {
                 _target = t;
@@ -173,7 +172,6 @@ class _GrantsPageState extends State<GrantsPage> {
               const SizedBox(width: Gap.sm),
               PopUpButton<String?>(
                 value: _catalog,
-                small: true,
                 tooltip: 'Database',
                 items: [for (final c in _catalogs) (c, c, (AppIcons.database, DbColors.of(context).textSecondary))],
                 onChanged: (c) async {
@@ -187,7 +185,6 @@ class _GrantsPageState extends State<GrantsPage> {
               const SizedBox(width: Gap.sm),
               PopUpButton<String?>(
                 value: _schema,
-                small: true,
                 tooltip: 'Schema',
                 items: [for (final s in _schemas) (s, s, (AppIcons.schema, DbColors.of(context).textSecondary))],
                 onChanged: (s) {

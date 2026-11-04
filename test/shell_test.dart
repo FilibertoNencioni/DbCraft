@@ -177,7 +177,7 @@ void main() {
     final toolbar = find.byWidgetPredicate((w) => w.runtimeType.toString() == '_AppToolbar');
     final newConnection = find.byWidgetPredicate((w) => w is ToolButton && w.icon == AppIcons.addLink);
 
-    testWidgets('sidebar toggle, toolbar inset and status bar follow the sidebar', (tester) async {
+    testWidgets('sidebar toggle and toolbar inset follow the sidebar', (tester) async {
       await _pumpShell(tester, await _fakeState(tester));
       final inset = trafficLightInset(false);
       expect(inset, Platform.isMacOS ? 88 : 0);
@@ -195,12 +195,6 @@ void main() {
       expect(bar.left, greaterThanOrEqualTo(side.right));
       expect(bar.height, BarHeight.toolbar);
       expect(tester.getRect(newConnection).left - bar.left, Gap.sm);
-      // The status bar runs under the content column only.
-      var status = tester.getRect(find.byType(StatusBar));
-      expect(status.left, bar.left);
-      expect(status.right, bar.right);
-      expect(status.left, greaterThanOrEqualTo(side.right));
-      expect(status.bottom, 900);
 
       // Hidden with the toolbar button: the toggle stays put, now over the
       // toolbar, which makes room for the traffic lights and the toggle.
@@ -217,9 +211,6 @@ void main() {
       final leading = inset + Gap.sm + ControlSize.toolbar + Gap.md;
       expect(tester.getRect(newConnection).left, leading);
       expect(t.right, lessThan(leading), reason: 'the toolbar content clears the toggle');
-      status = tester.getRect(find.byType(StatusBar));
-      expect(status.left, 0);
-      expect(status.right, bar.right);
       expect(
         find.byTooltip('Mostra barra laterale (${shortcutLabel(_cmd(LogicalKeyboardKey.digit0))})'),
         findsOneWidget,
@@ -232,12 +223,10 @@ void main() {
       await _slide(tester);
       side = tester.getRect(sidebar);
       bar = tester.getRect(toolbar);
-      status = tester.getRect(find.byType(StatusBar));
       expect(side.width, greaterThan(0));
       expect(bar.left, greaterThanOrEqualTo(side.right));
       expect(tester.getRect(newConnection).left - bar.left, Gap.sm);
       expect(tester.getRect(toggle).right, lessThanOrEqualTo(side.right));
-      expect(status.left, greaterThanOrEqualTo(side.right));
     }, variant: _mac);
   });
 }

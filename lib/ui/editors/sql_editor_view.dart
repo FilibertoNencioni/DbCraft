@@ -369,7 +369,6 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           label: 'Interrompi',
           icon: AppIcons.stop,
           kind: PushButtonKind.destructive,
-          size: ControlScale.small,
           tooltip: 'Interrompi esecuzione (${sc(LogicalKeyboardKey.period)})',
           onPressed: tab.cancel,
         )
@@ -377,7 +376,6 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         PushButton.primary(
           label: 'Esegui',
           icon: AppIcons.run,
-          size: ControlScale.small,
           tooltip: 'Esegui la selezione o, senza selezione, tutto lo script (${sc(LogicalKeyboardKey.enter)})',
           onPressed: _execute,
         ),
@@ -438,7 +436,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       _connectionButton(app, conn),
       if (conn != null && !conn.isConnected) ...[
         const SizedBox(width: Gap.xs),
-        PushButton(label: 'Connetti', size: ControlScale.small, onPressed: () => ensureConnected(context, conn)),
+        PushButton(label: 'Connetti', onPressed: () => ensureConnected(context, conn)),
       ],
       const SizedBox(width: Gap.xs),
       ToolButton(
@@ -607,7 +605,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
           title: 'L\'istruzione non è stata eseguita',
           actions: [
             if (r.sql != null && AppScope.read(context).settings.aiEnabled)
-              PushButton(label: 'Correggi con AI', icon: AppIcons.ai, size: ControlScale.small, onPressed: () => _aiFix(r)),
+              PushButton(label: 'Correggi con AI', icon: AppIcons.ai, onPressed: () => _aiFix(r)),
           ],
           child: CodeBox(r.error!, label: 'Messaggio del server', wrap: true),
         ),

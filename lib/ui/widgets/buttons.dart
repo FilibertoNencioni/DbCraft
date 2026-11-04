@@ -18,9 +18,11 @@ enum PushButtonKind {
 
 /// AppKit push button (NSButton, rounded bezel).
 ///
-/// 22pt high (small 19), radius 5, white bezel with a hairline and a soft
-/// drop shadow. The default button takes the accent fill and turns gray when
-/// the window is in the background.
+/// One size and one bezel for every push button, the look of "Annulla": 22pt
+/// high, radius 5, 13pt regular label, white bezel with a hairline and a soft
+/// drop shadow. The default button and the filled destructive one only swap
+/// the fill (flat accent or danger, gray when the window is in the
+/// background); a disabled button keeps the bezel and grays its label.
 class PushButton extends StatelessWidget {
   const PushButton({
     super.key,
@@ -28,7 +30,6 @@ class PushButton extends StatelessWidget {
     required this.onPressed,
     this.kind = PushButtonKind.normal,
     this.icon,
-    this.size = ControlScale.regular,
     this.tooltip,
     this.focusNode,
     this.autofocus = false,
@@ -43,7 +44,6 @@ class PushButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.icon,
-    this.size = ControlScale.regular,
     this.tooltip,
     this.focusNode,
     this.autofocus = false,
@@ -56,7 +56,6 @@ class PushButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final PushButtonKind kind;
   final IconData? icon;
-  final ControlScale size;
   final String? tooltip;
   final FocusNode? focusNode;
   final bool autofocus;
@@ -72,7 +71,7 @@ class PushButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final h = size == ControlScale.toolbar ? ControlSize.toolbar : size.height;
+    const size = ControlScale.regular;
     return Pressable(
       onPressed: onPressed,
       focusNode: focusNode,
@@ -97,34 +96,26 @@ class PushButton extends StatelessWidget {
         } else {
           fg = c.text;
         }
-        Color fill = disabled ? c.controlBackground.withValues(alpha: 0.6) : (accentFill ?? c.controlBackground);
+        Color fill = disabled ? c.controlBackground : (accentFill ?? c.controlBackground);
         if (down) fill = accentFill != null ? Color.lerp(fill, const Color(0xFF000000), 0.15)! : pressedFill(context, fill);
-        final gradient = accentFill != null && !disabled && !down
-            ? LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color.lerp(fill, const Color(0xFFFFFFFF), 0.12)!, fill],
-              )
-            : null;
         final text = Text(
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: uiText(size.fontSize, color: fg, weight: accentFill != null ? FontWeight.w500 : null),
+          style: uiText(size.fontSize, color: fg),
         );
         return FocusRing(
           visible: s.contains(WidgetState.focused),
           child: Container(
-            height: h,
+            height: size.height,
             constraints: BoxConstraints(minWidth: minWidth),
             width: expand ? double.infinity : null,
-            padding: EdgeInsets.symmetric(horizontal: size == ControlScale.small ? 8 : 11),
+            padding: const EdgeInsets.symmetric(horizontal: 11),
             decoration: BoxDecoration(
               color: fill,
-              gradient: gradient,
               borderRadius: BorderRadius.circular(Radii.control),
               border: accentFill != null && !dark ? null : Border.all(color: c.controlBorder, width: 0.5),
-              boxShadow: disabled ? null : Elevation.control(Theme.of(context).brightness),
+              boxShadow: Elevation.control(Theme.of(context).brightness),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -251,8 +242,8 @@ class ToolSeparator extends StatelessWidget {
 /// small ⌄ that opens a [showMacMenu] of commands. The title never changes
 /// with the choice; use [PopUpButton] for picking a value.
 ///
-/// [bordered] draws a permanent push-button bezel (window toolbar); inline
-/// pull-downs are borderless until hovered.
+/// [bordered] draws the [PushButton] bezel (same height, label and shadow);
+/// inline pull-downs are borderless until hovered.
 class PulldownButton extends StatelessWidget {
   const PulldownButton({
     super.key,
@@ -263,6 +254,7 @@ class PulldownButton extends StatelessWidget {
     this.bordered = false,
     this.extent = ControlSize.regular,
     this.enabled = true,
+    this.commandIcons = true,
   }) : assert(icon != null || label != null);
 
   /// Built when the menu opens, so it reflects the current state.
@@ -274,20 +266,28 @@ class PulldownButton extends StatelessWidget {
   final double extent;
   final bool enabled;
 
+  /// Standard command glyphs in the menu ([showMacMenu]); off for menus
+  /// that list places or values (pages, columns).
+  final bool commandIcons;
+
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return Builder(
       builder: (anchor) => Pressable(
         tooltip: tooltip,
         semanticLabel: label ?? tooltip,
         focusable: bordered,
-        onPressed: enabled ? () => showMacMenu<Object?>(anchor, anchor: anchorRect(anchor), entries: entries()) : null,
+        onPressed: enabled ? () => showMacMenu<Object?>(
+                anchor,
+                anchor: anchorRect(anchor),
+                entries: entries(),
+                commandIcons: commandIcons,
+              ) : null,
         builder: (context, s) {
           final disabled = s.contains(WidgetState.disabled);
           final down = s.contains(WidgetState.pressed);
-          final fg = disabled ? c.textTertiary : (label != null ? c.text : c.textSecondary);
+          final fg = disabled ? c.textTertiary : (label != null || bordered ? c.text : c.textSecondary);
           final Color bg;
           if (bordered) {
             bg = down ? pressedFill(context, c.controlBackground) : c.controlBackground;
@@ -301,22 +301,26 @@ class PulldownButton extends StatelessWidget {
           return FocusRing(
             visible: s.contains(WidgetState.focused),
             child: Container(
-              height: extent,
-              constraints: BoxConstraints(minWidth: extent),
-              padding: EdgeInsets.only(left: label == null ? 4 : 8, right: 4),
+              height: bordered ? ControlSize.regular : extent,
+              constraints: BoxConstraints(minWidth: bordered ? ControlSize.regular : extent),
+              padding: EdgeInsets.only(left: bordered ? 11 : (label == null ? 4 : 8), right: bordered ? 8 : 4),
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(Radii.control),
                 border: bordered ? Border.all(color: c.controlBorder, width: 0.5) : null,
-                boxShadow: bordered && !dark ? Elevation.control(Brightness.light) : null,
+                boxShadow: bordered ? Elevation.control(Theme.of(context).brightness) : null,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (icon != null) Icon(icon, size: ToolButton.glyphFor(extent), color: fg),
+                  if (icon != null)
+                    Icon(icon, size: bordered ? ControlScale.regular.iconSize : ToolButton.glyphFor(extent), color: fg),
                   if (icon != null && label != null) const SizedBox(width: 5),
                   if (label != null)
-                    Text(label!, style: uiText(extent >= ControlSize.toolbar ? TypeSize.body : TypeSize.small, color: fg)),
+                    Text(
+                      label!,
+                      style: uiText(bordered || extent >= ControlSize.toolbar ? TypeSize.body : TypeSize.small, color: fg),
+                    ),
                   const SizedBox(width: 3),
                   Icon(AppIcons.chevronDown, size: 9, color: disabled ? c.textTertiary : c.textSecondary),
                 ],

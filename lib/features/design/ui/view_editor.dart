@@ -127,7 +127,6 @@ class _ViewDefinitionPageState extends State<ViewDefinitionPage> {
         ),
       if (checkOk)
         PopUpButton<ViewCheckOption>(
-          small: true,
           value: w.checkOption,
           items: [
             (ViewCheckOption.none, 'Senza CHECK OPTION', null),
@@ -173,7 +172,6 @@ class _ViewDefinitionPageState extends State<ViewDefinitionPage> {
         ),
       if (family == DbFamily.mysql) ...[
         PopUpButton<String?>(
-          small: true,
           value: w.algorithm,
           items: const [
             (null, 'ALGORITHM predefinito', null),
@@ -184,7 +182,6 @@ class _ViewDefinitionPageState extends State<ViewDefinitionPage> {
           onChanged: ro ? null : (v) => set(w.copyWith(algorithm: v)),
         ),
         PopUpButton<String?>(
-          small: true,
           value: w.sqlSecurity,
           items: const [
             (null, 'SQL SECURITY predefinita', null),
@@ -208,7 +205,6 @@ class _ViewDefinitionPageState extends State<ViewDefinitionPage> {
                 width: 240,
                 child: MacTextField(
                   controller: _name,
-                  small: true,
                   autofocus: d.isNew,
                   readOnly: ro,
                   hint: 'nome della vista',
@@ -222,7 +218,6 @@ class _ViewDefinitionPageState extends State<ViewDefinitionPage> {
                 Expanded(
                   child: MacTextField(
                     controller: _comment,
-                    small: true,
                     readOnly: ro,
                     onChanged: (v) => set(w.copyWith(comment: v.trim().isEmpty ? null : v)),
                   ),

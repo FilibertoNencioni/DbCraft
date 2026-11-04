@@ -228,7 +228,6 @@ class _PackageViewState extends State<_PackageView> {
                 PushButton.primary(
                   label: tab.isNew ? 'Crea' : 'Salva',
                   icon: AppIcons.save,
-                  size: ControlScale.small,
                   tooltip: ro ? 'Connessione in sola lettura' : 'Compila specifica e corpo (${shortcutLabel(save)})',
                   onPressed: ro || !tab.isDirty ? null : () => tab.save(context),
                 ),

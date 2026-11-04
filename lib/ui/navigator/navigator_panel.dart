@@ -92,7 +92,6 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   NavNode? _selected;
   final Map<DbConnection, ConnectionStatus> _lastStatus = {};
   final Map<DbConnection, int> _lastGeneration = {};
-  bool _collapsed = false;
 
   // Drag and drop of connections and folders.
   NavNode? _dragging;
@@ -322,8 +321,6 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         SectionLabel(
           'Connessioni',
           padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
-          expanded: !_collapsed,
-          onToggle: (v) => setState(() => _collapsed = !v),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -349,43 +346,40 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
             ],
           ),
         ),
-        if (!_collapsed) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(Gap.sm, 2, Gap.sm, Gap.sm),
-            child: SearchField(
-              controller: _filter,
-              hint: 'Filtra tabelle e procedure',
-              onChanged: (_) => setState(() {}),
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(Gap.sm, 2, Gap.sm, Gap.sm),
+          child: SearchField(
+            controller: _filter,
+            hint: 'Filtra tabelle e procedure',
+            onChanged: (_) => setState(() {}),
           ),
-          Expanded(
-            child: app.connections.isEmpty
-                ? _empty()
-                : CallbackShortcuts(
-                    bindings: {
-                      const SingleActivator(LogicalKeyboardKey.f5): () {
-                        if (_selected != null) _refresh(_selected!);
-                      },
-                      _createKey: _createInContext,
+        ),
+        Expanded(
+          child: app.connections.isEmpty
+              ? _empty()
+              : CallbackShortcuts(
+                  bindings: {
+                    const SingleActivator(LogicalKeyboardKey.f5): () {
+                      if (_selected != null) _refresh(_selected!);
                     },
-                    child: _topLevelTarget(
-                      SourceList(
-                        focusNode: _focus,
-                        controller: _scroll,
-                        // While dragging, room below the rows for the top level.
-                        padding: EdgeInsets.fromLTRB(10, 0, 10, Gap.md + (_dragging == null ? 0 : kSidebarRowHeight)),
-                        itemCount: visible.length,
-                        selectedIndex: sel < 0 ? null : sel,
-                        onSelect: (i) => setState(() => _selected = visible[i].node),
-                        onExpand: (i, expand) => expand ? _expand(visible[i].node) : _collapse(visible[i].node),
-                        onActivate: (i) => _open(visible[i].node),
-                        itemBuilder: (context, i) => _row(context, visible[i]),
-                      ),
+                    _createKey: _createInContext,
+                  },
+                  child: _topLevelTarget(
+                    SourceList(
+                      focusNode: _focus,
+                      controller: _scroll,
+                      // While dragging, room below the rows for the top level.
+                      padding: EdgeInsets.fromLTRB(10, 0, 10, Gap.md + (_dragging == null ? 0 : kSidebarRowHeight)),
+                      itemCount: visible.length,
+                      selectedIndex: sel < 0 ? null : sel,
+                      onSelect: (i) => setState(() => _selected = visible[i].node),
+                      onExpand: (i, expand) => expand ? _expand(visible[i].node) : _collapse(visible[i].node),
+                      onActivate: (i) => _open(visible[i].node),
+                      itemBuilder: (context, i) => _row(context, visible[i]),
                     ),
                   ),
-          ),
-        ] else
-          const Spacer(),
+                ),
+        ),
       ],
     );
   }
@@ -435,7 +429,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       titleColor: n.error != null ? c.danger : null,
       accessories: [
         if (dc != null && dc.config.type != ConnectionType.development)
-          EnvDot(dc.config.type.colorOf(c), show: true, tooltip: dc.config.type.label),
+          Tag(dc.config.type.shortLabel, color: dc.config.type.colorOf(c), tooltip: dc.config.type.label),
         if (n.error != null)
           Builder(
             builder: (context) => Icon(
@@ -793,7 +787,15 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     final i = _createIndex(items);
     if (i < 0) return items;
     final e = items[i];
-    return [...items]..[i] = MenuEntry(e.label, onSelected: e.onSelected, enabled: e.enabled, shortcut: _createKey);
+    return [...items]
+      ..[i] = MenuEntry(
+        e.label,
+        onSelected: e.onSelected,
+        enabled: e.enabled,
+        shortcut: _createKey,
+        icon: e.icon,
+        destructive: e.destructive,
+      );
   }
 
   /// ⌥⌘N: creates an object where the selected node is (a table in a

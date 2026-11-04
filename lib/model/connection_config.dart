@@ -12,12 +12,15 @@ enum ConnectionMode { dsn, driver, connectionString, native }
 /// Connection "type" like in DBeaver: drives colors and safety checks. The
 /// UI color comes from the theme (`ConnectionTypeColor.colorOf`).
 enum ConnectionType {
-  development('Sviluppo', false),
-  test('Test', false),
-  production('Produzione', true);
+  development('Sviluppo', 'Dev', false),
+  test('Test', 'Test', false),
+  production('Produzione', 'Prod', true);
 
-  const ConnectionType(this.label, this.confirmExecute);
+  const ConnectionType(this.label, this.shortLabel, this.confirmExecute);
   final String label;
+
+  /// Label of the environment `Tag` in dense rows (navigator).
+  final String shortLabel;
 
   /// Ask for confirmation before running data modifying statements.
   final bool confirmExecute;

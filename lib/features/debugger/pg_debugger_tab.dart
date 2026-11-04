@@ -494,7 +494,6 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
             label: 'Stop',
             icon: AppIcons.stop,
             kind: PushButtonKind.destructive,
-            size: ControlScale.small,
             tooltip: 'Interrompi il debug (⇧F5)',
             onPressed: sm.canStop ? ctl.stop : null,
           )
@@ -502,7 +501,6 @@ class _PgDebuggerViewState extends State<PgDebuggerView> {
           PushButton.primary(
             label: 'Avvia',
             icon: AppIcons.run,
-            size: ControlScale.small,
             tooltip: 'Avvia il debug (F5)',
             onPressed: _start,
           ),

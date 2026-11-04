@@ -223,6 +223,7 @@ class _ColumnList extends StatelessWidget {
             icon: AppIcons.add,
             label: 'Aggiungi colonna',
             tooltip: 'Aggiungi una colonna',
+            commandIcons: false,
             entries: () => [
               for (final col in remaining)
                 MenuEntry<Object?>(col.name, onSelected: () => onChanged([...selected, col.name])),

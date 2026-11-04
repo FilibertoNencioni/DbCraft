@@ -225,8 +225,8 @@ class _ControlGalleryState extends State<ControlGallery> {
       const PushButton(label: 'Disabilitato', onPressed: null),
     ]),
     _Row([
-      PushButton.primary(label: 'Esegui', icon: AppIcons.run, size: ControlScale.small, onPressed: () {}),
-      PushButton(label: 'Commit (2)', size: ControlScale.small, onPressed: () {}),
+      PushButton.primary(label: 'Esegui', icon: AppIcons.run, onPressed: () {}),
+      PushButton(label: 'Commit (2)', onPressed: () {}),
       PushButton(label: 'Prova connessione', icon: AppIcons.plug, onPressed: () {}),
       PushButton(label: 'Interrompi', icon: AppIcons.stop, kind: PushButtonKind.destructive, onPressed: () {}),
     ]),
@@ -242,7 +242,7 @@ class _ControlGalleryState extends State<ControlGallery> {
     _Row([
       PulldownButton(icon: AppIcons.more, tooltip: 'Altre azioni', entries: _menuEntries),
       PulldownButton(icon: AppIcons.ai, label: 'AI', entries: _menuEntries),
-      PulldownButton(label: 'Esporta', bordered: true, extent: ControlSize.toolbar, entries: _menuEntries),
+      PulldownButton(label: 'Esporta', bordered: true, entries: _menuEntries),
       LinkButton(label: 'Dettagli…', onPressed: () {}),
       LinkButton(label: 'Carica altri', small: true, onPressed: () {}),
     ]),
@@ -260,8 +260,8 @@ class _ControlGalleryState extends State<ControlGallery> {
     MenuEntry('Disabilitato', enabled: false),
     MenuEntry.divider(),
     MenuEntry.header('Vista'),
-    MenuEntry('Griglia', checked: true),
-    MenuEntry('Record'),
+    MenuEntry('Griglia', icon: AppIcons.grid, checked: true),
+    MenuEntry('Record', icon: AppIcons.rows),
     MenuEntry.submenu('Esporta', children: [MenuEntry('CSV'), MenuEntry('JSON'), MenuEntry('Excel')]),
     MenuEntry.divider(),
     MenuEntry('Elimina riga', destructive: true, shortcut: SingleActivator(LogicalKeyboardKey.backspace, meta: true)),
@@ -272,7 +272,6 @@ class _ControlGalleryState extends State<ControlGallery> {
       const MacTextField(hint: 'Nome del database', width: 200),
       MacTextField(controller: TextEditingController(text: 'localhost'), width: 160),
       const MacTextField(hint: 'Disabilitato', enabled: false, width: 140),
-      const MacTextField(hint: 'Piccolo', small: true, width: 120),
     ]),
     _Row([
       const MacTextField(hint: 'id > 10', token: 'WHERE', mono: true, width: 240),
@@ -666,7 +665,6 @@ class _ControlGalleryState extends State<ControlGallery> {
                   ? PopUpButton<String>(
                       value: 'Vendite',
                       style: PopUpStyle.inline,
-                      small: true,
                       items: const [('Vendite', 'Vendite', null), ('IT', 'IT', null)],
                       onChanged: (_) {},
                     )
@@ -791,7 +789,7 @@ class _ControlGalleryState extends State<ControlGallery> {
         (loading, set) => PaneBar(
           loading: loading,
           children: [
-            PushButton.primary(label: 'Esegui', icon: AppIcons.run, size: ControlScale.small, onPressed: () => set(!loading)),
+            PushButton.primary(label: 'Esegui', icon: AppIcons.run, onPressed: () => set(!loading)),
             const SizedBox(width: Gap.xs),
             ToolButton(icon: AppIcons.tree, tooltip: 'Piano di esecuzione', onPressed: () {}),
             const ToolSeparator(),
@@ -858,7 +856,7 @@ class _ControlGalleryState extends State<ControlGallery> {
       Notice(
         title: 'OpenSSL non trovato',
         message: 'Il driver richiede libssl 3. Installalo con Homebrew.',
-        actions: [PushButton(label: 'Copia comando', size: ControlScale.small, onPressed: () {})],
+        actions: [PushButton(label: 'Copia comando', onPressed: () {})],
         child: const CodeBox('brew install openssl@3'),
       ),
       const SizedBox(height: Gap.md),
@@ -872,7 +870,7 @@ class _ControlGalleryState extends State<ControlGallery> {
         title: 'Scansione completa su ordini',
         message: 'Un indice su (cliente_id, data) eviterebbe di leggere 1,2 milioni di righe.',
         actions: [
-          PushButton(label: 'Crea indice', size: ControlScale.small, onPressed: () {}),
+          PushButton(label: 'Crea indice', onPressed: () {}),
           LinkButton(label: 'Dettagli…', small: true, onPressed: () {}),
         ],
       ),

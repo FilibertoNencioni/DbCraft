@@ -216,13 +216,12 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
             const SizedBox(width: Gap.sm),
             PushButton(
               label: 'Registra',
-              size: ControlScale.small,
               tooltip: 'Aggiunge ${pkg.driverName} a odbcinst.ini',
               onPressed: busy ? null : run,
             ),
           ],
         ),
-        DriverStatus.missing => PushButton(label: 'Installa', size: ControlScale.small, onPressed: busy ? null : run),
+        DriverStatus.missing => PushButton(label: 'Installa', onPressed: busy ? null : run),
       };
     }
     return ListRow(
@@ -271,7 +270,6 @@ class _DriverInstallTabState extends State<DriverInstallTab> {
               PushButton(
                 label: 'Interrompi',
                 kind: PushButtonKind.destructive,
-                size: ControlScale.small,
                 tooltip: 'Interrompi l\'installazione',
                 onPressed: () => _active?.cancel(),
               ),

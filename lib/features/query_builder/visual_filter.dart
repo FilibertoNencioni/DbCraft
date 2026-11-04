@@ -202,6 +202,7 @@ class _SortButton extends StatelessWidget {
       icon: cur == null ? AppIcons.swapVertical : (cur.descending ? AppIcons.arrowDown : AppIcons.arrowUp),
       label: cur == null ? 'Ordina' : cur.column,
       tooltip: 'Ordina',
+      commandIcons: false,
       entries: () => [
         MenuEntry('Nessun ordinamento', checked: cur == null, onSelected: () => onChanged(null)),
         const MenuEntry.divider(),

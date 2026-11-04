@@ -598,7 +598,6 @@ class _TableEditorViewState extends State<TableEditorView> {
       PushButton.primary(
         label: v.isNew ? 'Crea vista' : 'Salva',
         icon: AppIcons.save,
-        size: ControlScale.small,
         tooltip: v.errors.isNotEmpty ? v.errors.first : 'Mostra lo script ed esegue le modifiche',
         onPressed: v.isDirty && v.errors.isEmpty ? () => saveViewDesign(context, tab) : null,
       ),
@@ -636,7 +635,6 @@ class _TableEditorViewState extends State<TableEditorView> {
       PushButton.primary(
         label: d.isNew ? 'Crea tabella' : 'Salva',
         icon: AppIcons.save,
-        size: ControlScale.small,
         tooltip: d.errors.isNotEmpty ? d.errors.first : 'Mostra lo script ed esegue le modifiche (${shortcutLabel(save)})',
         onPressed: d.isDirty && d.errors.isEmpty ? () => saveTableDesign(context, tab) : null,
       ),
@@ -657,6 +655,7 @@ class _TableEditorViewState extends State<TableEditorView> {
         icon: AppIcons.info,
         label: 'Dettagli',
         tooltip: 'Dettagli della tabella',
+        commandIcons: false,
         entries: () => [
           for (final i in const [0, 2, 3, 4, 6])
             MenuEntry<Object?>(_pageNames[i], checked: cur == i, onSelected: () => _setPage(i)),
@@ -762,7 +761,6 @@ class _TableEditorViewState extends State<TableEditorView> {
                 flex: 3,
                 child: MacTextField(
                   controller: _where,
-                  small: true,
                   mono: true,
                   token: 'WHERE',
                   hint: "id > 10 AND nome LIKE 'A%'",
@@ -773,7 +771,6 @@ class _TableEditorViewState extends State<TableEditorView> {
               Expanded(
                 child: MacTextField(
                   controller: _order,
-                  small: true,
                   mono: true,
                   token: 'ORDER BY',
                   hint: 'colonna DESC',
@@ -781,7 +778,7 @@ class _TableEditorViewState extends State<TableEditorView> {
                 ),
               ),
               const SizedBox(width: Gap.sm),
-              PushButton(label: 'Applica', size: ControlScale.small, onPressed: _loadData),
+              PushButton(label: 'Applica', onPressed: _loadData),
               const SizedBox(width: Gap.xs),
               ToolButton(icon: AppIcons.tune, tooltip: 'Filtro visuale', onPressed: () => _setVisual(true)),
               ToolButton(

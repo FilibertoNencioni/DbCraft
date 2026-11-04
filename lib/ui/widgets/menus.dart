@@ -59,10 +59,12 @@ enum _EntryKind { item, divider, header, submenu }
 /// One row of a [showMacMenu] menu.
 ///
 /// Items carry a [value] (returned by [showMacMenu]) and/or an [onSelected]
-/// callback (run after the menu closes). Sonoma menus show state, not action
-/// icons: [checked] puts a ✓ in the left column. [leading] has its own column
-/// after it, for small state marks (a connection's status dot) and for the
-/// images of value menus (driver icons in a pop-up), as NSPopUpButton does.
+/// callback (run after the menu closes). [checked] puts a ✓ in the left
+/// column. The column after it holds either an action [icon] (macOS 26
+/// menus: a 16pt glyph in the label color, red with the label for
+/// [destructive] items) or a [leading] widget: small state marks (a
+/// connection's status dot) and the images of value menus (driver icons in
+/// a pop-up), as NSPopUpButton does.
 class MenuEntry<T> {
   const MenuEntry(
     this.label, {
@@ -72,6 +74,7 @@ class MenuEntry<T> {
     this.checked = false,
     this.enabled = true,
     this.destructive = false,
+    this.icon,
     this.leading,
     this.trailing,
   }) : _kind = _EntryKind.item,
@@ -86,6 +89,7 @@ class MenuEntry<T> {
       checked = false,
       enabled = false,
       destructive = false,
+      icon = null,
       leading = null,
       trailing = null,
       children = const [];
@@ -99,11 +103,12 @@ class MenuEntry<T> {
       checked = false,
       enabled = false,
       destructive = false,
+      icon = null,
       leading = null,
       trailing = null,
       children = const [];
 
-  const MenuEntry.submenu(this.label, {required this.children, this.enabled = true})
+  const MenuEntry.submenu(this.label, {required this.children, this.enabled = true, this.icon})
     : _kind = _EntryKind.submenu,
       value = null,
       onSelected = null,
@@ -139,18 +144,130 @@ class MenuEntry<T> {
   final SingleActivator? shortcut;
   final bool checked;
   final bool enabled;
+  /// Red label and icon: Elimina, Rimuovi, Svuota, Disconnetti tutto.
   final bool destructive;
+
+  /// Action glyph before the label.
+  final IconData? icon;
+
+  /// Custom mark before the label (status dot, driver image); wins over [icon].
   final Widget? leading;
   final Widget? trailing;
   final List<MenuEntry<T>> children;
 
   bool get _selectable => enabled && (_kind == _EntryKind.item || _kind == _EntryKind.submenu);
 
+  IconData? _iconFor(bool commandIcons) =>
+      icon ?? (commandIcons && _kind != _EntryKind.divider && _kind != _EntryKind.header ? standardMenuIcon(label) : null);
+
+  bool _destructiveFor(bool commandIcons) => destructive || (commandIcons && isDestructiveCommand(label));
+
   double get _height => switch (_kind) {
     _EntryKind.divider => _kDividerHeight,
     _ => _kItemHeight,
   };
 }
+
+/// Glyphs of the common commands, matched on the label (without "…") as a
+/// whole or on its first words, most specific first. macOS 26 gives the
+/// standard menu items their symbol the same way, so a command looks the
+/// same in every menu. A null glyph keeps a command bare (it would
+/// otherwise match a shorter prefix).
+const List<(String, IconData?)> _commandIcons = [
+  ('Nuovo editor SQL', AppIcons.newScript),
+  ('Nuova cartella', AppIcons.newFolder),
+  ('Nuovo', AppIcons.add),
+  ('Nuova', AppIcons.add),
+  ('Crea', AppIcons.add),
+  ('Apri tabella', AppIcons.link),
+  ('Apri', AppIcons.openExternal),
+  ('Visualizza dati', AppIcons.table),
+  ('Visualizza', AppIcons.eye),
+  ('Leggi in editor SQL', AppIcons.script),
+  ('Query builder', AppIcons.join),
+  ('Diagramma ER', AppIcons.erDiagram),
+  ('Prestazioni', AppIcons.performance),
+  ('Informazioni', AppIcons.info),
+  ('Proprietà', AppIcons.info),
+  ('Utenti e ruoli', AppIcons.group),
+  ('Sicurezza a livello di riga', AppIcons.security),
+  ('Connetti', AppIcons.connect),
+  ('Disconnetti', AppIcons.disconnect),
+  ('Riconnetti', AppIcons.replay),
+  ('Modifica sorgente', AppIcons.code),
+  ('Modifica definizione', AppIcons.code),
+  ('Modifica struttura', AppIcons.tune),
+  ('Modifica', AppIcons.edit),
+  ('Duplica', AppIcons.duplicate),
+  ('Sposta su', AppIcons.arrowUp),
+  ('Sposta giù', AppIcons.arrowDown),
+  ('Sposta in', AppIcons.folder),
+  ('Rinomina', AppIcons.rename),
+  ('Elimina', AppIcons.delete),
+  ('Svuota', AppIcons.clearAll),
+  ('Aggiorna', AppIcons.refresh),
+  ('Copia link', AppIcons.link),
+  ('Copia', AppIcons.copy),
+  ('Incolla', AppIcons.paste),
+  ('Genera SQL da una descrizione', AppIcons.ai),
+  ('Genera dati di test', AppIcons.random),
+  ('Genera', AppIcons.code),
+  ('Esporta', AppIcons.share),
+  ('Importa', AppIcons.download),
+  ('Scarica', AppIcons.download),
+  ('Carica altri', null),
+  ('Carica', AppIcons.upload),
+  ('Salva', AppIcons.save),
+  ('Confronta', AppIcons.compare),
+  ('Conta righe', AppIcons.number),
+  ('Spiega', AppIcons.ai),
+  ('Chat', AppIcons.ai),
+  ('Correggi', AppIcons.fix),
+  ('Debug', AppIcons.debug),
+  ('Imposta come predefinito', AppIcons.checkCircle),
+  ('Abilita', AppIcons.checkCircle),
+  ('Disabilita', AppIcons.block),
+  ('Valida', AppIcons.checkCircle),
+  ('Ricostruisci', AppIcons.replay),
+  ('Chiave primaria', AppIcons.key),
+  ('Chiave esterna', AppIcons.link),
+  ('Termina sessione', AppIcons.stopCircle),
+  ('Annulla query', AppIcons.stop),
+  ('Rendi visibile', AppIcons.eye),
+  ('Nascondi', AppIcons.eyeOff),
+  ('Sincronizza', AppIcons.sync),
+  ('Impostazioni', AppIcons.settings),
+  ('Pull', AppIcons.download),
+  ('Push', AppIcons.upload),
+  ('Collega', AppIcons.link),
+  ('Mostra le differenze', AppIcons.diff),
+  ('Mostra le modifiche', AppIcons.diff),
+  ('Installa', AppIcons.download),
+  ('Chiudi', AppIcons.close),
+  ('Ordina', AppIcons.sort),
+  ('Filtra', AppIcons.filter),
+  ('Aggiungi riga', AppIcons.addList),
+  ('Seleziona colonna', AppIcons.column),
+  ('Adatta larghezza', AppIcons.widthNormal),
+  ('Selezione in', AppIcons.text),
+  ('Formatta', AppIcons.format),
+  ('Esegui', AppIcons.run),
+  ('Riprendi', AppIcons.run),
+  ('Espressione', AppIcons.function),
+];
+
+/// The glyph of a common command ("Copia nome" → copy), or null.
+IconData? standardMenuIcon(String label) {
+  final l = label.endsWith('…') ? label.substring(0, label.length - 1) : label;
+  for (final (prefix, icon) in _commandIcons) {
+    if (l == prefix || l.startsWith('$prefix ') || l.startsWith('$prefix(')) return icon;
+  }
+  return null;
+}
+
+/// Commands that destroy data or objects, shown in red even when the caller
+/// did not mark them [MenuEntry.destructive]: Elimina…, Svuota (TRUNCATE)….
+bool isDestructiveCommand(String label) => label.startsWith('Elimina') || label.startsWith('Svuota');
 
 const double _kItemHeight = 22;
 const double _kDividerHeight = 11;
@@ -159,6 +276,7 @@ const double _kCheckColumn = 18;
 
 /// Icon or status mark before the label (16pt glyph plus a gap).
 const double _kLeadingColumn = 22;
+const double _kIconSize = 16;
 const double _kScreenMargin = 6;
 
 /// Global rect of the widget that owns [context] (anchor for menus and
@@ -177,6 +295,10 @@ Rect anchorRect(BuildContext context) {
 ///
 /// Keyboard: ↑↓ move, → opens a submenu and ← closes it, Invio or Spazio
 /// choose, Esc closes, typing jumps to the first matching item.
+///
+/// [commandIcons] gives action items without an explicit icon the glyph of
+/// their command ([standardMenuIcon]) and paints Elimina/Svuota items red;
+/// value menus (pop-ups, combo fields, path bars) turn it off.
 Future<T?> showMacMenu<T>(
   BuildContext context, {
   Offset? position,
@@ -185,6 +307,7 @@ Future<T?> showMacMenu<T>(
   T? initial,
   double minWidth = 0,
   bool alignInitial = true,
+  bool commandIcons = true,
 }) async {
   assert(position != null || anchor != null);
   if (entries.isEmpty) return null;
@@ -198,6 +321,7 @@ Future<T?> showMacMenu<T>(
       initialIndex: initialIndex,
       alignInitial: alignInitial && anchor != null && initialIndex >= 0,
       minWidth: minWidth,
+      commandIcons: commandIcons,
       capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
     ),
   );
@@ -214,6 +338,7 @@ class _MacMenuRoute<T> extends PopupRoute<MenuEntry<T>> {
     required this.initialIndex,
     required this.alignInitial,
     required this.minWidth,
+    required this.commandIcons,
     required this.capturedThemes,
   });
 
@@ -223,6 +348,7 @@ class _MacMenuRoute<T> extends PopupRoute<MenuEntry<T>> {
   final int initialIndex;
   final bool alignInitial;
   final double minWidth;
+  final bool commandIcons;
   final CapturedThemes capturedThemes;
 
   @override
@@ -261,9 +387,10 @@ class _MacMenuRoute<T> extends PopupRoute<MenuEntry<T>> {
 }
 
 class _Level<T> {
-  _Level(this.entries, this.layout, {this.highlight = -1});
+  _Level(this.entries, this.layout, {this.highlight = -1, this.commandIcons = true});
   final List<MenuEntry<T>> entries;
   final _MenuLayout layout;
+  final bool commandIcons;
   int highlight;
   final keys = <int, GlobalKey>{};
 }
@@ -292,7 +419,9 @@ class _MenuStackState<T> extends State<_MenuStack<T>> {
         : r.anchor != null
         ? _MenuLayout.below(r.anchor!, r.minWidth)
         : _MenuLayout.at(r.position!, r.minWidth);
-    _levels = [_Level<T>(r.entries, layout, highlight: r.alignInitial ? r.initialIndex : -1)];
+    _levels = [
+      _Level<T>(r.entries, layout, highlight: r.alignInitial ? r.initialIndex : -1, commandIcons: r.commandIcons),
+    ];
   }
 
   @override
@@ -325,7 +454,7 @@ class _MenuStackState<T> extends State<_MenuStack<T>> {
     final rect = box.localToGlobal(Offset.zero) & box.size;
     setState(() {
       _levels.removeRange(level + 1, _levels.length);
-      _levels.add(_Level<T>(e.children, _MenuLayout.beside(rect)));
+      _levels.add(_Level<T>(e.children, _MenuLayout.beside(rect), commandIcons: widget.route.commandIcons));
     });
   }
 
@@ -531,7 +660,8 @@ class _MenuPanel<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final entries = level.entries;
     final checkColumn = entries.any((e) => e.checked);
-    final leadingColumn = entries.any((e) => e.leading != null);
+    final icons = level.commandIcons;
+    final leadingColumn = entries.any((e) => e.leading != null || e._iconFor(icons) != null);
     return Container(
       decoration: menuDecoration(context),
       constraints: const BoxConstraints(minWidth: 120),
@@ -550,6 +680,7 @@ class _MenuPanel<T> extends StatelessWidget {
                     highlighted: level.highlight == i,
                     checkColumn: checkColumn,
                     leadingColumn: leadingColumn,
+                    commandIcons: icons,
                     onHover: () => onHover(i),
                     onTap: () => entries[i]._kind == _EntryKind.submenu ? onOpenSubmenu(i) : onChoose(entries[i]),
                   ),
@@ -569,6 +700,7 @@ class _MenuRow<T> extends StatelessWidget {
     required this.highlighted,
     required this.checkColumn,
     required this.leadingColumn,
+    required this.commandIcons,
     required this.onHover,
     required this.onTap,
   });
@@ -577,6 +709,7 @@ class _MenuRow<T> extends StatelessWidget {
   final bool highlighted;
   final bool checkColumn;
   final bool leadingColumn;
+  final bool commandIcons;
   final VoidCallback onHover;
   final VoidCallback onTap;
 
@@ -608,7 +741,7 @@ class _MenuRow<T> extends StatelessWidget {
         ? c.textTertiary
         : on
         ? c.onAccent
-        : (entry.destructive ? c.danger : c.text);
+        : (entry._destructiveFor(commandIcons) ? c.danger : c.text);
     final secondary = on ? c.onAccent.withValues(alpha: 0.85) : c.textSecondary;
     return MouseRegion(
       onEnter: (_) => onHover(),
@@ -637,9 +770,14 @@ class _MenuRow<T> extends StatelessWidget {
                 if (leadingColumn)
                   SizedBox(
                     width: _kLeadingColumn,
-                    child: entry.leading == null
-                        ? null
-                        : Align(alignment: Alignment.centerLeft, child: entry.leading),
+                    child: switch ((entry.leading, entry._iconFor(commandIcons))) {
+                      (final Widget w, _) => Align(alignment: Alignment.centerLeft, child: w),
+                      (null, final IconData i) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: Icon(i, size: _kIconSize, color: fg),
+                      ),
+                      _ => null,
+                    },
                   ),
                 Expanded(
                   child: Text(
@@ -733,32 +871,38 @@ class _PopoverRoute<T> extends PopupRoute<T> {
   Duration get transitionDuration => const Duration(milliseconds: 120);
 
   @override
-  Widget buildPage(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation) {
-    final c = DbColors.of(context);
-    final body = Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: c.raised,
-        borderRadius: BorderRadius.circular(Radii.sheet),
-        border: Border.all(color: c.separator, width: 0.5),
-        boxShadow: Elevation.popover(Theme.of(context).brightness),
-      ),
-      child: Builder(builder: builder),
-    );
-    return capturedThemes.wrap(
-      CustomMultiChildLayout(
-        delegate: _PopoverLayout(anchor, preferred, arrow, _direction),
-        children: [
-          LayoutId(id: _PopoverPart.body, child: Material(type: MaterialType.transparency, child: body)),
-          if (arrow)
-            LayoutId(
-              id: _PopoverPart.arrow,
-              child: CustomPaint(painter: _ArrowPainter(c.raised, c.separator, _direction)),
-            ),
-        ],
-      ),
-    );
-  }
+  Widget buildPage(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation) =>
+      // Colors come from the captured theme (the anchor's), not from the
+      // navigator's: a popover opened in a light pane of a dark window
+      // (the control gallery) must be light.
+      capturedThemes.wrap(
+        Builder(
+          builder: (context) {
+            final c = DbColors.of(context);
+            final body = Container(
+              padding: padding,
+              decoration: BoxDecoration(
+                color: c.raised,
+                borderRadius: BorderRadius.circular(Radii.sheet),
+                border: Border.all(color: c.separator, width: 0.5),
+                boxShadow: Elevation.popover(Theme.of(context).brightness),
+              ),
+              child: Builder(builder: builder),
+            );
+            return CustomMultiChildLayout(
+              delegate: _PopoverLayout(anchor, preferred, arrow, _direction),
+              children: [
+                LayoutId(id: _PopoverPart.body, child: Material(type: MaterialType.transparency, child: body)),
+                if (arrow)
+                  LayoutId(
+                    id: _PopoverPart.arrow,
+                    child: CustomPaint(painter: _ArrowPainter(c.raised, c.separator, _direction)),
+                  ),
+              ],
+            );
+          },
+        ),
+      );
 
   @override
   Widget buildTransitions(

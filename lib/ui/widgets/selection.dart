@@ -561,7 +561,6 @@ class PopUpButton<T> extends StatelessWidget {
     required this.items,
     required this.onChanged,
     this.style = PopUpStyle.form,
-    this.small = false,
     this.expand = false,
     this.width,
     this.placeholder,
@@ -581,7 +580,6 @@ class PopUpButton<T> extends StatelessWidget {
   final List<MenuEntry<T>> Function()? entries;
   final ValueChanged<T>? onChanged;
   final PopUpStyle style;
-  final bool small;
 
   /// Fill the available width (form rows).
   final bool expand;
@@ -604,6 +602,7 @@ class PopUpButton<T> extends StatelessWidget {
         initial: value,
         alignInitial: alignInitial,
         minWidth: minWidth,
+        commandIcons: false,
         entries: custom,
       );
       if (picked != null && picked != value) onChanged?.call(picked);
@@ -618,6 +617,7 @@ class PopUpButton<T> extends StatelessWidget {
       initial: current < 0 ? null : current,
       alignInitial: alignInitial,
       minWidth: minWidth,
+      commandIcons: false,
       entries: [
         for (final (i, it) in items.indexed)
           MenuEntry<int>(
@@ -634,7 +634,7 @@ class PopUpButton<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
-    final scale = style == PopUpStyle.toolbar ? ControlScale.toolbar : (small ? ControlScale.small : ControlScale.regular);
+    final scale = style == PopUpStyle.toolbar ? ControlScale.toolbar : ControlScale.regular;
     final current = items.where((it) => it.$1 == value).firstOrNull;
     final enabled = onChanged != null && items.isNotEmpty;
     return _TypeSelect(
@@ -809,7 +809,7 @@ class _UpDownCapsule extends StatelessWidget {
 /// The pop-up used in forms: fills its row. Same as [PopUpButton] with
 /// `expand: true`.
 class SelectField<T> extends PopUpButton<T> {
-  const SelectField({super.key, required super.value, required super.items, required super.onChanged, super.small})
+  const SelectField({super.key, required super.value, required super.items, required super.onChanged})
     : super(expand: true);
 }
 

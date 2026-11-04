@@ -248,7 +248,6 @@ class _VisualPlanViewState extends State<VisualPlanView> {
         PushButton.primary(
           label: 'Aggiorna',
           icon: AppIcons.refresh,
-          size: ControlScale.small,
           tooltip: 'Ricalcola il piano',
           onPressed: tab.loading ? null : tab.run,
         ),
