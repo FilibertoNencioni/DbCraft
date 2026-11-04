@@ -461,7 +461,7 @@ class DriverTemplate {
       // MARS: several result sets open at once on the same connection (SQL
       // editors share it), otherwise "Connection is busy with results…".
       defaults: {'TrustServerCertificate': 'yes', 'MARS_Connection': 'yes'},
-      icon: AppIcons.server,
+      icon: AppIcons.brandSqlserver,
       color: Color(0xFFC62828),
     ),
     DriverTemplate(
@@ -469,7 +469,7 @@ class DriverTemplate {
       label: 'FreeTDS (SQL Server / Sybase)',
       pattern: r'freetds|tdsodbc',
       defaultPort: '1433',
-      icon: AppIcons.server,
+      icon: AppIcons.brandSqlserver,
       color: Color(0xFFAD1457),
     ),
     DriverTemplate(
@@ -477,7 +477,7 @@ class DriverTemplate {
       label: 'Amazon Redshift',
       pattern: r'redshift',
       defaultPort: '5439',
-      icon: AppIcons.cloud,
+      icon: AppIcons.brandAws,
       color: Color(0xFF8C4FFF),
     ),
     DriverTemplate(
@@ -485,7 +485,7 @@ class DriverTemplate {
       label: 'PostgreSQL',
       pattern: r'postgres|psqlodbc',
       defaultPort: '5432',
-      icon: AppIcons.database,
+      icon: AppIcons.brandPostgresql,
       color: Color(0xFF336791),
     ),
     DriverTemplate(
@@ -495,7 +495,7 @@ class DriverTemplate {
       defaultPort: '3306',
       userKey: 'USER',
       passwordKey: 'PASSWORD',
-      icon: AppIcons.database,
+      icon: AppIcons.brandMysql,
       color: Color(0xFF00758F),
     ),
     DriverTemplate(
@@ -509,7 +509,7 @@ class DriverTemplate {
       portInServer: true,
       portSeparator: ':',
       databaseSeparator: '/',
-      icon: AppIcons.database,
+      icon: AppIcons.brandOracle,
       color: Color(0xFFF80000),
     ),
     DriverTemplate(
@@ -531,7 +531,7 @@ class DriverTemplate {
       userKey: null,
       passwordKey: null,
       fileBased: true,
-      icon: AppIcons.file,
+      icon: AppIcons.brandSqlite,
       color: Color(0xFF0F80CC),
     ),
     DriverTemplate(
@@ -550,7 +550,7 @@ class DriverTemplate {
       label: 'Snowflake',
       pattern: r'snowflake',
       portKey: null,
-      icon: AppIcons.snowflake,
+      icon: AppIcons.brandSnowflake,
       color: Color(0xFF29B5E8),
     ),
     DriverTemplate(
@@ -562,7 +562,7 @@ class DriverTemplate {
       databaseKey: 'DBNAME',
       userKey: 'USER',
       passwordKey: 'PASSWORD',
-      icon: AppIcons.fire,
+      icon: AppIcons.brandFirebird,
       color: Color(0xFFE65100),
     ),
     DriverTemplate(
@@ -574,7 +574,7 @@ class DriverTemplate {
       databaseKey: 'Catalog',
       userKey: null,
       passwordKey: null,
-      icon: AppIcons.cloud,
+      icon: AppIcons.brandBigquery,
       color: Color(0xFF4285F4),
     ),
     DriverTemplate(
@@ -586,7 +586,7 @@ class DriverTemplate {
       defaultPort: '443',
       databaseKey: 'Schema',
       defaults: {'ThriftTransport': '2', 'SSL': '1'},
-      icon: AppIcons.cloud,
+      icon: AppIcons.brandDatabricks,
       color: Color(0xFFFF3621),
     ),
     DriverTemplate(
@@ -598,7 +598,7 @@ class DriverTemplate {
       databaseKey: 'Schema',
       userKey: null,
       passwordKey: null,
-      icon: AppIcons.cloud,
+      icon: AppIcons.brandAws,
       color: Color(0xFF8C4FFF),
     ),
     DriverTemplate(
@@ -606,7 +606,7 @@ class DriverTemplate {
       label: 'MongoDB (Atlas SQL ODBC)',
       pattern: r'mongo',
       defaultPort: '27017',
-      icon: AppIcons.leaf,
+      icon: AppIcons.brandMongodb,
       color: Color(0xFF00684A),
     ),
     DriverTemplate(
@@ -616,7 +616,7 @@ class DriverTemplate {
       hostKey: 'Host',
       defaultPort: '9042',
       databaseKey: 'DefaultKeyspace',
-      icon: AppIcons.blur,
+      icon: AppIcons.brandCassandra,
       color: Color(0xFF1287B1),
     ),
     DriverTemplate(
@@ -628,7 +628,7 @@ class DriverTemplate {
       databaseKey: 'Database',
       userKey: 'Username',
       passwordKey: 'Password',
-      icon: AppIcons.barChart,
+      icon: AppIcons.brandClickhouse,
       color: Color(0xFFFFCC01),
     ),
     DriverTemplate(
@@ -640,7 +640,7 @@ class DriverTemplate {
       databaseKey: 'Catalog',
       userKey: 'User',
       passwordKey: 'Password',
-      icon: AppIcons.hub,
+      icon: AppIcons.brandTrino,
       color: Color(0xFFDD00A1),
     ),
     DriverTemplate(
@@ -652,7 +652,7 @@ class DriverTemplate {
       userKey: null,
       passwordKey: null,
       fileBased: true,
-      icon: AppIcons.file,
+      icon: AppIcons.brandDuckdb,
       color: Color(0xFFFBC02D),
     ),
   ];

@@ -30,7 +30,7 @@ class BigQueryDriver extends NativeDriver {
   @override
   String get description => 'Data warehouse di Google Cloud tramite API REST (senza driver ODBC)';
   @override
-  IconData get icon => AppIcons.insights;
+  IconData get icon => AppIcons.brandBigquery;
   @override
   Color get color => const Color(0xFF4285F4);
   @override

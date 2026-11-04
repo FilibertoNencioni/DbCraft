@@ -8,7 +8,7 @@ import 'package:dbcraft/state/app_state.dart';
 import 'package:dbcraft/state/db_connection.dart';
 import 'package:dbcraft/ui/navigator/nav_nodes.dart';
 import 'package:dbcraft/ui/navigator/navigator_panel.dart';
-import 'package:dbcraft/ui/theme/app_theme.dart';
+import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -131,10 +131,11 @@ void main() {
       final x = roots.first as ConnectionFolderNode;
       expect(x.items.map((n) => n.label), ['Y', 'b']);
       expect((x.items.first as ConnectionFolderNode).items.map((n) => n.label), ['a']);
-      x.expanded = false;
+      expect(x.expanded, isFalse, reason: 'folders start closed');
+      x.expanded = true;
       final again = buildRoots(conns, folders, cache);
       expect(again.first, same(x));
-      expect(x.expanded, isFalse);
+      expect(x.expanded, isTrue);
     });
 
     Future<AppState> pumpNavigator(WidgetTester tester, List<DbConnection> conns) async {
@@ -170,12 +171,24 @@ void main() {
 
     testWidgets('a connection dragged onto a folder goes into it', (tester) async {
       final app = await pumpNavigator(tester, [conn('a', 'X'), conn('b')]);
+      expect(find.text('a'), findsNothing, reason: 'folders start closed');
+      await tester.tap(find.descendant(
+        of: find.ancestor(of: find.text('X'), matching: find.byType(OutlineRow)),
+        matching: find.byType(DisclosureChevron),
+      ));
+      await tester.pumpAndSettle();
       await dragTo(tester, find.text('b'), tester.getCenter(find.text('X')));
       expect(app.byId('b')!.config.folder, 'X');
     });
 
     testWidgets('a connection dragged below the rows goes to the top level', (tester) async {
       final app = await pumpNavigator(tester, [conn('a', 'X'), conn('b')]);
+      expect(find.text('a'), findsNothing, reason: 'folders start closed');
+      await tester.tap(find.descendant(
+        of: find.ancestor(of: find.text('X'), matching: find.byType(OutlineRow)),
+        matching: find.byType(DisclosureChevron),
+      ));
+      await tester.pumpAndSettle();
       await dragTo(tester, find.text('a'), tester.getCenter(find.text('b')) + const Offset(0, 40));
       expect(app.byId('a')!.config.folder, '');
       expect(names(app), ['b', 'a']);

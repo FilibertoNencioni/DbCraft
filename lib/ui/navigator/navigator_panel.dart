@@ -392,7 +392,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   );
 
   Color _iconColor(NavNode n, DbColors c) => switch (n) {
-    ConnectionNode x => x.dc.config.template.color,
+    ConnectionNode x => x.dc.config.color,
     TableNode _ || ProcedureNode _ => c.accent,
     LeafNode l when l.isKey => c.keyIcon,
     ConstraintNode k when !k.enabled => c.textTertiary,

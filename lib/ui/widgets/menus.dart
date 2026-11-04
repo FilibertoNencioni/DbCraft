@@ -269,14 +269,18 @@ IconData? standardMenuIcon(String label) {
 /// did not mark them [MenuEntry.destructive]: Elimina…, Svuota (TRUNCATE)….
 bool isDestructiveCommand(String label) => label.startsWith('Elimina') || label.startsWith('Svuota');
 
-const double _kItemHeight = 22;
-const double _kDividerHeight = 11;
-const double _kMenuPadding = 5;
+// macOS 26 metrics: roomier rows than Sonoma's 22pt.
+const double _kItemHeight = 24;
+const double _kDividerHeight = 13;
+const double _kMenuPadding = 6;
 const double _kCheckColumn = 18;
 
-/// Icon or status mark before the label (16pt glyph plus a gap).
-const double _kLeadingColumn = 22;
+/// Icon or status mark before the label (16pt glyph plus a 10pt gap).
+const double _kLeadingColumn = 26;
 const double _kIconSize = 16;
+
+/// Space between the highlight's edge and the text (or icon).
+const double _kRowInset = 10;
 const double _kScreenMargin = 6;
 
 /// Global rect of the widget that owns [context] (anchor for menus and
@@ -664,7 +668,7 @@ class _MenuPanel<T> extends StatelessWidget {
     final leadingColumn = entries.any((e) => e.leading != null || e._iconFor(icons) != null);
     return Container(
       decoration: menuDecoration(context),
-      constraints: const BoxConstraints(minWidth: 120),
+      constraints: const BoxConstraints(minWidth: 140),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(Radii.menu),
         child: SingleChildScrollView(
@@ -714,7 +718,7 @@ class _MenuRow<T> extends StatelessWidget {
   final VoidCallback onTap;
 
   /// Where the label starts: after the check column and the leading column.
-  double get _labelInset => (checkColumn ? _kCheckColumn + 2 : 9) + (leadingColumn ? _kLeadingColumn : 0);
+  double get _labelInset => (checkColumn ? _kCheckColumn + 2 : _kRowInset) + (leadingColumn ? _kLeadingColumn : 0);
 
   @override
   Widget build(BuildContext context) {
@@ -722,14 +726,14 @@ class _MenuRow<T> extends StatelessWidget {
     switch (entry._kind) {
       case _EntryKind.divider:
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: _kRowInset, vertical: 6),
           child: Container(height: 1, color: c.separator),
         );
       case _EntryKind.header:
         return Container(
           height: _kItemHeight,
           alignment: Alignment.centerLeft,
-          padding: EdgeInsets.only(left: _labelInset, right: 9),
+          padding: EdgeInsets.only(left: _labelInset, right: _kRowInset + 2),
           child: Text(entry.label, style: uiText(TypeSize.caption, weight: FontWeight.w600, color: c.textSecondary)),
         );
       case _EntryKind.item:
@@ -753,7 +757,7 @@ class _MenuRow<T> extends StatelessWidget {
         onTap: entry.enabled ? onTap : null,
         child: Container(
           height: _kItemHeight,
-          padding: const EdgeInsets.only(right: 9),
+          padding: const EdgeInsets.only(right: _kRowInset + 2),
           decoration: BoxDecoration(
             color: on ? c.accent : null,
             borderRadius: BorderRadius.circular(Radii.small),
@@ -764,7 +768,7 @@ class _MenuRow<T> extends StatelessWidget {
             child: Row(
               children: [
                 SizedBox(
-                  width: checkColumn ? _kCheckColumn + 2 : 9,
+                  width: checkColumn ? _kCheckColumn + 2 : _kRowInset,
                   child: checkColumn && entry.checked ? Center(child: Icon(AppIcons.check, size: 12, color: fg)) : null,
                 ),
                 if (leadingColumn)

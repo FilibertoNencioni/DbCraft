@@ -517,7 +517,11 @@ class _TableEditorViewState extends State<TableEditorView> {
                       ),
                       PathBar(
                         segments: [
-                          PathSegment(tab.connection.config.name, icon: AppIcons.server),
+                          PathSegment(
+                            tab.connection.config.name,
+                            icon: tab.connection.config.icon,
+                            iconColor: tab.connection.config.color,
+                          ),
                           if (table.catalog != null) PathSegment(table.catalog!, icon: AppIcons.database),
                           if (table.schema != null) PathSegment(table.schema!, icon: AppIcons.schema),
                           PathSegment(tab.title, icon: tab.icon),

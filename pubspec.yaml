@@ -81,6 +81,11 @@ flutter:
     - family: PhosphorFill
       fonts:
         - asset: assets/fonts/phosphor/Phosphor-Fill.ttf
+    # DBMS logos (Simple Icons CC0, Devicon MIT, see assets/fonts/brands/
+    # LICENSE), built by tool/brand_font/build_brand_font.py.
+    - family: DbBrands
+      fonts:
+        - asset: assets/fonts/brands/DbBrands.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

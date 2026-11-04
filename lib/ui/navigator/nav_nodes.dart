@@ -121,7 +121,7 @@ class ConnectionNode extends NavNode {
   @override
   String? get detail => dc.isConnected ? dc.serverLabel : null;
   @override
-  IconData get icon => dc.config.template.icon;
+  IconData get icon => dc.config.icon;
   @override
   String get key => 'conn:${dc.config.id}';
 
@@ -794,7 +794,7 @@ List<NavNode> buildRoots(List<DbConnection> conns, List<String> folders, Map<Str
     final existing = cache[key];
     final node = existing is ConnectionFolderNode && existing.path == path
         ? existing
-        : (ConnectionFolderNode(path)..expanded = existing?.expanded ?? true);
+        : (ConnectionFolderNode(path)..expanded = existing?.expanded ?? false);
     cache[key] = node;
     folderNodes[path] = node;
   }

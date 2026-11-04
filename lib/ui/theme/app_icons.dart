@@ -197,6 +197,26 @@ abstract final class AppIcons {
   static const IconData storageFill = IconData(0xe29e, fontFamily: 'PhosphorFill'); // hardDrive
   static const IconData gitFill = IconData(0xe278, fontFamily: 'PhosphorFill'); // gitBranch
 
+  // DBMS logos: monochrome glyphs of the DbBrands font
+  // (tool/brand_font), tinted with the brand color.
+  static const IconData brandPostgresql = IconData(0xf000, fontFamily: 'DbBrands');
+  static const IconData brandMysql = IconData(0xf001, fontFamily: 'DbBrands');
+  static const IconData brandMariadb = IconData(0xf002, fontFamily: 'DbBrands');
+  static const IconData brandSqlite = IconData(0xf003, fontFamily: 'DbBrands');
+  static const IconData brandMongodb = IconData(0xf004, fontFamily: 'DbBrands');
+  static const IconData brandRedis = IconData(0xf005, fontFamily: 'DbBrands');
+  static const IconData brandCassandra = IconData(0xf006, fontFamily: 'DbBrands');
+  static const IconData brandBigquery = IconData(0xf007, fontFamily: 'DbBrands');
+  static const IconData brandSnowflake = IconData(0xf008, fontFamily: 'DbBrands');
+  static const IconData brandClickhouse = IconData(0xf009, fontFamily: 'DbBrands');
+  static const IconData brandTrino = IconData(0xf00a, fontFamily: 'DbBrands');
+  static const IconData brandDuckdb = IconData(0xf00b, fontFamily: 'DbBrands');
+  static const IconData brandDatabricks = IconData(0xf00c, fontFamily: 'DbBrands');
+  static const IconData brandSqlserver = IconData(0xf00d, fontFamily: 'DbBrands');
+  static const IconData brandFirebird = IconData(0xf00e, fontFamily: 'DbBrands');
+  static const IconData brandAws = IconData(0xf00f, fontFamily: 'DbBrands');
+  static const IconData brandOracle = IconData(0xf010, fontFamily: 'DbBrands');
+
   /// Every icon by name (control gallery).
   static const Map<String, IconData> all = {
     'database': database,
@@ -369,5 +389,22 @@ abstract final class AppIcons {
     'documentFill': documentFill,
     'storageFill': storageFill,
     'gitFill': gitFill,
+    'brandPostgresql': brandPostgresql,
+    'brandMysql': brandMysql,
+    'brandMariadb': brandMariadb,
+    'brandSqlite': brandSqlite,
+    'brandMongodb': brandMongodb,
+    'brandRedis': brandRedis,
+    'brandCassandra': brandCassandra,
+    'brandBigquery': brandBigquery,
+    'brandSnowflake': brandSnowflake,
+    'brandClickhouse': brandClickhouse,
+    'brandTrino': brandTrino,
+    'brandDuckdb': brandDuckdb,
+    'brandDatabricks': brandDatabricks,
+    'brandSqlserver': brandSqlserver,
+    'brandFirebird': brandFirebird,
+    'brandAws': brandAws,
+    'brandOracle': brandOracle,
   };
 }

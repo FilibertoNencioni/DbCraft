@@ -20,7 +20,7 @@ class CassandraDriver extends NativeDriver {
       'Database a colonne larghe Apache Cassandra 3.0+ (anche ScyllaDB, DataStax Enterprise e Astra con TLS). '
       'Query CQL con paginazione.';
   @override
-  IconData get icon => AppIcons.eye;
+  IconData get icon => AppIcons.brandCassandra;
   @override
   Color get color => const Color(0xFF1287B1);
   @override

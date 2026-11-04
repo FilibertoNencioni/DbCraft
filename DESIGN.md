@@ -54,7 +54,7 @@ A surface has a hairline or a shadow, never both, except menus, popovers and she
 
 ### Icons
 
-Only `AppIcons` (`lib/ui/theme/app_icons.dart`): the Phosphor font bundled in `assets/fonts/phosphor`, Regular by default, Bold for chevrons and tiny marks, Fill for selected states. Sizes: 16 in controls, 18 in the window toolbar, 14 in dense rows. Action menus follow macOS 26: every command that has a natural glyph shows it (`MenuEntry.icon`, 16pt in the label color) in its own column after the checkmark; destructive commands (Elimina, Rimuovi, Svuota, Scarta…) are `destructive: true`, red label and icon. Value menus (pop-ups, combo fields) may show an item image, such as the driver icon, in the same column.
+Only `AppIcons` (`lib/ui/theme/app_icons.dart`): the Phosphor font bundled in `assets/fonts/phosphor`, Regular by default, Bold for chevrons and tiny marks, Fill for selected states. DBMS logos (`AppIcons.brand*`: PostgreSQL, MySQL, SQL Server, Oracle, SQLite, MongoDB, Redis…) come from the `DbBrands` font in `assets/fonts/brands`, built by `tool/brand_font`; they are monochrome glyphs tinted with the brand color (`ConnectionConfig.icon` / `.color`), wherever a connection or driver is shown. Sizes: 16 in controls, 18 in the window toolbar, 14 in dense rows. Action menus follow macOS 26: every command that has a natural glyph shows it (`MenuEntry.icon`, 16pt in the label color) in its own column after the checkmark; destructive commands (Elimina, Rimuovi, Svuota, Scarta…) are `destructive: true`, red label and icon. Value menus (pop-ups, combo fields) may show an item image, such as the driver icon, in the same column.
 
 ### Elevation and motion tokens
 
@@ -108,7 +108,7 @@ One line per component: what it is for, and what to use instead when it is not t
 
 | Component | Use it for | Not for |
 |---|---|---|
-| `showMacMenu` + `MenuEntry` | Every context menu and pop-up menu: 22pt items, accent highlight, a checkmark column and a separate column for action `icon`s or a `leading` mark (status dots, value images), right-aligned shortcuts, submenus, `MenuEntry.connection` rows; `destructive` items in red. | Rich content (`showPopover`). |
+| `showMacMenu` + `MenuEntry` | Every context menu and pop-up menu: 24pt items (macOS 26 spacing: 6pt panel inset, 10pt row inset, 26pt icon column), accent highlight, a checkmark column and a separate column for action `icon`s or a `leading` mark (status dots, value images), right-aligned shortcuts, submenus, `MenuEntry.connection` rows; `destructive` items in red. | Rich content (`showPopover`). |
 | `showPopover` | Anchored editors and information (filter editor, calendar). | Choosing from a list. |
 | `CompletionList` | SQL completion, Xcode style, with letter badges in the `code*` colors. | Menus. |
 | `RichTooltip` | Tooltips with a title and key/value lines (grid header). | Plain hints (the theme `Tooltip`, 800ms delay). |

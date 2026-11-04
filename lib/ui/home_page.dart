@@ -985,7 +985,8 @@ class _RecentConnection extends StatelessWidget {
   Widget build(BuildContext context) {
     final cfg = dc.config;
     return ListRow(
-      icon: cfg.template.icon,
+      icon: cfg.icon,
+      iconColor: cfg.color,
       title: cfg.name,
       subtitle: cfg.subtitle,
       trailing: cfg.type == ConnectionType.development

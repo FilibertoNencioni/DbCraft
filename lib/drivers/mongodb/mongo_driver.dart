@@ -20,7 +20,7 @@ class MongoDriver extends NativeDriver {
       'Database documentale MongoDB (3.6 o successivo), anche Atlas e replica set. Comandi in sintassi shell '
       '(db.collezione.find(…)) e SELECT semplici sulle collezioni.';
   @override
-  IconData get icon => AppIcons.leaf;
+  IconData get icon => AppIcons.brandMongodb;
   @override
   Color get color => const Color(0xFF47A248);
   @override

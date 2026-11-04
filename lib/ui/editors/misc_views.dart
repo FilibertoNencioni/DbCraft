@@ -178,7 +178,7 @@ class _ConnectionInfoViewState extends State<ConnectionInfoView> {
       children: [
         Row(
           children: [
-            Icon(c.config.template.icon, color: c.config.template.color, size: 28),
+            Icon(c.config.icon, color: c.config.color, size: 28),
             const SizedBox(width: 10),
             Text(c.config.name, style: uiText(TypeSize.sheetTitle, weight: FontWeight.w700, color: colors.text)),
             const SizedBox(width: 12),

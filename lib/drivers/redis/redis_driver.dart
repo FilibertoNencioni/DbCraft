@@ -20,7 +20,7 @@ class RedisDriver extends NativeDriver {
       'Archivio chiave-valore Redis (e Valkey, Azure Cache, ElastiCache). Comandi Redis una riga alla volta; '
       'le chiavi sono raggruppate per prefisso nel navigatore.';
   @override
-  IconData get icon => AppIcons.bolt;
+  IconData get icon => AppIcons.brandRedis;
   @override
   Color get color => const Color(0xFFDC382D);
   @override
