@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../features/design/table_design.dart';
 import '../model/connection_config.dart';
+import '../model/connection_folders.dart';
 import '../model/db_objects.dart';
 import '../services/storage.dart';
 import '../services/vault.dart';
@@ -193,14 +194,94 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // -------------------------------------------------------------------------
+  // Connection folders (see connection_folders.dart)
+  // -------------------------------------------------------------------------
+
+  /// Folder of [dc] ("" at the top level).
+  static String folderOf(DbConnection dc) => normalizeFolder(dc.config.folder);
+
+  /// All the connection folders, in navigator order.
+  List<String> get folders => orderedFolders(allFolders(connections.map(folderOf)), settings.folderOrder);
+
+  /// Swaps [dc] with the previous (delta < 0) or next connection of its
+  /// folder.
   Future<void> moveConnection(DbConnection dc, int delta) async {
     final i = connections.indexOf(dc);
-    final j = (i + delta).clamp(0, connections.length - 1);
-    if (i == j) return;
-    connections.removeAt(i);
-    connections.insert(j, dc);
+    final folder = folderOf(dc);
+    var j = i + delta.sign;
+    while (j >= 0 && j < connections.length && folderOf(connections[j]) != folder) {
+      j += delta.sign;
+    }
+    if (i < 0 || j < 0 || j >= connections.length) return;
+    connections[i] = connections[j];
+    connections[j] = dc;
     await _saveConnections();
     notifyListeners();
+  }
+
+  /// Moves [dc] into [folder], before [before] or after [after] (connections
+  /// of that folder), at the end of the folder otherwise.
+  Future<void> moveConnectionTo(DbConnection dc, String folder, {DbConnection? before, DbConnection? after}) async {
+    if (identical(before, dc) || identical(after, dc)) return;
+    folder = normalizeFolder(folder);
+    connections.remove(dc);
+    dc.config.folder = folder;
+    final anchor = before ?? after;
+    final at = anchor != null
+        ? connections.indexOf(anchor)
+        : connections.lastIndexWhere((c) => folderOf(c) == folder);
+    // Unknown anchor or empty folder: at the end.
+    final i = at < 0 ? connections.length : (before != null ? at : at + 1);
+    connections.insert(i, dc);
+    await _saveConnections();
+    notifyListeners();
+  }
+
+  /// Moves the folder [path] into [parent] before its subfolder [before]
+  /// (last when null). Returns the new path of each moved folder, null when
+  /// the move is not possible (into itself).
+  Future<Map<String, String>?> moveFolderTo(String path, String parent, {String? before}) =>
+      _applyFolderMove(
+        moveFolder(allFolders(connections.map(folderOf)), settings.folderOrder, path, parent: normalizeFolder(parent), before: before),
+      );
+
+  /// Renames the folder [path], keeping its place.
+  Future<Map<String, String>?> renameFolder(String path, String name) {
+    final all = allFolders(connections.map(folderOf));
+    final siblings = subfolders(orderedFolders(all, settings.folderOrder), folderParent(path));
+    final i = siblings.indexOf(path);
+    return _applyFolderMove(
+      moveFolder(
+        all,
+        settings.folderOrder,
+        path,
+        parent: folderParent(path),
+        name: name,
+        before: i >= 0 && i + 1 < siblings.length ? siblings[i + 1] : null,
+      ),
+    );
+  }
+
+  /// Swaps the folder [path] with its previous (delta < 0) or next sibling.
+  Future<void> shiftFolderBy(String path, int delta) async {
+    final order = shiftFolder(allFolders(connections.map(folderOf)), settings.folderOrder, path, delta);
+    if (order == null) return;
+    settings.folderOrder = order;
+    await saveSettings();
+  }
+
+  Future<Map<String, String>?> _applyFolderMove(FolderMove? move) async {
+    if (move == null) return null;
+    for (final dc in connections) {
+      final to = move.renames[folderOf(dc)];
+      if (to != null) dc.config.folder = to;
+    }
+    // Without the folders left empty.
+    settings.folderOrder = orderedFolders(allFolders(connections.map(folderOf)), move.order);
+    await _saveConnections();
+    await saveSettings();
+    return move.renames;
   }
 
   Future<void> connect(DbConnection dc, {String? password}) =>

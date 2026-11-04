@@ -6,6 +6,7 @@ import '../../drivers/native_registry.dart';
 import '../../drivers/session_factory.dart';
 import '../../model/auth_methods.dart';
 import '../../model/connection_config.dart';
+import '../../model/connection_folders.dart';
 import '../../odbc/odbc_session.dart';
 import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
@@ -172,7 +173,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
       ..user = _user.text.trim()
       ..password = _password.text
       ..connectionString = _connStr.text.trim()
-      ..folder = _folder.text.trim()
+      ..folder = normalizeFolder(_folder.text)
       ..defaultCatalog = _defaultCatalog.text.trim()
       ..loginTimeout = int.tryParse(_loginTimeout.text) ?? 15
       ..queryTimeout = int.tryParse(_queryTimeout.text) ?? 0
@@ -296,9 +297,8 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     return r.details == null ? line : Tooltip(message: r.details!, child: line);
   }
 
-  /// The folders already used by the connections, as suggestions.
-  List<String> _folders() =>
-      {for (final c in widget.app.connections) c.config.folder.trim()}.where((f) => f.isNotEmpty).toList()..sort();
+  /// The folders of the connections (subfolders too), as suggestions.
+  List<String> _folders() => widget.app.folders;
 
   Widget _field(TextEditingController ctrl, String hint, {int maxLines = 1, bool mono = false}) => MacTextField(
     controller: ctrl,

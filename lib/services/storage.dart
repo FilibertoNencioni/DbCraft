@@ -124,7 +124,8 @@ class AppSettings {
     this.perfRefreshSec = 5,
     this.autoLockMinutes = 0,
     this.hideSystemObjects = false,
-  });
+    List<String>? folderOrder,
+  }) : folderOrder = folderOrder ?? [];
 
   ThemeMode themeMode;
   int fetchSize;
@@ -165,6 +166,10 @@ class AppSettings {
   /// them in a "Sistema" folder.
   bool hideSystemObjects;
 
+  /// Navigator: manual order of the connection folders (paths, see
+  /// connection_folders.dart).
+  List<String> folderOrder;
+
   String? get libPathOrNull => odbcLibPath.trim().isEmpty ? null : odbcLibPath.trim();
 
   Map<String, Object?> toJson() => {
@@ -190,6 +195,7 @@ class AppSettings {
     'perfRefreshSec': perfRefreshSec,
     'autoLockMinutes': autoLockMinutes,
     'hideSystemObjects': hideSystemObjects,
+    'folderOrder': folderOrder,
   };
 
   factory AppSettings.fromJson(Map<String, Object?> j) => AppSettings(
@@ -215,6 +221,7 @@ class AppSettings {
     perfRefreshSec: (j['perfRefreshSec'] as num?)?.toInt() ?? 5,
     autoLockMinutes: (j['autoLockMinutes'] as num?)?.toInt() ?? 0,
     hideSystemObjects: j['hideSystemObjects'] as bool? ?? false,
+    folderOrder: [...?(j['folderOrder'] as List?)?.whereType<String>()],
   );
 }
 

@@ -7,6 +7,7 @@ import '../../features/design/model/extra_defs.dart';
 import '../../features/design/model/object_defs.dart';
 import '../../features/design/model/security_defs.dart';
 import '../../features/schema/schema_model.dart';
+import '../../model/connection_folders.dart';
 import '../../model/db_objects.dart';
 import '../../services/sql_dialect.dart';
 import '../../services/system_objects.dart';
@@ -765,31 +766,51 @@ class LeafNode extends NavNode {
   Future<List<NavNode>> load() async => [];
 }
 
-/// Group connection nodes by their folder.
-List<NavNode> buildRoots(List<DbConnection> conns, Map<String, NavNode> cache) {
-  final roots = <NavNode>[];
-  final folders = <String, List<NavNode>>{};
+/// A folder of connections ([ConnectionConfig.folder]): its subfolders,
+/// then its connections.
+class ConnectionFolderNode extends FolderNode {
+  ConnectionFolderNode(this.path) : super(folderName(path), []);
+  final String path;
+
+  @override
+  String get key => folderKey(path);
+
+  static String folderKey(String path) => 'folder:$path';
+}
+
+/// The tree of the connections: the folders ([folders], in navigator
+/// order, see [AppState.folders]) first, then the top level connections.
+/// Nodes are reused from [cache], so the expansion and the selection
+/// survive rebuilds.
+List<NavNode> buildRoots(List<DbConnection> conns, List<String> folders, Map<String, NavNode> cache) {
+  final byFolder = <String, List<NavNode>>{};
   for (final c in conns) {
-    final key = 'conn:${c.config.id}';
-    final node = cache.putIfAbsent(key, () => ConnectionNode(c));
-    final f = c.config.folder.trim();
-    if (f.isEmpty) {
-      roots.add(node);
-    } else {
-      folders.putIfAbsent(f, () => []).add(node);
-    }
+    final node = cache.putIfAbsent('conn:${c.config.id}', () => ConnectionNode(c));
+    byFolder.putIfAbsent(normalizeFolder(c.config.folder), () => []).add(node);
   }
-  final folderNodes = <NavNode>[];
-  for (final e in folders.entries) {
-    final key = 'folder:${e.key}';
-    final existing = cache[key] as FolderNode?;
-    final node = FolderNode(e.key, e.value)..expanded = existing?.expanded ?? true;
-    node.children = e.value;
+  final folderNodes = <String, ConnectionFolderNode>{};
+  for (final path in folders) {
+    final key = ConnectionFolderNode.folderKey(path);
+    final existing = cache[key];
+    final node = existing is ConnectionFolderNode && existing.path == path
+        ? existing
+        : (ConnectionFolderNode(path)..expanded = existing?.expanded ?? true);
     cache[key] = node;
-    folderNodes.add(node);
+    folderNodes[path] = node;
   }
-  folderNodes.sort((a, b) => a.label.compareTo(b.label));
-  return [...folderNodes, ...roots];
+  List<NavNode> childrenOf(String parent) => [
+    for (final f in folders)
+      if (folderParent(f) == parent) folderNodes[f]!,
+    ...?byFolder[parent],
+  ];
+  for (final e in folderNodes.entries) {
+    final items = childrenOf(e.key);
+    e.value.items
+      ..clear()
+      ..addAll(items);
+    e.value.children = e.value.items;
+  }
+  return childrenOf('');
 }
 
 /// Loaded nodes under the connection node [root] to reload after the schema

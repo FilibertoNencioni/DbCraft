@@ -31,6 +31,7 @@ import '../../features/mock_data/mock_data_dialog.dart';
 import '../../features/performance/perf_dashboard.dart';
 import '../../features/query_builder/query_builder_tab.dart';
 import '../../model/connection_config.dart';
+import '../../model/connection_folders.dart';
 import '../../model/db_objects.dart';
 import '../../services/sql_dialect.dart';
 import '../../state/app_state.dart';
@@ -39,12 +40,29 @@ import '../actions.dart';
 import '../dialogs/export_dialog.dart';
 import '../dialogs/import_dialog.dart';
 import '../widgets/common.dart';
+import 'folder_prompt.dart';
 import 'nav_nodes.dart';
 
 class _VisibleNode {
   _VisibleNode(this.node, this.depth);
   final NavNode node;
   final int depth;
+}
+
+enum _DropPos { before, into, after }
+
+/// Where a dragged connection or folder would land: around or into
+/// [target], the top level when null.
+class _Drop {
+  const _Drop(this.target, this.pos);
+  final NavNode? target;
+  final _DropPos pos;
+
+  @override
+  bool operator ==(Object other) => other is _Drop && identical(other.target, target) && other.pos == pos;
+
+  @override
+  int get hashCode => Object.hash(identityHashCode(target), pos);
 }
 
 /// DBeaver-like "Database Navigator".
@@ -75,6 +93,15 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
   final Map<DbConnection, ConnectionStatus> _lastStatus = {};
   final Map<DbConnection, int> _lastGeneration = {};
   bool _collapsed = false;
+
+  // Drag and drop of connections and folders.
+  NavNode? _dragging;
+  _Drop? _drop;
+  EdgeDraggingAutoScroller? _autoScroller;
+  int _visibleCount = 0;
+
+  /// Key of the node to select at the next build (a moved folder).
+  String? _pendingSelectKey;
 
   @override
   void dispose() {
@@ -281,8 +308,13 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     final app = AppScope.of(context);
     _syncConnectionStates(app);
     _syncSchemaChanges(app);
-    final roots = buildRoots(app.connections, _cache);
+    final roots = buildRoots(app.connections, app.folders, _cache);
+    if (_pendingSelectKey != null) {
+      _selected = _cache[_pendingSelectKey] ?? _selected;
+      _pendingSelectKey = null;
+    }
     final visible = _flatten(roots);
+    _visibleCount = visible.length;
 
     final sel = visible.indexWhere((v) => v.node == _selected);
     return Column(
@@ -336,16 +368,19 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
                       },
                       _createKey: _createInContext,
                     },
-                    child: SourceList(
-                      focusNode: _focus,
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(10, 0, 10, Gap.md),
-                      itemCount: visible.length,
-                      selectedIndex: sel < 0 ? null : sel,
-                      onSelect: (i) => setState(() => _selected = visible[i].node),
-                      onExpand: (i, expand) => expand ? _expand(visible[i].node) : _collapse(visible[i].node),
-                      onActivate: (i) => _open(visible[i].node),
-                      itemBuilder: (context, i) => _row(context, visible[i]),
+                    child: _topLevelTarget(
+                      SourceList(
+                        focusNode: _focus,
+                        controller: _scroll,
+                        // While dragging, room below the rows for the top level.
+                        padding: EdgeInsets.fromLTRB(10, 0, 10, Gap.md + (_dragging == null ? 0 : kSidebarRowHeight)),
+                        itemCount: visible.length,
+                        selectedIndex: sel < 0 ? null : sel,
+                        onSelect: (i) => setState(() => _selected = visible[i].node),
+                        onExpand: (i, expand) => expand ? _expand(visible[i].node) : _collapse(visible[i].node),
+                        onActivate: (i) => _open(visible[i].node),
+                        itemBuilder: (context, i) => _row(context, visible[i]),
+                      ),
                     ),
                   ),
           ),
@@ -381,7 +416,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
     final n = v.node;
     final dc = n is ConnectionNode ? n.dc : null;
     final expandable = n.expandable && !(n is TableNode && AppScope.read(context).settings.simpleMode);
-    return OutlineRow(
+    final row = OutlineRow(
       title: n.label,
       icon: n.icon,
       iconColor: _iconColor(n, c),
@@ -414,7 +449,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
       tooltip: n.error ?? (dc?.config.subtitle ?? n.label),
       onTap: () => _select(n),
       onDoubleTap: () => _open(n),
-      // No "⋯" (nor right click) on nodes without actions, e.g. connection folders.
+      // No "⋯" (nor right click) on nodes without actions ("Sistema").
       onMenu: _menuItems(context, n).isEmpty
           ? null
           : (pos) {
@@ -422,6 +457,297 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
               _contextMenu(context, n, pos);
             },
     );
+    return _movable(n) ? _movableRow(n, row, v.depth) : row;
+  }
+
+  // -------------------------------------------------------------------------
+  // Drag and drop: connections into folders and around each other, folders
+  // into folders and around their siblings, both to the top level below the
+  // rows.
+  // -------------------------------------------------------------------------
+
+  static bool _movable(NavNode n) => n is ConnectionNode || n is ConnectionFolderNode;
+
+  void _setDrop(_Drop? d) {
+    if (d != _drop) setState(() => _drop = d);
+  }
+
+  /// The drop of [dragged] on the row of [target] at [dy] of its [height];
+  /// null when it would not move anything.
+  static _Drop? _dropFor(NavNode dragged, NavNode target, double dy, double height) {
+    if (identical(dragged, target)) return null;
+    switch ((dragged, target)) {
+      case (ConnectionNode d, ConnectionFolderNode f):
+        return AppState.folderOf(d.dc) == f.path ? null : _Drop(f, _DropPos.into);
+      case (ConnectionNode _, ConnectionNode t):
+        return _Drop(t, dy < height / 2 ? _DropPos.before : _DropPos.after);
+      case (ConnectionFolderNode d, ConnectionFolderNode f):
+        if (isInFolder(f.path, d.path)) return null;
+        // Below an open folder its first child follows: that is "into".
+        final open = f.expanded && f.items.isNotEmpty;
+        if (dy < height * 0.25) return _Drop(f, _DropPos.before);
+        if (dy > height * 0.75 && !open) return _Drop(f, _DropPos.after);
+        return folderParent(d.path) == f.path ? null : _Drop(f, _DropPos.into);
+      default:
+        // Folders come before the connections of a level.
+        return null;
+    }
+  }
+
+  void _startDrag(NavNode n, BuildContext rowContext) {
+    _autoScroller?.stopAutoScroll();
+    _autoScroller = EdgeDraggingAutoScroller(Scrollable.of(rowContext), velocityScalar: 20);
+    setState(() {
+      _dragging = n;
+      _selected = n;
+    });
+  }
+
+  /// Pointer up or cancel of a drag started in the list. It comes before
+  /// the drop, which keeps [_drop].
+  void _endDrag() {
+    if (_dragging == null) return;
+    _autoScroller?.stopAutoScroll();
+    _autoScroller = null;
+    setState(() => _dragging = null);
+  }
+
+  Widget _movableRow(NavNode n, Widget row, int depth) {
+    final c = DbColors.of(context);
+    final pos = identical(_drop?.target, n) ? _drop!.pos : null;
+    // From the chevron slot, as Finder.
+    final indent = 4.0 + depth * 16;
+    final marked = Stack(
+      children: [
+        row,
+        if (pos == _DropPos.into)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: c.accent, width: 2),
+                  borderRadius: BorderRadius.circular(Radii.control),
+                ),
+              ),
+            ),
+          )
+        else if (pos != null)
+          Positioned(
+            left: indent,
+            right: 0,
+            top: pos == _DropPos.before ? 0 : null,
+            bottom: pos == _DropPos.after ? 0 : null,
+            height: 2,
+            child: IgnorePointer(child: ColoredBox(color: c.accent)),
+          ),
+      ],
+    );
+    return Builder(
+      builder: (rowContext) => DragTarget<NavNode>(
+        onWillAcceptWithDetails: (d) => _movable(d.data),
+        onMove: (d) {
+          final box = rowContext.findRenderObject() as RenderBox?;
+          if (box == null || !box.hasSize) return;
+          _setDrop(_dropFor(d.data, n, box.globalToLocal(d.offset).dy, box.size.height));
+        },
+        onLeave: (_) {
+          if (identical(_drop?.target, n)) _setDrop(null);
+        },
+        onAcceptWithDetails: (d) {
+          final drop = _drop;
+          _setDrop(null);
+          if (drop != null && identical(drop.target, n)) _performDrop(d.data, drop);
+        },
+        builder: (context, _, _) => Draggable<NavNode>(
+          data: n,
+          dragAnchorStrategy: pointerDragAnchorStrategy,
+          feedback: _dragFeedback(n),
+          childWhenDragging: Opacity(opacity: 0.4, child: marked),
+          onDragStarted: () => _startDrag(n, rowContext),
+          child: marked,
+        ),
+      ),
+    );
+  }
+
+  /// What follows the pointer: the icon and name of the dragged row.
+  Widget _dragFeedback(NavNode n) {
+    final c = DbColors.of(context);
+    return Transform.translate(
+      offset: const Offset(10, -12),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Container(
+          height: kDenseRowHeight,
+          padding: const EdgeInsets.symmetric(horizontal: Gap.sm),
+          decoration: BoxDecoration(
+            color: c.menuBackground,
+            borderRadius: BorderRadius.circular(Radii.control),
+            border: Border.all(color: c.separator),
+            boxShadow: Elevation.menu(Theme.of(context).brightness),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(n.icon, size: 14, color: _iconColor(n, c)),
+              const SizedBox(width: 6),
+              Text(n.label, style: uiText(TypeSize.body, color: c.text)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The list as the drop target of the top level (the room below the
+  /// rows), with the auto scroll near its edges while dragging.
+  Widget _topLevelTarget(Widget list) {
+    final c = DbColors.of(context);
+    return Listener(
+      onPointerMove: (e) {
+        if (_dragging == null) return;
+        _autoScroller?.startAutoScrollIfNecessary(
+          Rect.fromCenter(center: e.position, width: 1, height: kSidebarRowHeight * 2),
+        );
+      },
+      onPointerUp: (_) => _endDrag(),
+      onPointerCancel: (_) => _endDrag(),
+      child: Builder(
+        builder: (listContext) => DragTarget<NavNode>(
+          onWillAcceptWithDetails: (d) => _movable(d.data),
+          onMove: (d) {
+            final box = listContext.findRenderObject() as RenderBox?;
+            if (box == null || !box.hasSize) return;
+            final y = box.globalToLocal(d.offset).dy + (_scroll.hasClients ? _scroll.offset : 0);
+            _setDrop(y >= _visibleCount * kSidebarRowHeight ? const _Drop(null, _DropPos.into) : null);
+          },
+          onLeave: (_) {
+            if (_drop != null && _drop!.target == null) _setDrop(null);
+          },
+          onAcceptWithDetails: (d) {
+            final drop = _drop;
+            _setDrop(null);
+            if (drop != null && drop.target == null) _performDrop(d.data, drop);
+          },
+          builder: (context, _, _) => Stack(
+            children: [
+              Positioned.fill(child: list),
+              if (_drop != null && _drop!.target == null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: Gap.xs),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: c.accent, width: 2),
+                        borderRadius: BorderRadius.circular(Radii.menu),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _performDrop(NavNode dragged, _Drop drop) async {
+    final app = AppScope.read(context);
+    final target = drop.target;
+    await guarded(context, () async {
+      switch ((dragged, target)) {
+        case (ConnectionNode d, null):
+          await app.moveConnectionTo(d.dc, '');
+        case (ConnectionNode d, ConnectionFolderNode f):
+          f.expanded = true;
+          await app.moveConnectionTo(d.dc, f.path);
+        case (ConnectionNode d, ConnectionNode t):
+          await app.moveConnectionTo(
+            d.dc,
+            AppState.folderOf(t.dc),
+            before: drop.pos == _DropPos.before ? t.dc : null,
+            after: drop.pos == _DropPos.after ? t.dc : null,
+          );
+        case (ConnectionFolderNode d, null):
+          await _moveFolder(d, '');
+        case (ConnectionFolderNode d, ConnectionFolderNode f) when drop.pos == _DropPos.into:
+          f.expanded = true;
+          await _moveFolder(d, f.path);
+        case (ConnectionFolderNode d, ConnectionFolderNode f):
+          final parent = folderParent(f.path);
+          String? before = f.path;
+          if (drop.pos == _DropPos.after) {
+            // Before the sibling after [f], other than the moved folder.
+            final siblings = subfolders(app.folders, parent)..remove(d.path);
+            final i = siblings.indexOf(f.path);
+            before = i + 1 < siblings.length ? siblings[i + 1] : null;
+          }
+          await _moveFolder(d, parent, before: before);
+        default:
+          break;
+      }
+    });
+  }
+
+  /// Moves the folder [f] into [parent] keeping the expansion of the moved
+  /// folders and the selection.
+  Future<void> _moveFolder(ConnectionFolderNode f, String parent, {String? before}) async {
+    final app = AppScope.read(context);
+    final selected = _selected;
+    final renames = await app.moveFolderTo(f.path, parent, before: before);
+    if (renames == null) {
+      if (mounted) showToast(context, 'Non puoi spostare una cartella dentro sé stessa');
+      return;
+    }
+    _remapFolders(renames, selected);
+  }
+
+  /// Carries the expansion of renamed folders to their new paths, and the
+  /// selection when it was one of them.
+  void _remapFolders(Map<String, String> renames, NavNode? selected) {
+    final moved = <String, NavNode>{};
+    for (final e in renames.entries) {
+      if (e.key == e.value) continue;
+      final node = _cache.remove(ConnectionFolderNode.folderKey(e.key));
+      if (node != null) moved[ConnectionFolderNode.folderKey(e.value)] = node;
+    }
+    _cache.addAll(moved);
+    if (selected is ConnectionFolderNode && renames.containsKey(selected.path)) {
+      setState(() => _pendingSelectKey = ConnectionFolderNode.folderKey(renames[selected.path]!));
+    }
+  }
+
+  Future<void> _promptMoveConnection(DbConnection dc) async {
+    final app = AppScope.read(context);
+    final current = AppState.folderOf(dc);
+    final folder = await promptFolder(context, 'Sposta "${dc.config.name}"', folders: app.folders, initial: current);
+    if (folder == null || folder == current || !mounted) return;
+    await guarded(context, () => app.moveConnectionTo(dc, folder));
+  }
+
+  Future<void> _promptMoveFolder(ConnectionFolderNode f) async {
+    final app = AppScope.read(context);
+    final current = folderParent(f.path);
+    final parent = await promptFolder(
+      context,
+      'Sposta la cartella "${f.label}"',
+      folders: [for (final p in app.folders) if (!isInFolder(p, f.path)) p],
+      initial: current,
+      message: 'Cartella in cui spostarla (es. Clienti). Vuoto: livello principale.',
+    );
+    if (parent == null || parent == current || !mounted) return;
+    await guarded(context, () => _moveFolder(f, parent));
+  }
+
+  Future<void> _renameFolder(ConnectionFolderNode f) async {
+    final app = AppScope.read(context);
+    final name = await promptText(context, 'Rinomina cartella', label: 'Nome', initial: f.label);
+    if (name == null || normalizeFolder(name).isEmpty || normalizeFolder(name) == f.label || !mounted) return;
+    final selected = _selected;
+    await guarded(context, () async {
+      final renames = await app.renameFolder(f.path, name);
+      if (renames != null) _remapFolders(renames, selected);
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -539,6 +865,7 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
           const MenuEntry.divider(),
           _item('Modifica connessione…', () => editConnection(context, d), shortcut: _editKey),
           _item('Duplica', () => duplicateConnection(context, d)),
+          _item('Sposta in cartella…', () => _promptMoveConnection(d)),
           _item('Sposta su', () => app.moveConnection(d, -1)),
           _item('Sposta giù', () => app.moveConnection(d, 1)),
           _item('Elimina', () => deleteConnection(context, d)),
@@ -888,6 +1215,15 @@ class _NavigatorPanelState extends State<NavigatorPanel> {
         ]);
       case LeafNode l:
         items.add(_item('Copia nome', () => Clipboard.setData(ClipboardData(text: l.name))));
+      case ConnectionFolderNode f:
+        final siblings = subfolders(app.folders, folderParent(f.path));
+        final i = siblings.indexOf(f.path);
+        items.addAll([
+          _item('Rinomina…', () => _renameFolder(f)),
+          _item('Sposta in…', () => _promptMoveFolder(f)),
+          _item('Sposta su', i > 0 ? () => app.shiftFolderBy(f.path, -1) : null),
+          _item('Sposta giù', i >= 0 && i + 1 < siblings.length ? () => app.shiftFolderBy(f.path, 1) : null),
+        ]);
       default:
         break;
     }
