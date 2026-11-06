@@ -78,7 +78,14 @@ Future<bool> createDatabase(BuildContext context, DbConnection dc) async {
     taken: {for (final x in existing) x.name.toLowerCase()},
   );
   if (d == null || !context.mounted) return false;
-  return _run(context, dc, ObjectDdl(dc.dialect).createDatabase(d), 'Nuovo database ${d.name}', autocommitOnly: true);
+  return _run(
+    context,
+    dc,
+    ObjectDdl(dc.dialect).createDatabase(d),
+    'Nuovo database ${d.name}',
+    autocommitOnly: true,
+    catalog: _serverDatabase(dc),
+  );
 }
 
 Future<bool> editDatabase(BuildContext context, DbConnection dc, String name) async {
@@ -98,7 +105,7 @@ Future<bool> editDatabase(BuildContext context, DbConnection dc, String name) as
   if (d == null || !context.mounted) return false;
   final statements = ObjectDdl(dc.dialect).alterDatabase(current, d);
   if (statements.isEmpty) return false;
-  return _run(context, dc, statements, 'Proprietà del database $name', autocommitOnly: true);
+  return _run(context, dc, statements, 'Proprietà del database $name', autocommitOnly: true, catalog: _serverDatabase(dc));
 }
 
 Future<bool> renameDatabase(BuildContext context, DbConnection dc, String name) async {
@@ -124,10 +131,17 @@ Future<bool> renameDatabase(BuildContext context, DbConnection dc, String name) 
     ObjectDdl(dc.dialect).renameDatabase(name, to.trim()),
     'Rinomina $name',
     autocommitOnly: true,
+    catalog: _serverDatabase(dc),
   );
   if (ok && dc.defaultCatalog == name) dc.defaultCatalog = to.trim();
   return ok;
 }
+
+/// Where statements on whole databases run: master on Azure SQL Database,
+/// whose sessions see only their own database (CREATE, ALTER … MODIFY NAME
+/// and DROP DATABASE need master). Null elsewhere: the current database.
+String? _serverDatabase(DbConnection dc) =>
+    dc.routesDatabases && dc.dialect.family == DbFamily.sqlServer ? 'master' : null;
 
 /// SQL Server: moves the sessions of [dc] out of [name] (to master), which
 /// needs exclusive access to be renamed or dropped.
@@ -179,6 +193,7 @@ Future<bool> dropDatabase(BuildContext context, DbConnection dc, String name) as
     ObjectDdl(dc.dialect).dropDatabase(name, force: chosen.contains('force')),
     'Elimina $name',
     autocommitOnly: true,
+    catalog: _serverDatabase(dc),
   );
   if (ok && dc.defaultCatalog == name) dc.defaultCatalog = null;
   return ok;

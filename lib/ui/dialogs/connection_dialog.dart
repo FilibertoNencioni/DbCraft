@@ -107,14 +107,15 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
       (!cfg.isNative && cfg.extraParams.isNotEmpty) ||
       (_allDatabasesInAdvanced && !cfg.allDatabases);
 
-  /// DSN and connection strings may reach PostgreSQL: its "every database"
-  /// switch waits under Avanzate (the driver row shows it otherwise).
+  /// DSN and connection strings may reach PostgreSQL or Azure SQL Database:
+  /// their "every database" switch waits under Avanzate (the driver row
+  /// shows it otherwise).
   bool get _allDatabasesInAdvanced => cfg.mode == ConnectionMode.dsn || cfg.mode == ConnectionMode.connectionString;
 
-  Widget _allDatabasesRow({bool postgresOnly = false}) => _switchRow(
+  Widget _allDatabasesRow({String? only}) => _switchRow(
         'Mostra tutti i database',
         [
-          if (postgresOnly) 'Solo PostgreSQL.',
+          ?only,
           cfg.allDatabases ? 'Ognuno si apre con sessioni proprie' : 'Solo il database indicato',
         ].join(' '),
         cfg.allDatabases,
@@ -445,6 +446,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     final t = DriverTemplate.forDriver(_driver.text);
     final generic = t == DriverTemplate.generic;
     final postgres = t.id == 'postgres';
+    final sqlServer = t.id == 'sqlserver';
     return [
       FormGroup(
         title: 'Connessione',
@@ -509,6 +511,8 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                   : _field(_database, postgres ? 'Facoltativo' : (t.id == 'oracle' ? 'Es. ORCLPDB1' : 'Nome del database')),
             ),
           if (postgres) _allDatabasesRow(),
+          // On-premise SQL Server reads every database with one session.
+          if (sqlServer) _allDatabasesRow(only: 'Solo Azure SQL Database.'),
         ],
       ),
       if (t.userKey != null || supportedAuthMethods(cfg).length > 1) _authFields(),
@@ -761,7 +765,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
               help: 'Mantiene attiva la connessione inattiva (e le transazioni aperte). 0 = disattivato',
               child: seconds(_keepAlive, '60'),
             ),
-          if (_allDatabasesInAdvanced) _allDatabasesRow(postgresOnly: true),
+          if (_allDatabasesInAdvanced) _allDatabasesRow(only: 'Solo PostgreSQL e Azure SQL Database.'),
         ],
       ),
       if (cfg.mode != ConnectionMode.native)

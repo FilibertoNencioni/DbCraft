@@ -71,7 +71,7 @@ enum SchemaLevel { connection, catalog, schema, object, security }
 /// autocompletion) and one for SQL editors / data editors, so that browsing
 /// the navigator never waits for a running query.
 ///
-/// PostgreSQL binds a session to one database: with
+/// PostgreSQL and Azure SQL Database bind a session to one database: with
 /// [ConnectionConfig.allDatabases] both are [DatabaseRouterSession]s that
 /// open a session per database on first use, and the databases of the
 /// server appear as catalogs.
@@ -160,7 +160,8 @@ class DbConnection extends ChangeNotifier {
         readOnly: readOnly,
       );
 
-  /// Every database has its own sessions (PostgreSQL, see [DbConnection]).
+  /// Every database has its own sessions (PostgreSQL, Azure SQL Database,
+  /// see [DbConnection]).
   bool get routesDatabases => meta is DatabaseRouterSession;
 
   /// The main session working on [catalog] without moving the database of
@@ -228,7 +229,8 @@ class DbConnection extends ChangeNotifier {
       md = await openMeta(config);
       DbSession raw = await openMain(config);
       m = raw;
-      final initial = await _bindsDatabase(md) ? await _currentDatabase(md) : null;
+      final routing = await _databaseRouting(md);
+      final initial = routing?.initial;
       final dialect = SqlDialect(dbmsName: '${(await md.info())['dbmsName'] ?? ''}');
       final ping = _pingSql(dialect);
       // ODBC sessions reopen themselves when the server drops them (native
@@ -252,14 +254,14 @@ class DbConnection extends ChangeNotifier {
           md,
           initial,
           open: (db) async => resilient(await openMeta(config.forDatabase(db)), () => openMeta(config.forDatabase(db))),
-          listDatabases: _postgresDatabases,
+          listDatabases: routing!.list,
         );
         m = raw = DatabaseRouterSession(
           raw,
           initial,
           open: (db) async =>
               resilient(await openMain(config.forDatabase(db)), () => openMain(config.forDatabase(db)), isMain: true),
-          listDatabases: _postgresDatabases,
+          listDatabases: routing.list,
           onOpened: _bootstrap,
         );
       }
@@ -305,12 +307,40 @@ class DbConnection extends ChangeNotifier {
     }
   }
 
-  /// Whether sessions of [s] are bound to one database and every database
-  /// gets its own (PostgreSQL itself, not Redshift or Greenplum).
-  Future<bool> _bindsDatabase(DbSession s) async {
-    if (!config.allDatabases || config.isNative) return false;
+  /// The database [s] is bound to and how to list the others, when every
+  /// database needs its own sessions: PostgreSQL itself (not Redshift or
+  /// Greenplum) and Azure SQL Database, where a session sees only its
+  /// database (no USE, no three-part names to another one). Null when one
+  /// session reads every database.
+  Future<({String initial, DatabaseLister list})?> _databaseRouting(DbSession s) async {
+    if (!config.allDatabases || config.isNative) return null;
     final name = '${(await s.info())['dbmsName'] ?? ''}'.trim().toLowerCase();
-    return name == 'postgresql';
+    final (String current, DatabaseLister list)? r;
+    if (name == 'postgresql') {
+      r = ('SELECT current_database()', _postgresDatabases);
+    } else if (SqlDialect(dbmsName: name).family == DbFamily.sqlServer && await _isolatesDatabases(s)) {
+      r = ('SELECT DB_NAME()', _sqlServerDatabases);
+    } else {
+      r = null;
+    }
+    if (r == null) return null;
+    final initial = await _currentDatabase(s, r.$1);
+    return initial == null ? null : (initial: initial, list: r.$2);
+  }
+
+  /// SQL Server engine editions whose sessions cannot reach another
+  /// database: Azure SQL Database (5), Azure Synapse dedicated SQL pool (6)
+  /// and SQL database in Microsoft Fabric (12). Managed Instance (8) works
+  /// like SQL Server.
+  static const _isolatedEditions = {5, 6, 12};
+
+  static Future<bool> _isolatesDatabases(DbSession s) async {
+    try {
+      final r = await _rows(s, "SELECT CAST(SERVERPROPERTY('EngineEdition') AS int)");
+      return r.isNotEmpty && _isolatedEditions.contains(int.tryParse(r.first));
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<List<String>> _rows(DbSession s, String sql) async {
@@ -319,9 +349,9 @@ class DbConnection extends ChangeNotifier {
     return [for (final row in r.rows) if (row.isNotEmpty && row.first != null) '${row.first}'];
   }
 
-  static Future<String?> _currentDatabase(DbSession s) async {
+  static Future<String?> _currentDatabase(DbSession s, String sql) async {
     try {
-      final r = await _rows(s, 'SELECT current_database()');
+      final r = await _rows(s, sql);
       return r.isEmpty ? null : r.first;
     } catch (_) {
       return null;
@@ -331,6 +361,11 @@ class DbConnection extends ChangeNotifier {
   /// Databases that accept connections, templates last.
   static Future<List<String>> _postgresDatabases(DbSession s) =>
       _rows(s, 'SELECT datname FROM pg_database WHERE datallowconn ORDER BY datistemplate, datname');
+
+  /// Databases of an Azure SQL logical server (from master every one, from
+  /// a user database that one and master).
+  static Future<List<String>> _sqlServerDatabases(DbSession s) =>
+      _rows(s, 'SELECT name FROM sys.databases ORDER BY name');
 
   /// Light statement keeping a session alive; null for file databases.
   static String? _pingSql(SqlDialect d) => switch (d.family) {
