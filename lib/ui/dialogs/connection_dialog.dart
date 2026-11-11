@@ -7,6 +7,7 @@ import '../../drivers/session_factory.dart';
 import '../../model/auth_methods.dart';
 import '../../model/connection_config.dart';
 import '../../model/connection_folders.dart';
+import '../../model/ssl_settings.dart';
 import '../../odbc/odbc_session.dart';
 import '../../odbc/odbc_types.dart';
 import '../../state/app_state.dart';
@@ -78,6 +79,9 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   late final _queryTimeout = TextEditingController(text: '${cfg.queryTimeout}');
   late final _bootstrap = TextEditingController(text: cfg.bootstrapQueries);
   late final _description = TextEditingController(text: cfg.description);
+  late final _sslCa = TextEditingController(text: cfg.sslCa);
+  late final _sslCert = TextEditingController(text: cfg.sslCert);
+  late final _sslKey = TextEditingController(text: cfg.sslKey);
 
   /// Auth parameters and native driver options, created on demand.
   final Map<String, TextEditingController> _params = {};
@@ -132,7 +136,10 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   void initState() {
     super.initState();
     _loadOdbc();
-    for (final c in [_driver, _host, _port, _database, _user, _password, _dsn, _connStr, _extra, _defaultCatalog]) {
+    for (final c in [
+      _driver, _host, _port, _database, _user, _password, _dsn, _connStr, _extra, _defaultCatalog, //
+      _sslCa, _sslCert, _sslKey,
+    ]) {
       c.addListener(_changed);
     }
   }
@@ -180,7 +187,10 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
       ..queryTimeout = int.tryParse(_queryTimeout.text) ?? 0
       ..keepAlive = int.tryParse(_keepAlive.text) ?? 60
       ..bootstrapQueries = _bootstrap.text
-      ..description = _description.text;
+      ..description = _description.text
+      ..sslCa = _sslCa.text.trim()
+      ..sslCert = _sslCert.text.trim()
+      ..sslKey = _sslKey.text.trim();
     // Authentication parameters: secrets go to the vault, the rest to JSON.
     final authP = <String, String>{}, secrets = <String, String>{};
     if (!supportedAuthMethods(cfg).contains(cfg.authMethod)) cfg.authMethod = supportedAuthMethods(cfg).first;
@@ -516,7 +526,52 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
         ],
       ),
       if (t.userKey != null || supportedAuthMethods(cfg).length > 1) _authFields(),
+      if (supportedSslModes(cfg).isNotEmpty) _sslGroup(t),
     ];
+  }
+
+  /// SSL/TLS: the mode, then the PEM files once the connection is encrypted
+  /// (or when some are already set).
+  Widget _sslGroup(DriverTemplate t) {
+    final modes = supportedSslModes(cfg);
+    final mode = effectiveSslMode(cfg);
+    final anyFile = [_sslCa, _sslCert, _sslKey].any((c) => c.text.trim().isNotEmpty);
+    final files = sslSupportsFiles(cfg) &&
+        mode != SslMode.disable &&
+        (mode == SslMode.require || mode.verifies || anyFile);
+    return FormGroup(
+      title: 'SSL / TLS',
+      footer: switch (t.id) {
+        'sqlserver' => 'Il certificato del server viene verificato con le CA di sistema. '
+            'Altre opzioni (HostNameInCertificate, ServerCertificate…) vanno in Avanzate › Parametri del driver.',
+        _ when mode.verifies => 'Per i servizi cloud indica il file PEM della CA del provider '
+            '(es. per Azure Database for MySQL/PostgreSQL i certificati radice DigiCert e Microsoft).',
+        _ => null,
+      },
+      children: [
+        FormRow(
+          label: 'Modalità',
+          help: mode.description,
+          child: SelectField<SslMode>(
+            value: mode,
+            items: [for (final m in modes) (m, m.label, null)],
+            onChanged: (v) => setState(() {
+              cfg.sslMode = v;
+              _result = null;
+            }),
+          ),
+        ),
+        if (files) ...[
+          FormRow(
+            label: 'Certificato CA',
+            help: mode.verifies && _sslCa.text.trim().isEmpty ? 'Necessario se la CA non è tra quelle note al driver' : null,
+            child: _pathField(_sslCa, 'File PEM della CA'),
+          ),
+          FormRow(label: 'Certificato client', child: _pathField(_sslCert, 'Facoltativo')),
+          FormRow(label: 'Chiave client', child: _pathField(_sslKey, 'Facoltativa')),
+        ],
+      ],
+    );
   }
 
   List<Widget> _dsnGroups() => [
@@ -807,6 +862,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     for (final c in [
       _name, _driver, _dsn, _host, _port, _database, _user, _password, _connStr, _extra, //
       _folder, _defaultCatalog, _loginTimeout, _queryTimeout, _keepAlive, _bootstrap, _description,
+      _sslCa, _sslCert, _sslKey,
       ..._params.values,
     ]) {
       c.dispose();

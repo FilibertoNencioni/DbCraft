@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../drivers/native_registry.dart';
 import 'auth_methods.dart';
+import 'ssl_settings.dart';
 import '../ui/theme/app_icons.dart';
 
 /// How the connection is opened: through ODBC (driver, DSN or connection
@@ -56,6 +57,10 @@ class ConnectionConfig {
     this.authMethod = AuthMethod.password,
     Map<String, String>? authParams,
     Map<String, String>? secretParams,
+    this.sslMode = SslMode.driverDefault,
+    this.sslCa = '',
+    this.sslCert = '',
+    this.sslKey = '',
   }) : extraParams = extraParams ?? {},
        authParams = authParams ?? {},
        secretParams = secretParams ?? {};
@@ -107,6 +112,13 @@ class ConnectionConfig {
   /// written to connections.json: they live in the encrypted vault.
   Map<String, String> secretParams;
 
+  /// SSL/TLS of ODBC driver connections (see `ssl_settings.dart`): the mode
+  /// and the PEM files of the CA, client certificate and client key.
+  SslMode sslMode;
+  String sslCa;
+  String sslCert;
+  String sslKey;
+
   bool get isNative => mode == ConnectionMode.native;
 
   static final _databaseKeyword = RegExp(r'^\s*(DATABASE|DBNAME)\s*=', caseSensitive: false);
@@ -150,7 +162,14 @@ class ConnectionConfig {
   String buildConnectionString({String? overridePassword, String? token}) {
     final pwd = authMethod.usesPassword || authMethod == AuthMethod.password ? (overridePassword ?? password) : '';
     final useUser = authMethod.usesUser;
-    final auth = mode == ConnectionMode.driver || mode == ConnectionMode.dsn ? authAttributes(this, token: token) : const <String, String>{};
+    final auth = mergeOdbcAttributes(
+      mode == ConnectionMode.driver || mode == ConnectionMode.dsn ? authAttributes(this, token: token) : const {},
+      // Keywords written in the driver parameters win over the SSL section.
+      {
+        for (final e in sslAttributes(this).entries)
+          if (!extraParams.keys.any((k) => k.toLowerCase() == e.key.toLowerCase())) e.key: e.value,
+      },
+    );
     bool overridden(String? key) => key != null && auth.keys.any((k) => k.toLowerCase() == key.toLowerCase());
     switch (mode) {
       case ConnectionMode.native:
@@ -195,7 +214,7 @@ class ConnectionConfig {
         if (!overridden(t.passwordKey)) add(t.passwordKey, pwd);
         auth.forEach((k, v) => parts.add('$k=${odbcEscape(v)}'));
         t.defaults.forEach((k, v) {
-          if (!extraParams.keys.any((e) => e.toLowerCase() == k.toLowerCase())) {
+          if (!extraParams.keys.any((e) => e.toLowerCase() == k.toLowerCase()) && !overridden(k)) {
             parts.add('$k=$v');
           }
         });
@@ -290,6 +309,10 @@ class ConnectionConfig {
     if (nativeDriver.isNotEmpty) 'nativeDriver': nativeDriver,
     'authMethod': authMethod.name,
     if (authParams.isNotEmpty) 'authParams': authParams,
+    if (sslMode != SslMode.driverDefault) 'sslMode': sslMode.name,
+    if (sslCa.isNotEmpty) 'sslCa': sslCa,
+    if (sslCert.isNotEmpty) 'sslCert': sslCert,
+    if (sslKey.isNotEmpty) 'sslKey': sslKey,
   };
 
   factory ConnectionConfig.fromJson(Map<String, Object?> j) => ConnectionConfig(
@@ -321,7 +344,30 @@ class ConnectionConfig {
     authMethod: AuthMethod.values.asNameMap()[j['authMethod']] ?? AuthMethod.password,
     authParams: (j['authParams'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString())) ?? {},
     secretParams: (j['secretParams'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString())) ?? {},
+    sslMode: SslMode.values.asNameMap()[j['sslMode']] ?? SslMode.driverDefault,
+    sslCa: j['sslCa'] as String? ?? '',
+    sslCert: j['sslCert'] as String? ?? '',
+    sslKey: j['sslKey'] as String? ?? '',
   );
+}
+
+/// Merges connection string attributes: [b] wins, except psqlODBC `pqopt`
+/// whose libpq options (Kerberos service, SSL files) are joined.
+Map<String, String> mergeOdbcAttributes(Map<String, String> a, Map<String, String> b) {
+  final out = {...a};
+  for (final e in b.entries) {
+    final same = out.keys.where((k) => k.toLowerCase() == e.key.toLowerCase()).toList();
+    if (e.key.toLowerCase() == 'pqopt' && same.isNotEmpty) {
+      String inner(String v) => v.startsWith('{') && v.endsWith('}') ? v.substring(1, v.length - 1) : v;
+      out[same.first] = '${inner(out[same.first]!)} ${inner(e.value)}';
+      continue;
+    }
+    for (final k in same) {
+      out.remove(k);
+    }
+    out[e.key] = e.value;
+  }
+  return out;
 }
 
 String _braced(String v) => v.startsWith('{') || v.startsWith('/') ? v : '{$v}';
@@ -491,7 +537,7 @@ class DriverTemplate {
     DriverTemplate(
       id: 'mysql',
       label: 'MySQL / MariaDB',
-      pattern: r'mysql|maria',
+      pattern: r'mysql|maria|maodbc|myodbc',
       defaultPort: '3306',
       userKey: 'USER',
       passwordKey: 'PASSWORD',
