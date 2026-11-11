@@ -34,6 +34,12 @@ class SqlSplitter {
     var blockMode = false;
     var checkedBlock = false;
     String? lastWord;
+    // State for the blank-line delimiter: a blank line does not end a
+    // statement that is obviously incomplete.
+    var parens = 0;
+    String? lastTok;
+    var sawWord = false;
+    var cteHead = false;
     // MySQL client directive "DELIMITER $$": until "DELIMITER ;" statements
     // end only at the custom delimiter.
     var delimiter = ';';
@@ -50,6 +56,10 @@ class SqlSplitter {
       blockMode = false;
       checkedBlock = false;
       lastWord = null;
+      parens = 0;
+      lastTok = null;
+      sawWord = false;
+      cteHead = false;
     }
 
     bool atLineStart(int pos) {
@@ -80,11 +90,13 @@ class SqlSplitter {
       // Quoted text
       if (c == "'" || c == '"' || c == '`') {
         i = _skipQuoted(sql, i, c);
+        lastTok = c;
         continue;
       }
       if (c == '[') {
         final e = sql.indexOf(']', i + 1);
         i = e < 0 ? n : e + 1;
+        lastTok = ']';
         continue;
       }
       if (c == r'$') {
@@ -93,6 +105,7 @@ class SqlSplitter {
           final tag = m[0]!;
           final e = sql.indexOf(tag, i + tag.length);
           i = e < 0 ? n : e + tag.length;
+          lastTok = r'$';
           continue;
         }
       }
@@ -137,6 +150,13 @@ class SqlSplitter {
           }
         }
         lastWord = word;
+        lastTok = word;
+        if (!sawWord) {
+          sawWord = true;
+          cteHead = word == 'WITH';
+        } else if (cteHead && parens == 0 && _cteBodyStart.contains(word)) {
+          cteHead = false;
+        }
         i = j;
         continue;
       }
@@ -154,18 +174,24 @@ class SqlSplitter {
         i = stmtStart;
         continue;
       }
-      if (c == '\n' && blankLineDelimiter && (!blockMode || depth <= 0)) {
+      if (c == '\n' && blankLineDelimiter && (!blockMode || depth <= 0) && parens == 0 && !cteHead) {
         // Blank line?
         var j = i + 1;
         while (j < n && (sql[j] == ' ' || sql[j] == '\t' || sql[j] == '\r')) {
           j++;
         }
-        if (j < n && sql[j] == '\n') {
+        if (j < n && sql[j] == '\n' && !_continuesAfter(lastTok) && !_continuesBefore(_nextToken(sql, j))) {
           emit(i, j);
           i = j;
           continue;
         }
       }
+      if (c == '(') {
+        parens++;
+      } else if (c == ')' && parens > 0) {
+        parens--;
+      }
+      if (!_isSpace(c)) lastTok = c;
       i++;
     }
     emit(n, n);
@@ -183,6 +209,59 @@ class SqlSplitter {
     }
     // Caret after the last delimiter on the same line: take the previous one.
     return best ?? all.first;
+  }
+
+  /// Keywords that start the main query of a `WITH` statement.
+  static const _cteBodyStart = {'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE'};
+
+  /// Tokens that cannot end a statement: a blank line after them is not a
+  /// delimiter.
+  static const _openEnded = {
+    ',', '(', '=', '<', '>', '+', '|', '.', //
+    'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER',
+    'CROSS', 'ON', 'BY', 'AS', 'WITH', 'UNION', 'ALL', 'EXCEPT', 'INTERSECT', 'MINUS', 'SET', 'VALUES',
+    'INTO', 'IN', 'IS', 'LIKE', 'BETWEEN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'HAVING', 'DISTINCT', 'ORDER',
+    'GROUP', 'PARTITION', 'OVER', 'USING',
+  };
+
+  /// Tokens that cannot start a statement: a blank line before them is not a
+  /// delimiter.
+  static const _continuation = {
+    ',', ')', '.', '=', '<', '>', '+', '|', //
+    'FROM', 'WHERE', 'AND', 'OR', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'CROSS', 'ON',
+    'GROUP', 'ORDER', 'HAVING', 'UNION', 'EXCEPT', 'INTERSECT', 'MINUS', 'LIMIT', 'OFFSET',
+    'WINDOW', 'RETURNING', 'OUTPUT', 'WHEN', 'THEN', 'ELSE', 'OVER', 'PARTITION', 'USING', 'AS', 'INTO',
+    'NOT', 'IN', 'IS', 'LIKE', 'BETWEEN',
+  };
+
+  static bool _continuesAfter(String? tok) => tok != null && _openEnded.contains(tok);
+  static bool _continuesBefore(String? tok) => tok != null && _continuation.contains(tok);
+
+  /// First token (upper-case word or single character) at or after [from],
+  /// skipping whitespace and comments.
+  static String? _nextToken(String s, int from) {
+    var i = from;
+    final n = s.length;
+    while (i < n) {
+      final c = s[i];
+      if (_isSpace(c)) {
+        i++;
+      } else if (c == '-' && i + 1 < n && s[i + 1] == '-') {
+        i = _skipTo(s, i, '\n');
+      } else if (c == '/' && i + 1 < n && s[i + 1] == '*') {
+        final e = s.indexOf('*/', i + 2);
+        i = e < 0 ? n : e + 2;
+      } else if (_isWordStart(c)) {
+        var j = i + 1;
+        while (j < n && _isWordPart(s[j])) {
+          j++;
+        }
+        return s.substring(i, j).toUpperCase();
+      } else {
+        return c;
+      }
+    }
+    return null;
   }
 
   static bool _onlyComments(String s) {

@@ -60,6 +60,20 @@ void main() {
       expect(sp.statementAt(sql, 2)!.text, 'select 1\nfrom a');
       expect(sp.statementAt(sql, sql.length)!.text, 'select 2\nfrom b');
     });
+    test('blank lines inside CTEs and incomplete statements do not split', () {
+      final sp = SqlSplitter(blankLineDelimiter: true);
+      const cte = 'WITH a AS (\n  SELECT 1 AS x\n\n  FROM t\n),\n\nb AS (\n  SELECT 2 AS y\n)\n\nSELECT *\n\nFROM a, b';
+      expect(sp.split(cte).map((e) => e.text), [cte]);
+      expect(sp.split('WITH a AS (SELECT 1 x)\n\n, b AS (SELECT 2 y)\nSELECT * FROM a, b').length, 1);
+      expect(sp.split('SELECT a,\n\n  b\nFROM t\n\nWHERE a = 1\n\nUNION ALL\n\nSELECT 1, 2').length, 1);
+      expect(sp.statementAt(cte, cte.length)!.text, cte);
+    });
+    test('blank lines still split complete statements', () {
+      final sp = SqlSplitter(blankLineDelimiter: true);
+      expect(sp.split('WITH a AS (SELECT 1 x) SELECT * FROM a\n\nSELECT 2\n\nINSERT INTO t VALUES (1)\n\nSELECT 3')
+          .map((e) => e.text), ['WITH a AS (SELECT 1 x) SELECT * FROM a', 'SELECT 2', 'INSERT INTO t VALUES (1)', 'SELECT 3']);
+      expect(sp.split('SELECT 1 FROM t FOR UPDATE\n\nFETCH NEXT FROM c').length, 2);
+    });
     test('parameters', () {
       final p = findParameters("select * from t where a = :id and b = ? and c = '::x' and d::int = :id");
       expect(p.map((e) => e.name), ['id', '?1', 'id']);
