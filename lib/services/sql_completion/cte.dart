@@ -2,7 +2,7 @@
 // used by the SQL editor autocompletion.
 
 class SqlCte {
-  const SqlCte(this.name, this.columns, this.starSources, this.body);
+  const SqlCte(this.name, this.columns, this.starSources, this.body, {this.bodyStart = 0, this.bodyEnd = 0});
 
   final String name;
 
@@ -13,6 +13,10 @@ class SqlCte {
   /// otherwise the qualifier. Their columns come from the body's tables.
   final List<String?> starSources;
   final String body;
+
+  /// Offsets of [body] in the text given to [findCtes] (inside the parentheses).
+  final int bodyStart;
+  final int bodyEnd;
 }
 
 /// CTEs defined anywhere in [sql] (strings and comments ignored).
@@ -57,7 +61,16 @@ List<SqlCte> findCtes(String sql) {
       // An unclosed body (still being typed) extends to the end of the text.
       final body = s.substring(i + 1, close < 0 ? s.length : close);
       final sel = _selectList(body);
-      out.add(SqlCte(name, cols ?? sel.$1, cols == null ? sel.$2 : const [], body));
+      out.add(
+        SqlCte(
+          name,
+          cols ?? sel.$1,
+          cols == null ? sel.$2 : const [],
+          body,
+          bodyStart: i + 1,
+          bodyEnd: close < 0 ? s.length : close,
+        ),
+      );
       if (close < 0) break;
       i = _skipWs(s, close + 1);
       if (i < s.length && s[i] == ',') {

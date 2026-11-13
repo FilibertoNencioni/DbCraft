@@ -1,4 +1,4 @@
-import 'package:dbcraft/services/sql_cte.dart';
+import 'package:dbcraft/services/sql_completion/cte.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

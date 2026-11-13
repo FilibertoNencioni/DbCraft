@@ -418,4 +418,8 @@ class MetadataService {
       .toList();
 
   List<DbColumn>? cachedColumns(DbTable t) => _cache['columns:${t.key}'] as List<DbColumn>?;
+
+  /// Cached results of [foreignKeys] / [referencedBy] (null = not loaded).
+  List<DbForeignKey>? cachedForeignKeys(DbTable t) => _cache['fk:${t.key}'] as List<DbForeignKey>?;
+  List<DbForeignKey>? cachedReferencedBy(DbTable t) => _cache['refs:${t.key}'] as List<DbForeignKey>?;
 }

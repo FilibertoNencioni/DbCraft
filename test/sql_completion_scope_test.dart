@@ -1,4 +1,4 @@
-import 'package:dbcraft/services/sql_completion_scope.dart';
+import 'package:dbcraft/services/sql_completion/scope.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Scope at the `|` marker.
