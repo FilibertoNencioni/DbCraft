@@ -7,6 +7,7 @@ import 'package:re_highlight/styles/github-dark-dimmed.dart';
 import 'package:re_highlight/styles/xcode.dart';
 
 import '../../model/db_objects.dart';
+import '../../services/sql_cte.dart';
 import '../../services/sql_keywords.dart';
 import '../../state/app_state.dart';
 import '../../state/db_connection.dart';
@@ -58,9 +59,14 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
   static final _wordBefore = RegExp(r'[A-Za-z0-9_$#@."\[\]]*$');
   final Set<String> _loading = {};
 
+  /// CTEs of the text, by lower-case name (parsed once per [build]).
+  Map<String, SqlCte>? _ctesCache;
+  Map<String, SqlCte> get _ctes => _ctesCache ??= {for (final c in findCtes(textProvider())) c.name.toLowerCase(): c};
+
   @override
   CodeAutocompleteEditingValue? build(BuildContext context, CodeLine codeLine, CodeLineSelection selection) {
     if (!enabled()) return null;
+    _ctesCache = null;
     final offset = min(selection.extentOffset, codeLine.text.length);
     final before = codeLine.text.substring(0, offset);
     final m = _wordBefore.firstMatch(before);
@@ -90,6 +96,9 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
       for (final p in _columnsFor(dc, t)) {
         add(p);
       }
+    }
+    for (final c in _ctes.values) {
+      add(SqlPrompt(word: dc?.dialect.quoteIdent(c.name) ?? c.name, kind: PromptKind.table, detail: 'CTE'));
     }
     if (dc?.metadata != null) {
       final md = dc!.metadata!;
@@ -199,10 +208,12 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
   Iterable<String> _referencedTables(DbConnection? dc) =>
       dc == null ? const [] : _aliases(textProvider()).values.toSet();
 
-  List<SqlPrompt> _columnsFor(DbConnection? dc, String ownerOrAlias) {
+  List<SqlPrompt> _columnsFor(DbConnection? dc, String ownerOrAlias, {String? text, int depth = 0}) {
+    final table = _aliases(text ?? textProvider())[ownerOrAlias.toLowerCase()] ?? ownerOrAlias;
+    final cte = _ctes[table.toLowerCase()];
+    if (cte != null) return _cteColumns(dc, cte, depth);
     if (dc?.metadata == null) return const [];
     final md = dc!.metadata!;
-    final table = _aliases(textProvider())[ownerOrAlias.toLowerCase()] ?? ownerOrAlias;
     DbTable? t;
     for (final x in md.cachedTables) {
       if (x.name.toLowerCase() == table.toLowerCase()) {
@@ -231,12 +242,30 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
     }
     return [
       for (final c in cols)
-        SqlPrompt(
-          word: dc.dialect.quoteIdent(c.name),
-          kind: PromptKind.column,
-          detail: '${t.name} · ${c.fullType}',
-        ),
+        SqlPrompt(word: dc.dialect.quoteIdent(c.name), kind: PromptKind.column, detail: '${t.name} · ${c.fullType}'),
     ];
+  }
+
+  /// Columns of a CTE: its own column names, plus those of the tables behind
+  /// `*` / `x.*` in its select list (resolved inside the CTE body).
+  List<SqlPrompt> _cteColumns(DbConnection? dc, SqlCte cte, int depth) {
+    final out = [
+      for (final c in cte.columns)
+        SqlPrompt(word: dc?.dialect.quoteIdent(c) ?? c, kind: PromptKind.column, detail: cte.name),
+    ];
+    if (cte.starSources.isEmpty || depth > 4) return out;
+    final bodyAliases = _aliases(cte.body);
+    for (final q in cte.starSources) {
+      final sources = q == null ? bodyAliases.values.toSet() : {bodyAliases[q.toLowerCase()] ?? q};
+      for (final src in sources) {
+        // A recursive CTE references itself.
+        if (src.toLowerCase() == cte.name.toLowerCase()) continue;
+        for (final p in _columnsFor(dc, src, text: cte.body, depth: depth + 1)) {
+          out.add(SqlPrompt(word: p.word, kind: PromptKind.column, detail: '${cte.name} · ${p.detail ?? ''}'));
+        }
+      }
+    }
+    return out;
   }
 }
 
@@ -290,9 +319,7 @@ class _SqlAutocompleteViewState extends State<SqlAutocompleteView> {
       type: MaterialType.transparency,
       child: CompletionList(
         width: SqlAutocompleteView.width,
-        items: [
-          for (final p in v.prompts.cast<SqlPrompt>()) CompletionItem(p.word, _kind(p.kind), detail: p.detail),
-        ],
+        items: [for (final p in v.prompts.cast<SqlPrompt>()) CompletionItem(p.word, _kind(p.kind), detail: p.detail)],
         selected: v.index,
         onSelect: (i) => widget.onSelected(v.copyWith(index: i).autocomplete),
       ),
@@ -363,7 +390,10 @@ class SqlFindBar extends StatelessWidget implements PreferredSizeWidget {
                   onPressed: controller.toggleRegex,
                 ),
                 const SizedBox(width: Gap.sm),
-                Text(count, style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular)),
+                Text(
+                  count,
+                  style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular),
+                ),
                 const Spacer(),
                 ToolButton(icon: AppIcons.arrowUp, tooltip: 'Precedente', onPressed: controller.previousMatch),
                 ToolButton(icon: AppIcons.arrowDown, tooltip: 'Successivo', onPressed: controller.nextMatch),
@@ -418,31 +448,30 @@ CodeEditorStyle sqlCodeEditorStyle(BuildContext context, double fontSize) {
 }
 
 /// Line-number gutter shared by the SQL editor and read-only views.
-CodeIndicatorBuilder sqlLineNumbers(double fontSize) =>
-    (context, editingController, chunkController, notifier) {
-      final c = DbColors.of(context);
-      return Row(
-        children: [
-          DefaultCodeLineNumber(
-            controller: editingController,
-            notifier: notifier,
-            textStyle: TextStyle(
-              fontSize: fontSize - 1,
-              color: c.textTertiary,
-              fontFamily: kMono,
-              fontFamilyFallback: kMonoFallback,
-            ),
-            focusedTextStyle: TextStyle(
-              fontSize: fontSize - 1,
-              color: c.text,
-              fontFamily: kMono,
-              fontFamilyFallback: kMonoFallback,
-            ),
-          ),
-          const SizedBox(width: 6),
-        ],
-      );
-    };
+CodeIndicatorBuilder sqlLineNumbers(double fontSize) => (context, editingController, chunkController, notifier) {
+  final c = DbColors.of(context);
+  return Row(
+    children: [
+      DefaultCodeLineNumber(
+        controller: editingController,
+        notifier: notifier,
+        textStyle: TextStyle(
+          fontSize: fontSize - 1,
+          color: c.textTertiary,
+          fontFamily: kMono,
+          fontFamilyFallback: kMonoFallback,
+        ),
+        focusedTextStyle: TextStyle(
+          fontSize: fontSize - 1,
+          color: c.text,
+          fontFamily: kMono,
+          fontFamilyFallback: kMonoFallback,
+        ),
+      ),
+      const SizedBox(width: 6),
+    ],
+  );
+};
 
 /// The SQL source editor (highlighting, line numbers, autocompletion).
 class SqlCodeEditor extends StatelessWidget {
@@ -465,8 +494,7 @@ class SqlCodeEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     return CodeAutocomplete(
-      viewBuilder: (context, notifier, onSelected) =>
-          SqlAutocompleteView(notifier: notifier, onSelected: onSelected),
+      viewBuilder: (context, notifier, onSelected) => SqlAutocompleteView(notifier: notifier, onSelected: onSelected),
       promptsBuilder: promptsBuilder.builder,
       child: CodeEditor(
         controller: controller,
