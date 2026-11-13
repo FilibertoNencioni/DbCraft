@@ -146,6 +146,10 @@ const _selectEnd = {
 const _notAlias = {'end', 'null', 'true', 'false', 'asc', 'desc', 'distinct', 'all'};
 
 /// Column names and star items of the first top-level SELECT of [body].
+/// Column names and `*` / `x.*` items of the first top-level SELECT of
+/// [body] (a CTE, a derived table...).
+(List<String>, List<String?>) sqlSelectList(String body) => _selectList(body);
+
 (List<String>, List<String?>) _selectList(String body) {
   final words = RegExp(r'[A-Za-z_][\w$#@]*');
   var depth = 0;

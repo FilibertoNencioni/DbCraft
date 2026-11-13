@@ -22,12 +22,16 @@ enum SqlClause {
 
 /// A table (or CTE) referenced in a FROM / JOIN / UPDATE / INTO / USING.
 class SqlTableRef {
-  const SqlTableRef(this.name, {this.schema, this.alias, this.depth = 0, this.position = 0});
+  const SqlTableRef(this.name, {this.schema, this.alias, this.depth = 0, this.position = 0, this.derived});
 
   /// Unquoted name and schema (the part before the name, if any).
   final String name;
   final String? schema;
   final String? alias;
+
+  /// Derived table (`FROM (SELECT ...) AS x`, `CROSS APPLY (...) AS x`,
+  /// `(VALUES ...) AS v(a, b)`): its columns, like a CTE named [name].
+  final SqlCte? derived;
 
   /// 0 = query block under the caret, 1 = the enclosing one, ...
   final int depth;
@@ -188,7 +192,16 @@ final partialWordPattern = RegExp(r'[\w$#@."\[\]`]*$');
 /// statements).
 SqlCompletionScope sqlCompletionScope(String script, int offset) {
   offset = offset.clamp(0, script.length);
-  final stmt = SqlSplitter().statementAt(script, offset);
+  final statements = SqlSplitter().split(script);
+  SqlStatement? stmt, previous;
+  for (final st in statements) {
+    if (offset >= st.start && offset <= st.end) {
+      stmt = st;
+      break;
+    }
+    if (st.end <= offset) stmt = st;
+  }
+  stmt ??= statements.firstOrNull;
   var start = stmt?.start ?? 0;
   var end = stmt == null ? script.length : stmt.end.clamp(start, script.length);
   // The statement excludes trailing blanks: extend it to the caret, or start a
@@ -202,6 +215,9 @@ SqlCompletionScope sqlCompletionScope(String script, int offset) {
   final text = script.substring(start, end);
   final caret = (offset - start).clamp(0, text.length);
   final s = maskSqlLiterals(text);
+  for (final st in statements) {
+    if (st.end <= start) previous = st;
+  }
 
   // Open parentheses enclosing the caret, innermost last.
   final open = <int>[];
@@ -237,7 +253,13 @@ SqlCompletionScope sqlCompletionScope(String script, int offset) {
   final refs = <SqlTableRef>[];
   var hasFrom = false;
   for (final (depth, (from, to)) in blocks.indexed) {
-    final found = sqlTableRefs(_flatten(noWord.substring(from, to)), depth: depth);
+    final block = noWord.substring(from, to);
+    final derived = sqlDerivedRefs(block, depth: depth);
+    final names = {for (final d in derived) d.name.toLowerCase()};
+    final found = [
+      ...sqlTableRefs(_flatten(block), depth: depth).where((r) => !names.contains(r.name.toLowerCase())),
+      ...derived,
+    ]..sort((a, b) => a.position.compareTo(b.position));
     if (depth == 0) hasFrom = found.isNotEmpty;
     refs.addAll(found);
   }
@@ -253,10 +275,13 @@ SqlCompletionScope sqlCompletionScope(String script, int offset) {
 
   // Inside the body of a CTE only the CTEs defined before it (and itself, for
   // recursive ones) are visible.
-  final all = findCtes(text);
+  // A statement made only of CTEs (`WITH a AS (...);` while the main query
+  // is written after the delimiter): its CTEs stay visible in the next one.
+  final carried = previous == null ? const <SqlCte>[] : _danglingCtes(previous.text);
+  final all = [...carried, ...findCtes(text)];
   var visible = all;
   for (final (k, c) in all.indexed) {
-    if (caret >= c.bodyStart && caret <= c.bodyEnd) {
+    if (k >= carried.length && caret >= c.bodyStart && caret <= c.bodyEnd) {
       visible = all.sublist(0, k + 1);
       break;
     }
@@ -352,6 +377,84 @@ Map<String, String> sqlTableAliases(String text) {
     if (r.alias != null) map[r.alias!.toLowerCase()] = r.name;
   }
   return map;
+}
+
+/// CTEs of [statement] when it has no main query after them.
+List<SqlCte> _danglingCtes(String statement) {
+  final s = maskSqlLiterals(statement);
+  if (!RegExp(r'^[\s;]*with\b', caseSensitive: false).hasMatch(s)) return const [];
+  final ctes = findCtes(statement);
+  if (ctes.isEmpty || ctes.last.bodyEnd >= s.length) return const [];
+  final rest = s.substring(ctes.last.bodyEnd + 1);
+  return RegExp(r'^[\s;]*$').hasMatch(rest) ? ctes : const [];
+}
+
+/// Derived tables of a query block ([text]: literals masked): parenthesized
+/// queries or VALUES after FROM / JOIN / APPLY / a comma of the FROM list,
+/// followed by an alias (and an optional column list).
+List<SqlTableRef> sqlDerivedRefs(String text, {int depth = 0}) {
+  final out = <SqlTableRef>[];
+  var level = 0;
+  for (var i = 0; i < text.length; i++) {
+    final c = text[i];
+    if (c == ')') {
+      if (level > 0) level--;
+      continue;
+    }
+    if (c != '(') continue;
+    level++;
+    if (level != 1) continue;
+    // Cheap check first: only after a comma or FROM / JOIN / APPLY.
+    var j = i - 1;
+    while (j >= 0 && (text[j] == ' ' || text[j] == '\t' || text[j] == '\n' || text[j] == '\r')) {
+      j--;
+    }
+    final prev = j < 0 ? '' : text.substring(j < 4 ? 0 : j - 4, j + 1).toLowerCase();
+    if (!(prev.endsWith(',') || RegExp(r'(from|join|apply)$').hasMatch(prev))) continue;
+    final close = _matchParen(text, i);
+    if (close < 0) break;
+    final head = _flatten(text.substring(0, i)).trimRight();
+    final lower = head.toLowerCase();
+    final afterSource = RegExp(r'\b(from|join|apply)$').hasMatch(lower);
+    final inFromList =
+        lower.endsWith(',') && RegExp(r'\b(?:from|join)\b').hasMatch(lower) && _lastMain(lower) == 'from';
+    if (afterSource || inFromList) {
+      final tail = RegExp(
+        '^\\s*(?:as\\s+)?($_name)(?:\\s*\\(([^()]*)\\))?',
+        caseSensitive: false,
+      ).firstMatch(text.substring(close + 1));
+      final alias = tail == null ? null : _unquote(tail[1]!);
+      if (alias != null && !_notAlias.contains(alias.toLowerCase())) {
+        final body = text.substring(i + 1, close);
+        final explicit = tail![2]?.split(',').map((e) => _unquote(e.trim())).where((e) => e.isNotEmpty).toList();
+        final isQuery = RegExp(r'^\s*(?:select|with)\b', caseSensitive: false).hasMatch(body);
+        if (isQuery || explicit != null) {
+          final (cols, stars) = isQuery ? sqlSelectList(body) : (const <String>[], const <String?>[]);
+          out.add(
+            SqlTableRef(
+              alias,
+              alias: alias,
+              depth: depth,
+              position: i,
+              derived: SqlCte(alias, explicit ?? cols, explicit == null ? stars : const [], body),
+            ),
+          );
+        }
+      }
+    }
+    i = close;
+    level--;
+  }
+  return out;
+}
+
+/// Last main clause keyword of [lower] (lower case, parentheses flattened).
+String? _lastMain(String lower) {
+  String? last;
+  for (final m in RegExp(r'\b(select|from|where|group|order|having|on|set|values)\b').allMatches(lower)) {
+    last = m[1];
+  }
+  return last;
 }
 
 const _notAlias = {

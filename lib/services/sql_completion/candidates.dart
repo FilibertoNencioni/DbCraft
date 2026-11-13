@@ -160,7 +160,7 @@ class SqlCandidates {
 
   /// Database table of a reference (not for CTEs).
   DbTable? _dbTable(SqlTableRef r, SqlCompletionScope scope) =>
-      r.schema == null && scope.cte(r.name) != null ? null : _table(r.name, r.schema);
+      r.derived != null || (r.schema == null && scope.cte(r.name) != null) ? null : _table(r.name, r.schema);
 
   List<DbForeignKey> _fks(DbTable t, {required bool outgoing}) {
     final l = outgoing ? catalog.foreignKeys(t) : catalog.referencedBy(t);
@@ -306,6 +306,7 @@ class SqlCandidates {
 
   /// Columns of a table or CTE reference.
   List<SqlCompletionItem> columnsOf(SqlTableRef ref, SqlCompletionScope scope, [int depth = 0]) {
+    if (ref.derived != null) return _cteColumns(ref.derived!, scope, depth);
     final cte = ref.schema == null ? scope.cte(ref.name) : null;
     if (cte != null) return _cteColumns(cte, scope, depth);
     final t = _table(ref.name, ref.schema);

@@ -211,4 +211,35 @@ void main() {
       expect(rankCompletions('to', items, usage: stats.count).first.insert, 'TotalB');
     });
   });
+
+  group('script shapes (regression)', () {
+    test('CTEs ended by a delimiter stay visible in the next statement', () {
+      const ctes = 'WITH A AS (SELECT 1 AS x),\nVALUTAZIONE AS (SELECT Tipo, colore FROM A);\n\n';
+      final p = complete('${ctes}SELECT * FROM VA|');
+      expect(p.first, 'VALUTAZIONE');
+      expect(
+        SqlCompleter(catalog).complete('${ctes}SELECT * FROM VA', '${ctes}SELECT * FROM VA'.length)!.items.first.kind,
+        SqlItemKind.cte,
+      );
+      expect(complete('${ctes}SELECT v.co| FROM VALUTAZIONE v'), ['colore']);
+    });
+    test('a complete WITH statement does not leak into the next one', () {
+      expect(complete('WITH A AS (SELECT 1 AS x) SELECT x FROM A;\nSELECT * FROM Zz|'), isNot(contains('A')));
+      const sql = 'WITH Abc AS (SELECT 1 AS x) SELECT x FROM Abc;\nSELECT * FROM Ab';
+      final kinds = SqlCompleter(catalog).complete(sql, sql.length)!.items.map((i) => i.kind);
+      expect(kinds, isNot(contains(SqlItemKind.cte)));
+    });
+    test('derived tables: subquery, APPLY, VALUES with column list', () {
+      expect(complete('SELECT x.ch| FROM (SELECT UPPER(k) AS chiave FROM t) AS x'), ['chiave']);
+      expect(complete('SELECT co.c| FROM t CROSS APPLY (SELECT 1 AS colore) AS co'), ['colore']);
+      expect(complete('SELECT ne.| FROM t OUTER APPLY (SELECT COUNT(*) AS n FROM u) ne'), ['n']);
+      expect(complete('SELECT v.m| FROM t CROSS APPLY (VALUES (1, 2)) AS v(mm, gg)'), ['mm']);
+      expect(complete('SELECT d.| FROM Orders o JOIN (SELECT CustomerId, Total FROM Orders) d ON 1=1'), [
+        'CustomerId',
+        'Total',
+      ]);
+      // A scalar subquery in the select list is not a table.
+      expect(complete('SELECT a, (SELECT 1 AS z) AS w, w.| FROM t'), isEmpty);
+    });
+  });
 }
