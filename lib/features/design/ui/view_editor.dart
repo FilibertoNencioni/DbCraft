@@ -41,6 +41,7 @@ class _ViewDefinitionPageState extends State<ViewDefinitionPage> {
     SqlPromptsBuilder(
       () => widget.connection,
       () => _code.text,
+      lines: () => _code.codeLines,
       enabled: () => AppScope.read(context).settings.autoComplete,
       catalog: () => d.working.catalog,
       history: () => AppScope.read(context).history.map((h) => h.sql),

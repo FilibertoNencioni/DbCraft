@@ -11,6 +11,7 @@ import '../../services/sql_completion/completer.dart';
 import '../../state/app_state.dart';
 import '../../state/db_connection.dart';
 import '../widgets/common.dart';
+import 'code_folding.dart';
 
 /// Removes Ctrl/Cmd+Enter from "new line" so it can run the statement.
 class SqlShortcutsActivatorsBuilder extends CodeShortcutsActivatorsBuilder {
@@ -46,11 +47,13 @@ class SqlPrompt extends CodePrompt {
 /// proposals are computed on the whole editor text at the caret.
 class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
   /// [history]: executed statements, newest first (ranks the names used
-  /// most).
+  /// most). [lines]: the editor lines, needed when some are collapsed (the
+  /// caret line index counts only the visible ones).
   SqlPromptsBuilder(
     DbConnection? Function() connection,
     this.textProvider, {
     required this.enabled,
+    this.lines,
     String? Function()? catalog,
     Iterable<String> Function()? history,
   }) : _catalog = MetadataCompletionCatalog(connection, catalog: catalog) {
@@ -59,6 +62,7 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
 
   final String Function() textProvider;
   final bool Function() enabled;
+  final CodeLines Function()? lines;
   final MetadataCompletionCatalog _catalog;
   late final SqlCompleter _completer;
 
@@ -71,7 +75,9 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
     if (!enabled()) return null;
     final text = textProvider();
     final column = min(selection.extentOffset, codeLine.text.length);
-    final r = _completer.complete(text, _caretOffset(text, selection.extentIndex, column));
+    final l = lines?.call();
+    final line = l == null ? selection.extentIndex : scriptLineIndex(l, selection.extentIndex);
+    final r = _completer.complete(text, _caretOffset(text, line, column));
     if (r == null) return null;
     return CodeAutocompleteEditingValue(input: r.input, prompts: [for (final it in r.items) SqlPrompt(it)], index: 0);
   }
@@ -335,6 +341,7 @@ CodeEditorStyle sqlCodeEditorStyle(BuildContext context, double fontSize) {
     fontFamilyFallback: kMonoFallback,
     backgroundColor: c.codeBackground,
     cursorLineColor: c.codeCurrentLine,
+    chunkIndicatorColor: c.textTertiary,
     selectionColor: c.accent.withValues(alpha: Tint.strong),
     codeTheme: CodeHighlightTheme(
       languages: {'sql': CodeHighlightThemeMode(mode: langSql)},
@@ -343,7 +350,8 @@ CodeEditorStyle sqlCodeEditorStyle(BuildContext context, double fontSize) {
   );
 }
 
-/// Line-number gutter shared by the SQL editor and read-only views.
+/// Gutter shared by the SQL editor and read-only views: line numbers and
+/// fold toggles (statements and multi-line comments, [SqlChunkAnalyzer]).
 CodeIndicatorBuilder sqlLineNumbers(double fontSize) => (context, editingController, chunkController, notifier) {
   final c = DbColors.of(context);
   return Row(
@@ -364,10 +372,54 @@ CodeIndicatorBuilder sqlLineNumbers(double fontSize) => (context, editingControl
           fontFamilyFallback: kMonoFallback,
         ),
       ),
-      const SizedBox(width: 6),
+      DefaultCodeChunkIndicator(
+        width: 16,
+        controller: chunkController,
+        notifier: notifier,
+        painter: _FoldChevronPainter(c.textSecondary),
+      ),
     ],
   );
 };
+
+/// Fold toggle of the gutter: chevron down on a foldable line, right on a
+/// collapsed one.
+class _FoldChevronPainter implements CodeChunkIndicatorPainter {
+  _FoldChevronPainter(Color color)
+    : _paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.3
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+
+  final Paint _paint;
+  static const double _half = 3;
+
+  @override
+  void paintCollapseIndicator(Canvas canvas, Size container) {
+    final cx = container.width / 2, cy = container.height / 2;
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - _half, cy - _half / 2)
+        ..lineTo(cx, cy + _half / 2)
+        ..lineTo(cx + _half, cy - _half / 2),
+      _paint,
+    );
+  }
+
+  @override
+  void paintExpandIndicator(Canvas canvas, Size container) {
+    final cx = container.width / 2, cy = container.height / 2;
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - _half / 2, cy - _half)
+        ..lineTo(cx + _half / 2, cy)
+        ..lineTo(cx - _half / 2, cy + _half),
+      _paint,
+    );
+  }
+}
 
 /// The SQL source editor (highlighting, line numbers, autocompletion).
 class SqlCodeEditor extends StatefulWidget {
@@ -378,6 +430,7 @@ class SqlCodeEditor extends StatefulWidget {
     required this.promptsBuilder,
     required this.fontSize,
     this.focusNode,
+    this.blankLineDelimiter = false,
   });
 
   final CodeLineEditingController controller;
@@ -385,6 +438,9 @@ class SqlCodeEditor extends StatefulWidget {
   final CodePromptsBuilderHolder promptsBuilder;
   final double fontSize;
   final FocusNode? focusNode;
+
+  /// Empty lines end statements (folding follows the execution).
+  final bool blankLineDelimiter;
 
   @override
   State<SqlCodeEditor> createState() => _SqlCodeEditorState();
@@ -486,6 +542,7 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
     wordWrap: false,
     autofocus: true,
     shortcutsActivatorsBuilder: const SqlShortcutsActivatorsBuilder(),
+    chunkAnalyzer: SqlChunkAnalyzer(blankLineDelimiter: w.blankLineDelimiter),
     commentFormatter: DefaultCodeCommentFormatter(singleLinePrefix: '--', multiLinePrefix: '/*', multiLineSuffix: '*/'),
     findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
     style: sqlCodeEditorStyle(context, w.fontSize),
@@ -540,6 +597,7 @@ class _SqlCodeViewState extends State<SqlCodeView> {
       readOnly: true,
       showCursorWhenReadOnly: false,
       wordWrap: false,
+      chunkAnalyzer: const SqlChunkAnalyzer(),
       findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
       style: sqlCodeEditorStyle(context, fontSize),
       indicatorBuilder: sqlLineNumbers(fontSize),

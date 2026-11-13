@@ -229,6 +229,7 @@ class _CodeEditorViewState extends State<_CodeEditorView> {
     SqlPromptsBuilder(
       () => widget.tab.dc,
       () => widget.tab.controller.text,
+      lines: () => widget.tab.controller.codeLines,
       enabled: () => AppScope.read(context).settings.autoComplete,
       catalog: () => widget.tab.catalog,
       history: () => AppScope.read(context).history.map((h) => h.sql),

@@ -173,6 +173,7 @@ class _PackageViewState extends State<_PackageView> {
         SqlPromptsBuilder(
           () => tab.dc,
           () => c.text,
+          lines: () => c.codeLines,
           enabled: () => AppScope.read(context).settings.autoComplete,
           history: () => AppScope.read(context).history.map((h) => h.sql),
         ),

@@ -62,6 +62,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     SqlPromptsBuilder(
       () => tab.connection,
       () => tab.controller.text,
+      lines: () => tab.controller.codeLines,
       enabled: () => AppScope.read(context).settings.autoComplete,
       catalog: () => tab.catalog,
       history: () => AppScope.read(context).history.map((h) => h.sql),
@@ -342,6 +343,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
               promptsBuilder: _prompts,
               fontSize: app.settings.editorFontSize,
               focusNode: _editorFocus,
+              blankLineDelimiter: app.settings.blankLineDelimiter,
             ),
             second: _resultsPanel(app),
           ),

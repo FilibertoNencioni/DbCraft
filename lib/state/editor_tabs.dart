@@ -12,6 +12,7 @@ import '../services/sql_splitter.dart';
 import '../services/storage.dart';
 import 'db_connection.dart';
 import 'result_set_model.dart';
+import '../ui/editors/code_folding.dart';
 import '../ui/theme/app_icons.dart';
 
 int _tabSeq = 0;
@@ -193,15 +194,8 @@ class SqlEditorTab extends EditorTab {
 
   // -------------------------------------------------------------------------
 
-  int get caretOffset {
-    final sel = controller.selection;
-    final lines = controller.codeLines;
-    var off = 0;
-    for (var i = 0; i < sel.extentIndex && i < lines.length; i++) {
-      off += lines[i].text.length + 1;
-    }
-    return off + sel.extentOffset;
-  }
+  /// Caret offset in the whole text (collapsed lines included).
+  int get caretOffset => controller.scriptOffset(controller.selection.extentIndex, controller.selection.extentOffset);
 
   SqlSplitter get _splitter => SqlSplitter(blankLineDelimiter: settings.blankLineDelimiter);
 
@@ -238,10 +232,14 @@ class SqlEditorTab extends EditorTab {
     }
 
     final a = pos(s.start), b = pos(s.end);
+    // Selection indexes count the visible lines: show the collapsed ones in
+    // the statement, then map the script lines.
+    controller.expandScriptLines(a.index, b.index);
+    final lines = controller.codeLines;
     controller.selection = CodeLineSelection(
-      baseIndex: a.index,
+      baseIndex: visibleLineIndex(lines, a.index),
       baseOffset: a.offset,
-      extentIndex: b.index,
+      extentIndex: visibleLineIndex(lines, b.index),
       extentOffset: b.offset,
     );
   }
