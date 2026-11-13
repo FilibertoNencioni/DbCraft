@@ -504,6 +504,7 @@ class SqlEditorTab extends EditorTab {
         fetchSize: settings.fetchSize,
         params: params,
         catalog: c.mainCatalog,
+        resultSetIndex: n,
       );
       final tables = p.columns.map((e) => e.baseTable).toSet();
       final single = tables.length == 1 && tables.first != null ? tables.first : null;

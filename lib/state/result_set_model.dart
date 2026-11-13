@@ -30,6 +30,7 @@ class ResultSetModel extends ChangeNotifier {
     this.catalog,
     this.params = const [],
     this.dataFilter,
+    this.resultSetIndex = 0,
   }) : columns = first.columns,
        _cursorId = first.cursorId,
        hasMore = first.hasMore,
@@ -46,6 +47,10 @@ class ResultSetModel extends ChangeNotifier {
   /// WHERE / ORDER BY the table data page loaded these rows with ('' when
   /// unfiltered); null for results that do not come from a table data page.
   final String? dataFilter;
+
+  /// Position of this result among the ones produced by [sql] (0 = first):
+  /// re-running [sql] must skip the earlier ones to get these rows again.
+  final int resultSetIndex;
   final int fetchSize;
   final List<ColumnInfo> columns;
   final List<ResultRow> rows = [];

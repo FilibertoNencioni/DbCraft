@@ -17,6 +17,7 @@ import '../../state/app_state.dart';
 import '../../state/db_connection.dart';
 import '../../state/editor_tabs.dart';
 import '../actions.dart';
+import '../dialogs/export_dialog.dart';
 import '../results/results_viewer.dart';
 import '../widgets/common.dart';
 import '../widgets/split_view.dart';
@@ -554,6 +555,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       }
     }
     final current = sel < 0 || results.isEmpty ? sel : sel.clamp(0, results.length - 1);
+    final withData = [for (final r in results) if (r.model != null) (r.title, r.model!)];
     return Material(
       color: c.content,
       child: Column(children: [
@@ -585,6 +587,13 @@ class _SqlEditorViewState extends State<SqlEditorView> {
                     icon: AppIcons.clearAll,
                     tooltip: 'Pulisci l\'output',
                     onPressed: () => setState(tab.serverOutput.clear),
+                  )
+                : sel >= 0 && withData.length > 1
+                ? ToolButton(
+                    icon: AppIcons.share,
+                    label: 'Esporta tutti',
+                    tooltip: 'Esporta tutti i ${withData.length} risultati, un file ciascuno…',
+                    onPressed: tab.running ? null : () => showResultsExportDialog(context, withData),
                   )
                 : null,
           ),
