@@ -1048,6 +1048,15 @@ enum CompletionKind {
   column('C'),
   type('Y'),
 
+  /// Table to join with its ON condition, or a join condition.
+  join('J'),
+
+  /// Expansion of `*` into the column list.
+  expand('*'),
+
+  /// Word written elsewhere in the editor.
+  word('W'),
+
   /// Placeholder row while objects are loading.
   loading('…');
 
@@ -1060,7 +1069,9 @@ enum CompletionKind {
     CompletionKind.table || CompletionKind.view => c.codeTable,
     CompletionKind.column => c.codeColumn,
     CompletionKind.type => c.codeType,
-    CompletionKind.loading => c.textTertiary,
+    CompletionKind.join => c.codeTable,
+    CompletionKind.expand => c.codeColumn,
+    CompletionKind.word || CompletionKind.loading => c.textTertiary,
   };
 }
 

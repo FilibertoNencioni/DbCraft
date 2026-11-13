@@ -17,6 +17,15 @@ enum SqlItemKind {
   function,
   type,
 
+  /// Table to join with its ON condition, or a join condition.
+  join,
+
+  /// Expansion of `*` into the column list.
+  expand,
+
+  /// Word written elsewhere in the editor.
+  word,
+
   /// Placeholder while database objects are loading (inserts nothing).
   loading,
 }
@@ -133,7 +142,147 @@ class SqlCandidates {
     ],
     FunctionSuggestion() => [for (final f in kSqlFunctions) SqlCompletionItem(f, SqlItemKind.function)],
     TypeSuggestion() => [for (final t in kSqlTypes) SqlCompletionItem(t, SqlItemKind.type)],
+    JoinSuggestion(:final tables) => _joins(tables, scope),
+    JoinConditionSuggestion(:final last, :final others) => _joinConditions(last, others, scope),
+    StarSuggestion(:final tables, :final qualifier) => _star(tables, qualifier, scope),
+    WordSuggestion(:final words) => [
+      for (final w in words)
+        if (!_reserved.contains(w.toUpperCase())) SqlCompletionItem(w, SqlItemKind.word, detail: 'testo'),
+    ],
   };
+
+  static final Set<String> _reserved = {
+    for (final w in [...kSqlKeywords, ...kSqlFunctions, ...kSqlTypes, ...kCommonSqlKeywords]) w.toUpperCase(),
+  };
+
+  /// How the query names [r]: its alias, or its (quoted) name.
+  String _refText(SqlTableRef r) => r.alias ?? catalog.quote(r.name);
+
+  /// Database table of a reference (not for CTEs).
+  DbTable? _dbTable(SqlTableRef r, SqlCompletionScope scope) =>
+      r.schema == null && scope.cte(r.name) != null ? null : _table(r.name, r.schema);
+
+  List<DbForeignKey> _fks(DbTable t, {required bool outgoing}) {
+    final l = outgoing ? catalog.foreignKeys(t) : catalog.referencedBy(t);
+    if (l == null) waiting = true;
+    return l ?? const [];
+  }
+
+  static bool _same(String a, String b) => a.toLowerCase() == b.toLowerCase();
+
+  /// Tables related to [tables] by a foreign key, with alias and ON condition
+  /// (DataGrip / pgcli): `Orders o ON o.CustomerId = c.Id`.
+  List<SqlCompletionItem> _joins(List<SqlTableRef> tables, SqlCompletionScope scope) {
+    final used = {
+      for (final r in scope.refs) ...[r.name.toLowerCase(), if (r.alias != null) r.alias!.toLowerCase()],
+    };
+    final out = <SqlCompletionItem>[];
+    for (final r in tables.reversed) {
+      final t = _dbTable(r, scope);
+      if (t == null) continue;
+      final ref = _refText(r);
+      void add(String other, List<(String, String)> pairs, String? fkName) {
+        final alias = _alias(other, {...used});
+        final on = pairs.map((p) => '$alias.${catalog.quote(p.$1)} = $ref.${catalog.quote(p.$2)}').join(' AND ');
+        final insert = '${catalog.quote(other)} $alias ON $on';
+        if (out.any((o) => o.insert == insert)) return;
+        out.add(
+          SqlCompletionItem(
+            insert,
+            SqlItemKind.join,
+            detail: fkName == null ? 'FK' : 'FK $fkName',
+            prio: 2,
+            matchText: other,
+          ),
+        );
+      }
+
+      // r is the child: join its parents.
+      for (final fk in _fks(t, outgoing: true)) {
+        add(fk.pkTable, [for (var i = 0; i < fk.columns.length; i++) (fk.refColumns[i], fk.columns[i])], fk.name);
+      }
+      // r is the parent: join its children.
+      for (final fk in _fks(t, outgoing: false)) {
+        add(fk.fkTable, [for (var i = 0; i < fk.columns.length; i++) (fk.columns[i], fk.refColumns[i])], fk.name);
+      }
+    }
+    return out;
+  }
+
+  /// Alias for [table] from the initials of its words, not in [used].
+  String _alias(String table, Set<String> used) {
+    final parts = sqlIdentifierParts(table);
+    var base = (parts.isEmpty ? table.substring(0, 1) : parts.map((p) => p[0]).join()).toLowerCase();
+    if (!RegExp(r'^[a-z_]').hasMatch(base)) base = 't$base';
+    var alias = base;
+    for (var n = 2; used.contains(alias) || _reserved.contains(alias.toUpperCase()); n++) {
+      alias = '$base$n';
+    }
+    return alias;
+  }
+
+  /// Conditions between the table just joined and the previous ones: foreign
+  /// keys first, then key-like columns (…id, …code, …key) with the same name.
+  List<SqlCompletionItem> _joinConditions(SqlTableRef last, List<SqlTableRef> others, SqlCompletionScope scope) {
+    final out = <SqlCompletionItem>[];
+    final lref = _refText(last);
+    final lt = _dbTable(last, scope);
+    for (final o in others.reversed) {
+      final oref = _refText(o);
+      final ot = _dbTable(o, scope);
+      if (lt != null && ot != null) {
+        for (final fk in _fks(lt, outgoing: true)) {
+          if (!_same(fk.pkTable, ot.name)) continue;
+          final on = [
+            for (var i = 0; i < fk.columns.length; i++)
+              '$lref.${catalog.quote(fk.columns[i])} = $oref.${catalog.quote(fk.refColumns[i])}',
+          ].join(' AND ');
+          out.add(SqlCompletionItem(on, SqlItemKind.join, detail: 'FK ${fk.name ?? ''}'.trim(), prio: 2));
+        }
+        for (final fk in _fks(lt, outgoing: false)) {
+          if (!_same(fk.fkTable, ot.name)) continue;
+          final on = [
+            for (var i = 0; i < fk.columns.length; i++)
+              '$lref.${catalog.quote(fk.refColumns[i])} = $oref.${catalog.quote(fk.columns[i])}',
+          ].join(' AND ');
+          out.add(SqlCompletionItem(on, SqlItemKind.join, detail: 'FK ${fk.name ?? ''}'.trim(), prio: 2));
+        }
+      }
+      final ocols = {for (final c in columnsOf(o, scope)) bareIdentifier(c.insert).toLowerCase(): c.insert};
+      for (final c in columnsOf(last, scope)) {
+        final name = bareIdentifier(c.insert).toLowerCase();
+        if (!RegExp(r'(id|code|key)$').hasMatch(name)) continue;
+        final oc = ocols[name];
+        if (oc == null) continue;
+        final on = '$lref.${c.insert} = $oref.$oc';
+        if (out.any((x) => x.insert == on)) continue;
+        out.add(SqlCompletionItem(on, SqlItemKind.join, detail: 'stesso nome', prio: 1));
+      }
+    }
+    return out;
+  }
+
+  /// `*` -> every column of [tables] (qualified when more than one table or
+  /// when written as `x.*`).
+  List<SqlCompletionItem> _star(List<SqlTableRef> tables, String? qualifier, SqlCompletionScope scope) {
+    final qualify = qualifier != null || tables.length > 1;
+    final cols = <String>[];
+    for (final t in tables) {
+      final ref = qualifier != null ? catalog.quote(qualifier) : _refText(t);
+      for (final c in columnsOf(t, scope)) {
+        cols.add(qualify ? '$ref.${c.insert}' : c.insert);
+      }
+    }
+    if (cols.isEmpty) return const [];
+    return [
+      SqlCompletionItem(
+        cols.join(', '),
+        SqlItemKind.expand,
+        label: '* → ${cols.join(', ')}',
+        detail: cols.length == 1 ? '1 colonna' : '${cols.length} colonne',
+      ),
+    ];
+  }
 
   static SqlCompletionItem _withPrio(SqlCompletionItem c, int prio) =>
       SqlCompletionItem(c.insert, c.kind, label: c.label, detail: c.detail, prio: prio, matchText: c.matchText);

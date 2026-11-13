@@ -55,6 +55,8 @@ class SqlCompletionScope {
     required this.hasFrom,
     this.keyword,
     this.textBefore = '',
+    this.segmentBefore = '',
+    this.blockCaret = 0,
     this.allCtes = const {},
   });
 
@@ -80,6 +82,21 @@ class SqlCompletionScope {
 
   /// Statement text before the caret, literals and comments blanked.
   final String textBefore;
+
+  /// Text of the current clause segment before the caret (from the innermost
+  /// open parenthesis or query block start), closed parentheses blanked,
+  /// without the word being typed.
+  final String segmentBefore;
+
+  /// Caret offset in the query block under the caret ([SqlTableRef.position]
+  /// of depth 0 references uses the same origin).
+  final int blockCaret;
+
+  /// References of the query block under the caret written before the caret.
+  List<SqlTableRef> get refsBefore => [
+    for (final r in refs)
+      if (r.depth == 0 && r.position < blockCaret) r,
+  ];
 
   /// Lower-case alias or table name -> table (or CTE) name, inner block first.
   Map<String, String> get aliases {
@@ -212,10 +229,15 @@ SqlCompletionScope sqlCompletionScope(String script, int offset) {
   }
   blocks.add((0, s.length));
 
+  // The word under the caret is being typed: not a table reference yet
+  // (`JOIN Cu|`).
+  final wordStart = caret - (partialWordPattern.firstMatch(s.substring(0, caret))?[0]?.length ?? 0);
+  final wordEnd = caret + (RegExp(r'^[\w$#@]*').firstMatch(s.substring(caret))?[0]?.length ?? 0);
+  final noWord = s.replaceRange(wordStart, wordEnd, ' ' * (wordEnd - wordStart));
   final refs = <SqlTableRef>[];
   var hasFrom = false;
   for (final (depth, (from, to)) in blocks.indexed) {
-    final found = sqlTableRefs(_flatten(s.substring(from, to)), depth: depth);
+    final found = sqlTableRefs(_flatten(noWord.substring(from, to)), depth: depth);
     if (depth == 0) hasFrom = found.isNotEmpty;
     refs.addAll(found);
   }
@@ -227,7 +249,7 @@ SqlCompletionScope sqlCompletionScope(String script, int offset) {
   final inCall = innerOpen >= blockStart; // function call, IN list, column list
   final segStart = inCall ? innerOpen + 1 : blockStart;
   final before = _flatten(s.substring(segStart, caret)).replaceFirst(partialWordPattern, '');
-  final (clause, keyword) = _clauseOf(before);
+  final (clause, keyword) = sqlClauseOf(before);
 
   // Inside the body of a CTE only the CTEs defined before it (and itself, for
   // recursive ones) are visible.
@@ -247,12 +269,15 @@ SqlCompletionScope sqlCompletionScope(String script, int offset) {
     allCtes: {for (final c in all) c.name.toLowerCase(): c},
     hasFrom: hasFrom,
     textBefore: s.substring(0, caret),
+    segmentBefore: before,
+    blockCaret: caret - blockStart,
   );
 }
 
-/// Clause and keyword from the last keyword of [before]; null clause when
-/// there is no keyword.
-(SqlClause?, String?) _clauseOf(String before) {
+/// Clause and keyword from the last keyword of [before] (a clause segment,
+/// see [SqlCompletionScope.segmentBefore]); null clause when there is no
+/// keyword.
+(SqlClause?, String?) sqlClauseOf(String before) {
   final t = before.trimRight();
   // `a = |`, `x + |`
   if (RegExp(r'[=<>+\-*/%|]$').hasMatch(t)) return (SqlClause.column, null);

@@ -45,13 +45,16 @@ class SqlPrompt extends CodePrompt {
 /// Bridges [SqlCompleter] (lib/services/sql_completion) to re_editor: the
 /// proposals are computed on the whole editor text at the caret.
 class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
+  /// [history]: executed statements, newest first (ranks the names used
+  /// most).
   SqlPromptsBuilder(
     DbConnection? Function() connection,
     this.textProvider, {
     required this.enabled,
     String? Function()? catalog,
+    Iterable<String> Function()? history,
   }) : _catalog = MetadataCompletionCatalog(connection, catalog: catalog) {
-    _completer = SqlCompleter(_catalog);
+    _completer = SqlCompleter(_catalog, usage: history == null ? null : SqlUsageStats(history));
   }
 
   final String Function() textProvider;
@@ -191,6 +194,9 @@ class _SqlAutocompleteViewState extends State<SqlAutocompleteView> {
     SqlItemKind.view => CompletionKind.view,
     SqlItemKind.column => CompletionKind.column,
     SqlItemKind.type => CompletionKind.type,
+    SqlItemKind.join => CompletionKind.join,
+    SqlItemKind.expand => CompletionKind.expand,
+    SqlItemKind.word => CompletionKind.word,
     SqlItemKind.loading => CompletionKind.loading,
   };
 

@@ -150,4 +150,65 @@ void main() {
       expect(complete('SELECT x.| FROM Unknown x'), isEmpty);
     });
   });
+
+  group('joins', () {
+    test('after JOIN: related tables with alias and ON from the foreign keys', () {
+      final p = complete('SELECT * FROM Orders o JOIN |');
+      // Input is empty: nothing is proposed until a letter is typed.
+      expect(p, isEmpty);
+      final c = complete('SELECT * FROM Orders o JOIN C|');
+      expect(c.first, 'Customers c ON c.Id = o.CustomerId');
+      final l = complete('SELECT * FROM Orders o JOIN Ord|');
+      expect(l.first, 'Order_Lines ol ON ol.Order_Id = o.OrderId');
+      expect(l, contains('Orders'));
+    });
+    test('generated alias does not clash with the ones in use', () {
+      expect(complete('SELECT * FROM Orders c JOIN Cu|').first, 'Customers c2 ON c2.Id = c.CustomerId');
+    });
+    test('after ON: foreign key conditions, then same-name key columns', () {
+      final p = complete('SELECT * FROM Orders o JOIN Customers c ON c|');
+      expect(p.first, 'c.Id = o.CustomerId');
+      final l = complete('SELECT * FROM Order_Lines l JOIN Orders o ON o|');
+      expect(l.first, 'o.OrderId = l.Order_Id');
+    });
+  });
+
+  group('star expansion', () {
+    test('single table: plain column list', () {
+      expect(complete('SELECT *| FROM Customers'), ['Id, Name']);
+    });
+    test('several tables or x.*: qualified columns', () {
+      expect(
+        complete('SELECT *| FROM Customers c JOIN Orders o ON o.CustomerId = c.Id').single,
+        'c.Id, c.Name, o.OrderId, o.CustomerId, o.Total',
+      );
+      expect(
+        complete('SELECT c.Name, o.*| FROM Customers c JOIN Orders o ON o.CustomerId = c.Id').single,
+        'o.OrderId, o.CustomerId, o.Total',
+      );
+    });
+    test('only in the select list', () {
+      expect(complete('SELECT COUNT(*| FROM Customers'), isEmpty);
+      expect(complete('SELECT a *| FROM Customers'), isEmpty);
+      expect(complete('SELECT *|'), isEmpty);
+    });
+  });
+
+  group('document words and usage', () {
+    test('words of the script the catalog does not know', () {
+      final p = complete('SELECT * INTO #tmp_sales FROM Orders;\nSELECT * FROM #tmp| ');
+      expect(p, contains('#tmp_sales'));
+      // Names proposed otherwise are not repeated as words.
+      expect(complete('SELECT Total FROM Orders WHERE To|').where((w) => w == 'Total'), hasLength(1));
+    });
+    test('names used more in the history come first among equals', () {
+      final items = [
+        [const SqlCompletionItem('TotalA', SqlItemKind.column), const SqlCompletionItem('TotalB', SqlItemKind.column)],
+      ];
+      expect(rankCompletions('to', items).first.insert, 'TotalA');
+      final stats = SqlUsageStats(() => ['SELECT TotalB FROM t', 'SELECT totalb, x FROM t']);
+      expect(stats.count('totalb'), 2);
+      expect(rankCompletions('to', items, usage: stats.count).first.insert, 'TotalB');
+    });
+  });
 }

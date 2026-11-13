@@ -170,7 +170,12 @@ class _PackageViewState extends State<_PackageView> {
   late final _prompts = [
     for (final c in [tab.spec, tab.body])
       CodePromptsBuilderHolder(
-        SqlPromptsBuilder(() => tab.dc, () => c.text, enabled: () => AppScope.read(context).settings.autoComplete),
+        SqlPromptsBuilder(
+          () => tab.dc,
+          () => c.text,
+          enabled: () => AppScope.read(context).settings.autoComplete,
+          history: () => AppScope.read(context).history.map((h) => h.sql),
+        ),
       ),
   ];
 

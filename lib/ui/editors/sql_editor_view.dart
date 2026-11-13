@@ -64,6 +64,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       () => tab.controller.text,
       enabled: () => AppScope.read(context).settings.autoComplete,
       catalog: () => tab.catalog,
+      history: () => AppScope.read(context).history.map((h) => h.sql),
     ),
   );
   final _editorFocus = FocusNode(debugLabel: 'sql-editor');

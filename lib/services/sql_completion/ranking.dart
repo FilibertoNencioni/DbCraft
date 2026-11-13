@@ -36,7 +36,7 @@ SqlMatch? sqlMatch(String candidate, String input) {
   if (i.isEmpty) return const SqlMatch(SqlMatch.prefix, 0);
   if (w == i) return null; // already typed
   if (w.startsWith(i)) return SqlMatch(SqlMatch.prefix, word.startsWith(bareIdentifier(input)) ? 1 : 0);
-  final parts = _parts(word);
+  final parts = sqlIdentifierParts(word);
   for (var k = 1; k < parts.length; k++) {
     if (parts[k].toLowerCase().startsWith(i)) return SqlMatch(SqlMatch.wordStart, -k);
   }
@@ -72,9 +72,6 @@ SqlMatch? sqlMatch(String candidate, String input) {
   return null;
 }
 
-/// Words of an identifier: split on `_`, `$`, spaces, digits and camel humps.
-List<String> _parts(String s) => RegExp(r'[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+').allMatches(s).map((m) => m[0]!).toList();
-
 /// Matching items of [groups] (one list per request, most relevant request
 /// first), ordered and without duplicates. [usage] counts how often a name
 /// (lower case) was used in past queries.
@@ -85,13 +82,25 @@ List<SqlCompletionItem> rankCompletions(
   int Function(String name)? usage,
 }) {
   final seen = <String>{};
+  final names = <String>{}; // proposed names, to drop duplicate words
   final scored = <_Scored>[];
   for (final (g, items) in groups.indexed) {
     for (final it in items) {
-      final m = it.kind == SqlItemKind.loading ? const SqlMatch(SqlMatch.fuzzy, -1 << 30) : sqlMatch(it.text, input);
+      final m = switch (it.kind) {
+        SqlItemKind.loading => const SqlMatch(SqlMatch.fuzzy, -1 << 30),
+        SqlItemKind.expand => const SqlMatch(SqlMatch.prefix, 0),
+        _ => sqlMatch(it.text, input),
+      };
       if (m == null) continue;
+      final name = bareIdentifier(it.text).toLowerCase();
+      // Words of the document only for names nothing else proposes.
+      if (it.kind == SqlItemKind.word) {
+        if (names.contains(name)) continue;
+      } else {
+        names.add(name);
+      }
       if (!seen.add('${it.kind.name}:${it.insert.toLowerCase()}')) continue;
-      final uses = usage == null ? 0 : usage(bareIdentifier(it.text).toLowerCase());
+      final uses = usage == null ? 0 : usage(name);
       scored.add(_Scored(it, m, g, uses, scored.length));
     }
   }

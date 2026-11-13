@@ -231,6 +231,7 @@ class _CodeEditorViewState extends State<_CodeEditorView> {
       () => widget.tab.controller.text,
       enabled: () => AppScope.read(context).settings.autoComplete,
       catalog: () => widget.tab.catalog,
+      history: () => AppScope.read(context).history.map((h) => h.sql),
     ),
   );
 

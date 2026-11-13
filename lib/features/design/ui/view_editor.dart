@@ -43,6 +43,7 @@ class _ViewDefinitionPageState extends State<ViewDefinitionPage> {
       () => _code.text,
       enabled: () => AppScope.read(context).settings.autoComplete,
       catalog: () => d.working.catalog,
+      history: () => AppScope.read(context).history.map((h) => h.sql),
     ),
   );
 
