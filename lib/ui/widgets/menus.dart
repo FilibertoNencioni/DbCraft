@@ -1112,9 +1112,13 @@ class CompletionList extends StatefulWidget {
     this.width = 380,
     this.maxHeight = 240,
     this.acceptHint = true,
+    this.footer,
   });
 
   final List<CompletionItem> items;
+
+  /// Status line below the rows, always visible (e.g. objects still loading).
+  final String? footer;
 
   /// Shows a Tab key cap on the selected row (the key that accepts it).
   final bool acceptHint;
@@ -1126,7 +1130,8 @@ class CompletionList extends StatefulWidget {
   static const double rowHeight = 20;
 
   /// Height for [count] rows, including the frame.
-  static double heightFor(int count, {double maxHeight = 240}) => math.min(rowHeight * count + 2 * 4, maxHeight) + 1;
+  static double heightFor(int count, {double maxHeight = 240, bool footer = false}) =>
+      math.min(rowHeight * count + 2 * 4, maxHeight) + (footer ? rowHeight + 4 : 0) + 1;
 
   @override
   State<CompletionList> createState() => _CompletionListState();
@@ -1167,62 +1172,87 @@ class _CompletionListState extends State<CompletionList> {
       decoration: menuDecoration(context),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(Radii.menu),
-        child: ListView.builder(
-          controller: _scroll,
-          padding: const EdgeInsets.all(4),
-          shrinkWrap: true,
-          itemExtent: CompletionList.rowHeight,
-          itemCount: widget.items.length,
-          itemBuilder: (context, i) {
-            final it = widget.items[i];
-            final on = i == widget.selected;
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => widget.onSelect(i),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  color: on ? c.accent : null,
-                  borderRadius: BorderRadius.circular(Radii.small),
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.items.isNotEmpty) Flexible(child: _list(c)),
+            if (widget.footer != null)
+              Container(
+                height: CompletionList.rowHeight + 4,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: widget.items.isEmpty
+                    ? null
+                    : BoxDecoration(
+                        border: Border(top: BorderSide(color: c.separator, width: 0.5)),
+                      ),
                 child: Row(
                   children: [
-                    CompletionBadge(it.kind, onAccent: on),
+                    const CompletionBadge(CompletionKind.loading),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        it.label,
+                        widget.footer!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: kMonoFamily,
-                          fontFamilyFallback: kMonoFallback,
-                          fontSize: TypeSize.mono,
-                          color: on ? c.onAccent : c.text,
-                        ),
+                        style: uiText(TypeSize.caption, color: c.textTertiary),
                       ),
                     ),
-                    if (it.detail != null)
-                      Padding(
-                        padding: const EdgeInsets.only(left: Gap.sm),
-                        child: Text(
-                          it.detail!,
-                          style: uiText(
-                            TypeSize.caption,
-                            color: on ? c.onAccent.withValues(alpha: 0.85) : c.textTertiary,
-                          ),
-                        ),
-                      ),
-                    if (on && widget.acceptHint) const _AcceptHint(),
                   ],
                 ),
               ),
-            );
-          },
+          ],
         ),
       ),
     );
   }
+
+  Widget _list(DbColors c) => ListView.builder(
+    controller: _scroll,
+    padding: const EdgeInsets.all(4),
+    shrinkWrap: true,
+    itemExtent: CompletionList.rowHeight,
+    itemCount: widget.items.length,
+    itemBuilder: (context, i) {
+      final it = widget.items[i];
+      final on = i == widget.selected;
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => widget.onSelect(i),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(color: on ? c.accent : null, borderRadius: BorderRadius.circular(Radii.small)),
+          child: Row(
+            children: [
+              CompletionBadge(it.kind, onAccent: on),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  it.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: kMonoFamily,
+                    fontFamilyFallback: kMonoFallback,
+                    fontSize: TypeSize.mono,
+                    color: on ? c.onAccent : c.text,
+                  ),
+                ),
+              ),
+              if (it.detail != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: Gap.sm),
+                  child: Text(
+                    it.detail!,
+                    style: uiText(TypeSize.caption, color: on ? c.onAccent.withValues(alpha: 0.85) : c.textTertiary),
+                  ),
+                ),
+              if (on && widget.acceptHint) const _AcceptHint(),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
 
 /// Tab key cap on the selected completion row, drawn on the accent fill.

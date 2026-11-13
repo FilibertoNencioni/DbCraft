@@ -35,7 +35,14 @@ class SqlCompleter {
   SqlCompletionResult? complete(String script, int offset) {
     final ctx = sqlCompletionContext(script, offset);
     if (ctx == null) return null;
-    final items = rankCompletions(ctx.input, SqlCandidates(catalog).generate(ctx));
+    final candidates = SqlCandidates(catalog);
+    final groups = candidates.generate(ctx);
+    // Objects still loading: a placeholder row keeps the popup open, it is
+    // refreshed when they arrive ([SqlCompletionCatalog.changes]).
+    if (candidates.waiting) {
+      groups.add([SqlCompletionItem(ctx.input, SqlItemKind.loading, label: 'Caricamento oggetti del database…')]);
+    }
+    final items = rankCompletions(ctx.input, groups);
     if (items.isEmpty) return null;
     return SqlCompletionResult(ctx.input, items);
   }

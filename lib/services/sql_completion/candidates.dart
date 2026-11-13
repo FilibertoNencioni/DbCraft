@@ -95,10 +95,32 @@ class SqlCandidates {
 
   final SqlCompletionCatalog catalog;
 
+  /// A lookup of the last [generate] is waiting for the database.
+  bool waiting = false;
+
+  List<DbTable> get _tablesList {
+    final list = catalog.tables;
+    if (list.isEmpty && catalog.loading) waiting = true;
+    return list;
+  }
+
+  DbTable? _table(String name, String? schema) {
+    final t = catalog.table(name, schema: schema);
+    if (t == null && catalog.loading) waiting = true;
+    return t;
+  }
+
+  List<DbColumn> _columns(DbTable t) {
+    final c = catalog.columns(t);
+    if (c == null) waiting = true;
+    return c ?? const [];
+  }
+
   /// One list per request of [ctx], in the same order.
-  List<List<SqlCompletionItem>> generate(SqlCompletionContext ctx) => [
-    for (final s in ctx.suggestions) _items(s, ctx.scope),
-  ];
+  List<List<SqlCompletionItem>> generate(SqlCompletionContext ctx) {
+    waiting = false;
+    return [for (final s in ctx.suggestions) _items(s, ctx.scope)];
+  }
 
   List<SqlCompletionItem> _items(SqlSuggestion s, SqlCompletionScope scope) => switch (s) {
     ColumnSuggestion(:final tables) => [
@@ -122,7 +144,7 @@ class SqlCandidates {
       if (s == null)
         for (final c in scope.ctes.values)
           SqlCompletionItem(catalog.quote(c.name), SqlItemKind.cte, detail: 'CTE', prio: 2),
-      for (final t in catalog.tables)
+      for (final t in _tablesList)
         if (s == null || t.schema?.toLowerCase() == s || t.catalog?.toLowerCase() == s)
           SqlCompletionItem(
             catalog.quote(t.name),
@@ -137,10 +159,10 @@ class SqlCandidates {
   List<SqlCompletionItem> columnsOf(SqlTableRef ref, SqlCompletionScope scope, [int depth = 0]) {
     final cte = ref.schema == null ? scope.cte(ref.name) : null;
     if (cte != null) return _cteColumns(cte, scope, depth);
-    final t = catalog.table(ref.name, schema: ref.schema);
+    final t = _table(ref.name, ref.schema);
     if (t == null) return const [];
     return [
-      for (final c in catalog.columns(t) ?? const <DbColumn>[])
+      for (final c in _columns(t))
         SqlCompletionItem(catalog.quote(c.name), SqlItemKind.column, detail: '${t.name} · ${c.fullType}'),
     ];
   }

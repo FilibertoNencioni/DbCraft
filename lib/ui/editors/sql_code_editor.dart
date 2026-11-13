@@ -111,6 +111,16 @@ class SqlAutocompleteSession {
     _onSelected = null;
   }
 
+  /// Replaces the proposals of the open popup, keeping the selected one.
+  void update(CodeAutocompleteEditingValue value) {
+    final n = _notifier;
+    if (n == null) return;
+    final old = n.value;
+    final selected = old.index < old.prompts.length ? old.prompts[old.index].word : null;
+    final i = value.prompts.indexWhere((p) => p.word == selected);
+    n.value = value.copyWith(index: i < 0 ? 0 : i);
+  }
+
   /// Inserts the selected prompt; false when no popup is shown.
   bool accept() {
     final n = _notifier, f = _onSelected;
@@ -134,7 +144,11 @@ class SqlAutocompleteView extends StatefulWidget implements PreferredSizeWidget 
   static const double width = 380;
 
   @override
-  Size get preferredSize => Size(width, CompletionList.heightFor(notifier.value.prompts.length));
+  Size get preferredSize {
+    final prompts = notifier.value.prompts.cast<SqlPrompt>();
+    final loading = prompts.any((p) => p.kind == SqlItemKind.loading);
+    return Size(width, CompletionList.heightFor(prompts.length - (loading ? 1 : 0), footer: loading));
+  }
 
   @override
   State<SqlAutocompleteView> createState() => _SqlAutocompleteViewState();
@@ -183,14 +197,19 @@ class _SqlAutocompleteViewState extends State<SqlAutocompleteView> {
   @override
   Widget build(BuildContext context) {
     final v = widget.notifier.value;
+    final loading = v.prompts.cast<SqlPrompt>().where((p) => p.kind == SqlItemKind.loading).firstOrNull;
     // Transparent material: gives the overlay a text style without painting.
     return Material(
       type: MaterialType.transparency,
       child: CompletionList(
         width: SqlAutocompleteView.width,
+        // The loading placeholder is shown as the footer; the rows keep the
+        // prompt indexes (it is always last).
         items: [
-          for (final p in v.prompts.cast<SqlPrompt>()) CompletionItem(p.item.display, _kind(p.kind), detail: p.detail),
+          for (final p in v.prompts.cast<SqlPrompt>())
+            if (p.kind != SqlItemKind.loading) CompletionItem(p.item.display, _kind(p.kind), detail: p.detail),
         ],
+        footer: loading?.item.display,
         selected: v.index,
         onSelect: (i) => widget.onSelected(v.copyWith(index: i).autocomplete),
       ),
@@ -380,10 +399,49 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
     }),
   };
 
+  @override
+  void initState() {
+    super.initState();
+    widget.promptsBuilder.builder.changes.addListener(_refresh);
+  }
+
+  @override
+  void didUpdateWidget(SqlCodeEditor old) {
+    super.didUpdateWidget(old);
+    if (old.promptsBuilder.builder != widget.promptsBuilder.builder) {
+      old.promptsBuilder.builder.changes.removeListener(_refresh);
+      widget.promptsBuilder.builder.changes.addListener(_refresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.promptsBuilder.builder.changes.removeListener(_refresh);
+    super.dispose();
+  }
+
+  /// Database objects arrived: recompute the proposals of the open popup.
+  void _refresh() {
+    if (!mounted || !_session.isOpen) return;
+    final ctrl = widget.controller, sel = ctrl.selection;
+    if (!sel.isCollapsed || sel.extentIndex >= ctrl.codeLines.length) return;
+    final v = widget.promptsBuilder.builder.build(context, ctrl.codeLines[sel.extentIndex], sel);
+    if (v == null) {
+      _closePopup();
+    } else {
+      _session.update(v);
+    }
+  }
+
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
     if (e is! KeyDownEvent || e.logicalKey != LogicalKeyboardKey.escape || !_session.isOpen) {
       return KeyEventResult.ignored;
     }
+    _closePopup();
+    return KeyEventResult.handled;
+  }
+
+  void _closePopup() {
     _session.clear();
     // The editor closes the popup on selection-only changes: flip the cursor
     // affinity back and forth (no visible change, wordWrap is off).
@@ -392,7 +450,6 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
       extentAffinity: sel.extentAffinity == TextAffinity.upstream ? TextAffinity.downstream : TextAffinity.upstream,
     );
     ctrl.selection = sel;
-    return KeyEventResult.handled;
   }
 
   @override

@@ -136,4 +136,18 @@ void main() {
       expect(sqlCompletionScope(sql.replaceFirst('|', ''), sql.indexOf('|')).ctes.keys, ['a', 'b']);
     });
   });
+
+  group('loading', () {
+    test('placeholder while columns load, real items afterwards', () {
+      catalog.slow.add('Orders');
+      final r = SqlCompleter(catalog).complete('SELECT x. FROM Orders x', 9)!;
+      expect(r.items.single.kind, SqlItemKind.loading);
+      expect(r.items.single.insert, r.input);
+      catalog.finishLoading();
+      expect(complete('SELECT x.| FROM Orders x'), ['OrderId', 'CustomerId', 'Total']);
+    });
+    test('no placeholder when nothing is loading', () {
+      expect(complete('SELECT x.| FROM Unknown x'), isEmpty);
+    });
+  });
 }
