@@ -339,6 +339,10 @@ class _HomePageState extends State<HomePage> {
         _MenuAction('Trova e sostituisci…', sqlCmd(SqlCommand.find), _a(LogicalKeyboardKey.keyF)),
         const _MenuDivider(),
         _MenuAction('Mostra/nascondi risultati', sqlCmd(SqlCommand.toggleResults), _a(LogicalKeyboardKey.keyR, shift: true)),
+        const _MenuDivider(),
+        _MenuAction('Ingrandisci testo', sql == null ? null : app.sqlZoom.zoomIn, SqlZoomKeys.zoomIn),
+        _MenuAction('Riduci testo', sql == null ? null : app.sqlZoom.zoomOut, SqlZoomKeys.zoomOut),
+        _MenuAction('Dimensione testo 100%', sql == null ? null : app.sqlZoom.reset, SqlZoomKeys.reset),
         if (app.settings.aiEnabled) ...[
           const _MenuDivider(),
           _MenuAction('Spiega la query con AI', sqlCmd(SqlCommand.aiExplain), null),
@@ -658,6 +662,9 @@ class _HomePageState extends State<HomePage> {
         h('Formatta SQL', [_a(LogicalKeyboardKey.keyF, shift: true)]),
         h('Commenta righe', [_a(LogicalKeyboardKey.slash)]),
         h('Trova e sostituisci', [_a(LogicalKeyboardKey.keyF)]),
+        h('Ingrandisci testo', [SqlZoomKeys.zoomIn]),
+        h('Riduci testo', [SqlZoomKeys.zoomOut]),
+        h('Testo al 100%', [SqlZoomKeys.reset]),
       ]),
       ('Griglia dati', [
         h('Modifica cella', [

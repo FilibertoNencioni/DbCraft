@@ -16,6 +16,7 @@ import '../../services/sql_splitter.dart';
 import '../../state/app_state.dart';
 import '../../state/db_connection.dart';
 import '../../state/editor_tabs.dart';
+import '../../state/editor_zoom.dart';
 import '../actions.dart';
 import '../dialogs/export_dialog.dart';
 import '../results/results_viewer.dart';
@@ -38,6 +39,35 @@ enum SqlCommand {
   aiFix,
   aiGenerate,
   visualPlan,
+}
+
+/// Text zoom shortcuts of the SQL editor: Cmd/Ctrl + "+" / "-" (also "=" and
+/// the numeric keypad); back to 100% with ⌃⌘0 on macOS (⌘0 toggles the
+/// sidebar; same choice as Xcode), Ctrl+Alt+0 elsewhere, or Cmd/Ctrl +
+/// keypad 0.
+abstract final class SqlZoomKeys {
+  static bool get _mac => Platform.isMacOS;
+
+  static SingleActivator _a(LogicalKeyboardKey k, {bool shift = false}) =>
+      SingleActivator(k, control: !_mac, meta: _mac, shift: shift);
+
+  static SingleActivator get zoomIn => _a(LogicalKeyboardKey.add);
+  static SingleActivator get zoomOut => _a(LogicalKeyboardKey.minus);
+  static SingleActivator get reset => _mac
+      ? const SingleActivator(LogicalKeyboardKey.digit0, control: true, meta: true)
+      : const SingleActivator(LogicalKeyboardKey.digit0, control: true, alt: true);
+
+  static Map<ShortcutActivator, VoidCallback> bindings(EditorZoom z) => {
+        for (final k in [LogicalKeyboardKey.add, LogicalKeyboardKey.equal]) ...{
+          _a(k): z.zoomIn,
+          _a(k, shift: true): z.zoomIn,
+        },
+        _a(LogicalKeyboardKey.numpadAdd): z.zoomIn,
+        _a(LogicalKeyboardKey.minus): z.zoomOut,
+        _a(LogicalKeyboardKey.numpadSubtract): z.zoomOut,
+        reset: z.reset,
+        _a(LogicalKeyboardKey.numpad0): z.reset,
+      };
 }
 
 class SqlEditorView extends StatefulWidget {
@@ -320,6 +350,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       },
       a(LogicalKeyboardKey.keyR, shift: true): () => setState(() => _showResults = !_showResults),
       const SingleActivator(LogicalKeyboardKey.f5): _execute,
+      ...SqlZoomKeys.bindings(AppScope.read(context).sqlZoom),
     };
   }
 
@@ -342,6 +373,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
               findController: _find,
               promptsBuilder: _prompts,
               fontSize: app.settings.editorFontSize,
+              zoom: app.sqlZoom,
               focusNode: _editorFocus,
               blankLineDelimiter: app.settings.blankLineDelimiter,
             ),
@@ -426,6 +458,10 @@ class _SqlEditorViewState extends State<SqlEditorView> {
               onSelected: () => _toUpper(true), shortcut: a(LogicalKeyboardKey.keyX, shift: true)),
           MenuEntry('Selezione in minuscolo',
               onSelected: () => _toUpper(false), shortcut: a(LogicalKeyboardKey.keyY, shift: true)),
+          const MenuEntry.divider(),
+          MenuEntry('Ingrandisci testo', onSelected: app.sqlZoom.zoomIn, shortcut: SqlZoomKeys.zoomIn),
+          MenuEntry('Riduci testo', onSelected: app.sqlZoom.zoomOut, shortcut: SqlZoomKeys.zoomOut),
+          MenuEntry('Dimensione testo 100%', onSelected: app.sqlZoom.reset, shortcut: SqlZoomKeys.reset),
         ],
       ),
       if (tab.running) ...[
@@ -433,6 +469,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         Text(_elapsed, style: uiText(TypeSize.small, color: c.textSecondary, features: kTabular)),
       ],
       const Spacer(),
+      _zoomBadge(app.sqlZoom),
       if (conn != null && conn.isConnected && (conn.metadata?.supportsCatalogs ?? false)) ...[
         _catalogButton(conn),
         const SizedBox(width: Gap.xs),
@@ -451,6 +488,22 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       ),
     ]);
   }
+
+  /// Current text zoom, shown only when it is not 100%; a click resets it.
+  Widget _zoomBadge(EditorZoom zoom) => ValueListenableBuilder<double>(
+        valueListenable: zoom,
+        builder: (context, z, _) => zoom.isDefault
+            ? const SizedBox.shrink()
+            : Padding(
+                padding: const EdgeInsets.only(right: Gap.xs),
+                child: ToolButton(
+                  icon: z > 1 ? AppIcons.zoomIn : AppIcons.zoomOut,
+                  label: zoom.label,
+                  tooltip: 'Zoom del testo: clic per tornare al 100% (${shortcutLabel(SqlZoomKeys.reset)})',
+                  onPressed: zoom.reset,
+                ),
+              ),
+      );
 
   Widget _aiMenu(AppState app) {
     final failed = _lastError;

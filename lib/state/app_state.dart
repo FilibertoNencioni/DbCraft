@@ -11,6 +11,7 @@ import '../services/storage.dart';
 import '../services/vault.dart';
 import 'db_connection.dart';
 import 'editor_tabs.dart';
+import 'editor_zoom.dart';
 
 /// Global application state (connections, editors, settings, history).
 class AppState extends ChangeNotifier {
@@ -57,6 +58,9 @@ class AppState extends ChangeNotifier {
   final List<HistoryEntry> history;
   final List<EditorTab> tabs = [];
   int activeTab = -1;
+
+  /// Text zoom of the SQL editors (session only).
+  final sqlZoom = EditorZoom();
 
   /// The window is locked behind the master password (manual or idle lock).
   bool locked = false;

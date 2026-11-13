@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:re_editor/re_editor.dart';
@@ -10,6 +13,7 @@ import 'package:re_highlight/styles/xcode.dart';
 import '../../services/sql_completion/completer.dart';
 import '../../state/app_state.dart';
 import '../../state/db_connection.dart';
+import '../../state/editor_zoom.dart';
 import '../widgets/common.dart';
 import 'code_folding.dart';
 
@@ -429,6 +433,7 @@ class SqlCodeEditor extends StatefulWidget {
     required this.findController,
     required this.promptsBuilder,
     required this.fontSize,
+    this.zoom,
     this.focusNode,
     this.blankLineDelimiter = false,
   });
@@ -436,7 +441,13 @@ class SqlCodeEditor extends StatefulWidget {
   final CodeLineEditingController controller;
   final CodeFindController findController;
   final CodePromptsBuilderHolder promptsBuilder;
+
+  /// Font size from the settings (100%).
   final double fontSize;
+
+  /// Text zoom applied to [fontSize]; also driven by Cmd/Ctrl + wheel and
+  /// by the trackpad pinch.
+  final EditorZoom? zoom;
   final FocusNode? focusNode;
 
   /// Empty lines end statements (folding follows the execution).
@@ -461,10 +472,16 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
     }),
   };
 
+  final _scroll = CodeScrollController();
+  late double _zoom;
+  double? _pinchStart;
+
   @override
   void initState() {
     super.initState();
     widget.promptsBuilder.builder.changes.addListener(_refresh);
+    _zoom = widget.zoom?.value ?? 1.0;
+    widget.zoom?.addListener(_zoomChanged);
   }
 
   @override
@@ -474,12 +491,61 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
       old.promptsBuilder.builder.changes.removeListener(_refresh);
       widget.promptsBuilder.builder.changes.addListener(_refresh);
     }
+    if (old.zoom != widget.zoom) {
+      old.zoom?.removeListener(_zoomChanged);
+      widget.zoom?.addListener(_zoomChanged);
+      _zoom = widget.zoom?.value ?? 1.0;
+    }
   }
 
   @override
   void dispose() {
     widget.promptsBuilder.builder.changes.removeListener(_refresh);
+    widget.zoom?.removeListener(_zoomChanged);
+    _scroll.verticalScroller.dispose();
+    _scroll.horizontalScroller.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Rebuilds with the new size keeping the same text at the top-left: the
+  /// offsets scale with the font. They are first restored (a Cmd + wheel also
+  /// scrolls the editor after this callback), then scaled after the layout.
+  void _zoomChanged() {
+    final z = widget.zoom!.value;
+    if (!mounted || z == _zoom) return;
+    final ratio = z / _zoom;
+    final scrollers = [_scroll.verticalScroller, _scroll.horizontalScroller];
+    final offsets = [for (final s in scrollers) s.hasClients ? s.offset : null];
+    void jump(double factor) {
+      for (var i = 0; i < scrollers.length; i++) {
+        final s = scrollers[i], o = offsets[i];
+        if (o != null && s.hasClients) s.jumpTo((o * factor).clamp(0.0, s.position.maxScrollExtent));
+      }
+    }
+
+    scheduleMicrotask(() => jump(1));
+    WidgetsBinding.instance.addPostFrameCallback((_) => jump(ratio));
+    setState(() => _zoom = z);
+  }
+
+  bool get _zoomModifier =>
+      Platform.isMacOS ? HardwareKeyboard.instance.isMetaPressed : HardwareKeyboard.instance.isControlPressed;
+
+  /// Cmd/Ctrl + mouse wheel.
+  void _onPointerSignal(PointerSignalEvent e) {
+    final zoom = widget.zoom;
+    if (zoom == null || e is! PointerScrollEvent || !_zoomModifier || e.scrollDelta.dy == 0) return;
+    e.scrollDelta.dy < 0 ? zoom.zoomIn() : zoom.zoomOut();
+  }
+
+  /// Trackpad pinch (two-finger scrolls arrive here too, with scale 1).
+  void _onPanZoomStart(PointerPanZoomStartEvent e) => _pinchStart = widget.zoom?.value;
+
+  void _onPanZoomUpdate(PointerPanZoomUpdateEvent e) {
+    final start = _pinchStart, zoom = widget.zoom;
+    if (start == null || zoom == null || (e.scale - 1).abs() < 0.02) return;
+    zoom.set(start * e.scale);
   }
 
   /// Database objects arrived: recompute the proposals of the open popup.
@@ -529,14 +595,25 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
           skipTraversal: true,
           includeSemantics: false,
           onKeyEvent: _onKey,
-          child: _editor(c, w),
+          child: w.zoom == null
+              ? _editor(c, w)
+              : Listener(
+                  onPointerSignal: _onPointerSignal,
+                  onPointerPanZoomStart: _onPanZoomStart,
+                  onPointerPanZoomUpdate: _onPanZoomUpdate,
+                  onPointerPanZoomEnd: (_) => _pinchStart = null,
+                  child: _editor(c, w),
+                ),
         ),
       ),
     );
   }
 
+  double get _fontSize => widget.zoom?.fontSize(widget.fontSize) ?? widget.fontSize;
+
   Widget _editor(DbColors c, SqlCodeEditor w) => CodeEditor(
     controller: w.controller,
+    scrollController: _scroll,
     findController: w.findController,
     focusNode: w.focusNode,
     wordWrap: false,
@@ -545,8 +622,8 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
     chunkAnalyzer: SqlChunkAnalyzer(blankLineDelimiter: w.blankLineDelimiter),
     commentFormatter: DefaultCodeCommentFormatter(singleLinePrefix: '--', multiLinePrefix: '/*', multiLineSuffix: '*/'),
     findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
-    style: sqlCodeEditorStyle(context, w.fontSize),
-    indicatorBuilder: sqlLineNumbers(w.fontSize),
+    style: sqlCodeEditorStyle(context, _fontSize),
+    indicatorBuilder: sqlLineNumbers(_fontSize),
     leadingDivider: Container(width: 0.5, color: c.separator),
   );
 }
