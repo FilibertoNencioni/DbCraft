@@ -65,7 +65,8 @@ class SqlCompletionScope {
   final List<SqlTableRef> refs;
 
   /// CTEs visible at the caret, by lower-case name: inside the body of a CTE
-  /// only the ones defined before it (like pgcli), all of them elsewhere.
+  /// only the ones defined before it and itself (pgcli, plus recursion), all
+  /// of them elsewhere.
   final Map<String, SqlCte> ctes;
 
   /// Every CTE of the statement, by lower-case name.
@@ -228,12 +229,21 @@ SqlCompletionScope sqlCompletionScope(String script, int offset) {
   final before = _flatten(s.substring(segStart, caret)).replaceFirst(partialWordPattern, '');
   final (clause, keyword) = _clauseOf(before);
 
+  // Inside the body of a CTE only the CTEs defined before it (and itself, for
+  // recursive ones) are visible.
   final all = findCtes(text);
+  var visible = all;
+  for (final (k, c) in all.indexed) {
+    if (caret >= c.bodyStart && caret <= c.bodyEnd) {
+      visible = all.sublist(0, k + 1);
+      break;
+    }
+  }
   return SqlCompletionScope(
     clause: clause ?? (inCall ? SqlClause.column : SqlClause.other),
     keyword: keyword,
     refs: refs,
-    ctes: {for (final c in all) c.name.toLowerCase(): c},
+    ctes: {for (final c in visible) c.name.toLowerCase(): c},
     allCtes: {for (final c in all) c.name.toLowerCase(): c},
     hasFrom: hasFrom,
     textBefore: s.substring(0, caret),

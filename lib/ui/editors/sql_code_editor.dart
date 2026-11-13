@@ -177,6 +177,7 @@ class _SqlAutocompleteViewState extends State<SqlAutocompleteView> {
     SqlItemKind.view => CompletionKind.view,
     SqlItemKind.column => CompletionKind.column,
     SqlItemKind.type => CompletionKind.type,
+    SqlItemKind.loading => CompletionKind.loading,
   };
 
   @override

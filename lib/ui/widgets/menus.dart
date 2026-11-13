@@ -1046,7 +1046,10 @@ enum CompletionKind {
   table('T'),
   view('V'),
   column('C'),
-  type('Y');
+  type('Y'),
+
+  /// Placeholder row while objects are loading.
+  loading('…');
 
   const CompletionKind(this.letter);
   final String letter;
@@ -1057,6 +1060,7 @@ enum CompletionKind {
     CompletionKind.table || CompletionKind.view => c.codeTable,
     CompletionKind.column => c.codeColumn,
     CompletionKind.type => c.codeType,
+    CompletionKind.loading => c.textTertiary,
   };
 }
 

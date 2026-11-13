@@ -1,33 +1,123 @@
 // Stage 4 of the SQL completion: matches the candidates against the input
 // and orders them.
+//
+// Matching (DataGrip / pgcli style), best first:
+//   prefix      `cust`  -> CustomerId
+//   word start  `id`    -> Customer_Id, CustomerId (after `_`, space, camel hump)
+//   initials    `ci`    -> CustomerId, customer_id
+//   contains    `tom`   -> CustomerId            (2+ characters)
+//   fuzzy       `cstid` -> CustomerId            (3+ characters, in order)
+//
+// Order: good matches (prefix, word start, initials) before weak ones
+// (contains, fuzzy); then the kind the clause expects (request order); then
+// match quality, item priority, usage frequency, shorter names.
 
 import 'candidates.dart';
 import 'context.dart';
 
+/// How well an item matches the input (higher is better).
+class SqlMatch {
+  const SqlMatch(this.tier, this.fine);
+
+  static const prefix = 4, wordStart = 3, initials = 2, contains = 1, fuzzy = 0;
+
+  final int tier;
+
+  /// Finer score within the tier (higher is better).
+  final int fine;
+
+  bool get good => tier >= initials;
+}
+
+/// Match of [candidate] for [input], null when it does not match.
+SqlMatch? sqlMatch(String candidate, String input) {
+  final word = bareIdentifier(candidate);
+  final w = word.toLowerCase(), i = bareIdentifier(input).toLowerCase();
+  if (i.isEmpty) return const SqlMatch(SqlMatch.prefix, 0);
+  if (w == i) return null; // already typed
+  if (w.startsWith(i)) return SqlMatch(SqlMatch.prefix, word.startsWith(bareIdentifier(input)) ? 1 : 0);
+  final parts = _parts(word);
+  for (var k = 1; k < parts.length; k++) {
+    if (parts[k].toLowerCase().startsWith(i)) return SqlMatch(SqlMatch.wordStart, -k);
+  }
+  if (i.length >= 2 && parts.length > 1) {
+    final initials = parts.map((p) => p[0].toLowerCase()).join();
+    if (initials.startsWith(i)) return SqlMatch(SqlMatch.initials, -initials.length);
+  }
+  if (i.length >= 2) {
+    final at = w.indexOf(i);
+    if (at >= 0) return SqlMatch(SqlMatch.contains, -at);
+  }
+  if (i.length >= 3) {
+    // Characters in order, tightest and earliest span first (pgcli).
+    var best = -1, bestStart = 0;
+    for (var start = w.indexOf(i[0]); start >= 0; start = w.indexOf(i[0], start + 1)) {
+      var pos = start, ok = true;
+      for (var k = 1; k < i.length; k++) {
+        pos = w.indexOf(i[k], pos + 1);
+        if (pos < 0) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) break;
+      final span = pos - start + 1;
+      if (best < 0 || span < best) {
+        best = span;
+        bestStart = start;
+      }
+    }
+    if (best >= 0) return SqlMatch(SqlMatch.fuzzy, -best * 100 - bestStart);
+  }
+  return null;
+}
+
+/// Words of an identifier: split on `_`, `$`, spaces, digits and camel humps.
+List<String> _parts(String s) => RegExp(r'[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+').allMatches(s).map((m) => m[0]!).toList();
+
 /// Matching items of [groups] (one list per request, most relevant request
-/// first), ordered and without duplicates.
-List<SqlCompletionItem> rankCompletions(String input, List<List<SqlCompletionItem>> groups, {int limit = 80}) {
+/// first), ordered and without duplicates. [usage] counts how often a name
+/// (lower case) was used in past queries.
+List<SqlCompletionItem> rankCompletions(
+  String input,
+  List<List<SqlCompletionItem>> groups, {
+  int limit = 80,
+  int Function(String name)? usage,
+}) {
   final seen = <String>{};
-  final scored = <(SqlCompletionItem, int, int)>[]; // item, group, insertion
+  final scored = <_Scored>[];
   for (final (g, items) in groups.indexed) {
     for (final it in items) {
-      if (!_matches(it.text, input)) continue;
+      final m = it.kind == SqlItemKind.loading ? const SqlMatch(SqlMatch.fuzzy, -1 << 30) : sqlMatch(it.text, input);
+      if (m == null) continue;
       if (!seen.add('${it.kind.name}:${it.insert.toLowerCase()}')) continue;
-      scored.add((it, g, scored.length));
+      final uses = usage == null ? 0 : usage(bareIdentifier(it.text).toLowerCase());
+      scored.add(_Scored(it, m, g, uses, scored.length));
     }
   }
   scored.sort((a, b) {
-    var c = a.$2.compareTo(b.$2);
+    var c = (b.match.good ? 1 : 0).compareTo(a.match.good ? 1 : 0);
     if (c != 0) return c;
-    c = b.$1.prio.compareTo(a.$1.prio);
+    c = a.group.compareTo(b.group);
     if (c != 0) return c;
-    return a.$3.compareTo(b.$3);
+    c = b.match.tier.compareTo(a.match.tier);
+    if (c != 0) return c;
+    c = b.item.prio.compareTo(a.item.prio);
+    if (c != 0) return c;
+    c = b.uses.compareTo(a.uses);
+    if (c != 0) return c;
+    c = b.match.fine.compareTo(a.match.fine);
+    if (c != 0) return c;
+    return a.index.compareTo(b.index);
   });
-  return [for (final s in scored.take(limit)) s.$1];
+  return [for (final s in scored.take(limit)) s.item];
 }
 
-bool _matches(String candidate, String input) {
-  if (input.isEmpty) return true;
-  final w = bareIdentifier(candidate).toLowerCase(), i = bareIdentifier(input).toLowerCase();
-  return candidate.toLowerCase() != input.toLowerCase() && w.startsWith(i);
+class _Scored {
+  _Scored(this.item, this.match, this.group, this.uses, this.index);
+  final SqlCompletionItem item;
+  final SqlMatch match;
+  final int group;
+  final int uses;
+  final int index;
 }

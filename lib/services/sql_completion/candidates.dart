@@ -8,7 +8,18 @@ import 'context.dart';
 import 'cte.dart';
 import 'scope.dart';
 
-enum SqlItemKind { column, table, view, cte, keyword, function, type }
+enum SqlItemKind {
+  column,
+  table,
+  view,
+  cte,
+  keyword,
+  function,
+  type,
+
+  /// Placeholder while database objects are loading (inserts nothing).
+  loading,
+}
 
 class SqlCompletionItem {
   const SqlCompletionItem(this.insert, this.kind, {this.label, this.detail, this.prio = 0, this.matchText});
