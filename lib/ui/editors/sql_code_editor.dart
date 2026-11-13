@@ -8,6 +8,7 @@ import 'package:re_highlight/styles/github-dark-dimmed.dart';
 import 'package:re_highlight/styles/xcode.dart';
 
 import '../../model/db_objects.dart';
+import '../../services/sql_completion_scope.dart';
 import '../../services/sql_cte.dart';
 import '../../services/sql_keywords.dart';
 import '../../state/app_state.dart';
@@ -38,15 +39,20 @@ class SqlPrompt extends CodePrompt {
   @override
   CodeAutocompleteResult get autocomplete => CodeAutocompleteResult.fromWord(word);
 
+  /// Case-insensitive prefix match, ignoring identifier quotes (`Ord`
+  /// matches `[Order Date]`).
   @override
   bool match(String input) {
-    final w = word.toLowerCase(), i = input.toLowerCase();
-    return w != i && w.startsWith(i);
+    final w = _bare(word), i = _bare(input);
+    return word.toLowerCase() != input.toLowerCase() && w.startsWith(i);
   }
+
+  static String _bare(String s) => s.replaceAll(RegExp(r'^["\[`]|["\]`]$'), '').toLowerCase();
 }
 
-/// Autocompletion: keywords, functions, tables of the connection and
-/// columns of the tables referenced in the script (also via aliases).
+/// Autocompletion: columns of the tables and CTEs in scope at the caret,
+/// CTEs, tables of the connection, keywords, functions and types, ordered by
+/// what the clause under the caret expects ([sqlCompletionScope]).
 class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
   SqlPromptsBuilder(this.connection, this.textProvider, {required this.enabled, this.catalog});
 
@@ -60,46 +66,119 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
   static final _wordBefore = RegExp(r'[A-Za-z0-9_$#@."\[\]]*$');
   final Set<String> _loading = {};
 
-  /// CTEs of the text, by lower-case name (parsed once per [build]).
-  Map<String, SqlCte>? _ctesCache;
-  Map<String, SqlCte> get _ctes => _ctesCache ??= {for (final c in findCtes(textProvider())) c.name.toLowerCase(): c};
+  /// Tables not in the preloaded lists, found by name (connection:name).
+  final Map<String, DbTable> _found = {};
+
+  /// Keywords proposed before the others with the same prefix.
+  static const _commonKeywords = [
+    'SELECT',
+    'FROM',
+    'WHERE',
+    'AND',
+    'OR',
+    'NOT',
+    'NULL',
+    'IS',
+    'IN',
+    'AS',
+    'ON',
+    'JOIN',
+    'INNER',
+    'LEFT',
+    'RIGHT',
+    'ORDER',
+    'GROUP',
+    'BY',
+    'HAVING',
+    'DISTINCT',
+    'LIKE',
+    'BETWEEN',
+    'CASE',
+    'WHEN',
+    'THEN',
+    'ELSE',
+    'END',
+    'INSERT',
+    'INTO',
+    'VALUES',
+    'UPDATE',
+    'SET',
+    'DELETE',
+    'WITH',
+    'UNION',
+    'ALL',
+    'EXISTS',
+    'DESC',
+    'ASC',
+  ];
+
+  /// Kind order for each clause (first = proposed first).
+  static const _order = {
+    SqlClause.column: [
+      PromptKind.column,
+      PromptKind.function,
+      PromptKind.keyword,
+      PromptKind.table,
+      PromptKind.view,
+      PromptKind.type,
+    ],
+    SqlClause.table: [
+      PromptKind.table,
+      PromptKind.view,
+      PromptKind.keyword,
+      PromptKind.column,
+      PromptKind.function,
+      PromptKind.type,
+    ],
+    SqlClause.other: [
+      PromptKind.keyword,
+      PromptKind.column,
+      PromptKind.table,
+      PromptKind.view,
+      PromptKind.function,
+      PromptKind.type,
+    ],
+  };
 
   @override
   CodeAutocompleteEditingValue? build(BuildContext context, CodeLine codeLine, CodeLineSelection selection) {
     if (!enabled()) return null;
-    _ctesCache = null;
     final offset = min(selection.extentOffset, codeLine.text.length);
     final before = codeLine.text.substring(0, offset);
     final m = _wordBefore.firstMatch(before);
     final token = m?[0] ?? '';
     if (token.isEmpty) return null;
     final dc = connection();
+    final text = textProvider();
+    final scope = sqlCompletionScope(text, _caretOffset(text, selection.extentIndex, offset));
 
     final dot = token.lastIndexOf('.');
     if (dot >= 0) {
-      final owner = _unquote(token.substring(0, dot).split('.').last);
+      final owner = SqlPrompt._bare(token.substring(0, dot).split('.').last);
       final input = token.substring(dot + 1);
-      final prompts = _columnsFor(dc, owner).where((p) => input.isEmpty || p.match(input)).toList();
+      final prompts = _columnsFor(dc, owner, scope).where((p) => input.isEmpty || p.match(input)).toList();
       if (prompts.isEmpty) return null;
       return CodeAutocompleteEditingValue(input: input, prompts: prompts, index: 0);
     }
     if (token.length < 2 && !RegExp(r'^[A-Za-z]$').hasMatch(token)) return null;
 
-    final prompts = <CodePrompt>[];
-    final lower = token.toLowerCase();
+    final prompts = <SqlPrompt>[];
     final seen = <String>{};
     void add(SqlPrompt p) {
-      if (seen.add('${p.kind.name}:${p.word.toLowerCase()}') && p.match(token)) prompts.add(p);
+      if (p.match(token) && seen.add('${p.kind.name}:${p.word.toLowerCase()}')) prompts.add(p);
     }
 
-    // Columns of the tables used in the statement come first.
-    for (final t in _referencedTables(dc)) {
-      for (final p in _columnsFor(dc, t)) {
+    // Columns of the tables / CTEs of the query under the caret (inner query
+    // first). Before its FROM is written, the CTEs of the statement are the
+    // likely sources: propose their columns too.
+    final sources = [...scope.tables, if (!scope.hasFrom) ...scope.ctes.values.map((c) => c.name)];
+    for (final t in sources) {
+      for (final p in _columnsFor(dc, t, scope)) {
         add(p);
       }
     }
-    for (final c in _ctes.values) {
-      add(SqlPrompt(word: dc?.dialect.quoteIdent(c.name) ?? c.name, kind: PromptKind.table, detail: 'CTE'));
+    for (final c in scope.ctes.values) {
+      add(SqlPrompt(word: _quote(dc, c.name), kind: PromptKind.table, detail: 'CTE'));
     }
     if (dc?.metadata != null) {
       final md = dc!.metadata!;
@@ -115,7 +194,7 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
         );
       }
     }
-    for (final k in kSqlKeywords) {
+    for (final k in [..._commonKeywords, ...kSqlKeywords]) {
       add(SqlPrompt(word: k, kind: PromptKind.keyword));
     }
     for (final f in kSqlFunctions) {
@@ -125,26 +204,32 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
       add(SqlPrompt(word: t, kind: PromptKind.type));
     }
     if (prompts.isEmpty) return null;
-    // Exact-prefix (case sensitive) matches first.
-    prompts.sort((a, b) {
-      final ka = (a as SqlPrompt).kind.index, kb = (b as SqlPrompt).kind.index;
-      final pa = a.word.toLowerCase().startsWith(lower) ? 0 : 1;
-      final pb = b.word.toLowerCase().startsWith(lower) ? 0 : 1;
-      if (pa != pb) return pa - pb;
-      final order = [
-        PromptKind.column,
-        PromptKind.table,
-        PromptKind.view,
-        PromptKind.keyword,
-        PromptKind.function,
-        PromptKind.type,
-      ];
-      return order.indexOf(PromptKind.values[ka]).compareTo(order.indexOf(PromptKind.values[kb]));
-    });
-    return CodeAutocompleteEditingValue(input: token, prompts: prompts.take(60).toList(), index: 0);
+
+    // Stable sort: kind order of the clause, then insertion order (columns of
+    // the inner query first, CTEs before tables).
+    final order = _order[scope.clause]!;
+    final indexed = prompts.indexed.toList()
+      ..sort((a, b) {
+        final k = order.indexOf(a.$2.kind).compareTo(order.indexOf(b.$2.kind));
+        return k != 0 ? k : a.$1.compareTo(b.$1);
+      });
+    return CodeAutocompleteEditingValue(input: token, prompts: [for (final (_, p) in indexed.take(80)) p], index: 0);
   }
 
-  static String _unquote(String s) => s.replaceAll(RegExp(r'^["\[`]|["\]`]$'), '');
+  /// Offset in [text] of column [column] of line [line].
+  static int _caretOffset(String text, int line, int column) {
+    var offset = 0;
+    var l = 0;
+    while (l < line) {
+      final nl = text.indexOf('\n', offset);
+      if (nl < 0) return text.length;
+      offset = nl + 1;
+      l++;
+    }
+    return min(offset + column, text.length);
+  }
+
+  static String _quote(DbConnection? dc, String name) => dc?.dialect.quoteIdent(name) ?? name;
 
   void _preloadTables(DbConnection dc) {
     final cat = catalog?.call() ?? dc.metadata!.currentCatalog;
@@ -166,68 +251,37 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
     }();
   }
 
-  /// Table names referenced in FROM / JOIN / UPDATE / INTO, plus alias map.
-  Map<String, String> _aliases(String text) {
-    final map = <String, String>{};
-    final re = RegExp(
-      r'\b(?:from|join|update|into)\s+((?:[\w$#@"\[\]`]+\.)*[\w$#@"\[\]`]+)(?:\s+(?:as\s+)?([A-Za-z_][\w$]*))?',
-      caseSensitive: false,
-    );
-    const notAlias = {
-      'where',
-      'on',
-      'join',
-      'left',
-      'right',
-      'inner',
-      'outer',
-      'full',
-      'cross',
-      'group',
-      'order',
-      'set',
-      'values',
-      'limit',
-      'union',
-      'having',
-      'using',
-      'natural',
-      'select',
-      'as',
-    };
-    for (final m in re.allMatches(text)) {
-      final table = _unquote(m[1]!.split('.').last);
-      map[table.toLowerCase()] = table;
-      final alias = m[2];
-      if (alias != null && !notAlias.contains(alias.toLowerCase())) {
-        map[alias.toLowerCase()] = table;
-      }
-    }
-    return map;
+  /// Columns of a table, alias or CTE in [scope].
+  List<SqlPrompt> _columnsFor(DbConnection? dc, String ownerOrAlias, SqlCompletionScope scope, [int depth = 0]) {
+    final table = scope.resolve(ownerOrAlias);
+    final cte = scope.cte(table);
+    if (cte != null) return _cteColumns(dc, cte, scope, depth);
+    return _tableColumns(dc, table);
   }
 
-  Iterable<String> _referencedTables(DbConnection? dc) =>
-      dc == null ? const [] : _aliases(textProvider()).values.toSet();
-
-  List<SqlPrompt> _columnsFor(DbConnection? dc, String ownerOrAlias, {String? text, int depth = 0}) {
-    final table = _aliases(text ?? textProvider())[ownerOrAlias.toLowerCase()] ?? ownerOrAlias;
-    final cte = _ctes[table.toLowerCase()];
-    if (cte != null) return _cteColumns(dc, cte, depth);
+  /// Columns of a database table (loaded in the background on first use:
+  /// they appear from the next keystroke).
+  List<SqlPrompt> _tableColumns(DbConnection? dc, String table) {
     if (dc?.metadata == null) return const [];
     final md = dc!.metadata!;
+    final lower = table.toLowerCase();
+    final foundKey = '${dc.config.id}:$lower';
     DbTable? t;
     for (final x in md.cachedTables) {
-      if (x.name.toLowerCase() == table.toLowerCase()) {
+      if (x.name.toLowerCase() == lower) {
         t = x;
         break;
       }
     }
+    t ??= _found[foundKey];
     if (t == null) {
-      final key = 'find:${dc.config.id}:$table';
+      final key = 'find:$foundKey';
       if (!_loading.contains(key)) {
         _loading.add(key);
         md.findTable(null, null, table).then((found) {
-          if (found != null) md.columns(found);
+          if (found == null) return;
+          _found[foundKey] = found;
+          md.columns(found);
         });
       }
       return const [];
@@ -249,19 +303,20 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
 
   /// Columns of a CTE: its own column names, plus those of the tables behind
   /// `*` / `x.*` in its select list (resolved inside the CTE body).
-  List<SqlPrompt> _cteColumns(DbConnection? dc, SqlCte cte, int depth) {
+  List<SqlPrompt> _cteColumns(DbConnection? dc, SqlCte cte, SqlCompletionScope scope, int depth) {
     final out = [
-      for (final c in cte.columns)
-        SqlPrompt(word: dc?.dialect.quoteIdent(c) ?? c, kind: PromptKind.column, detail: cte.name),
+      for (final c in cte.columns) SqlPrompt(word: _quote(dc, c), kind: PromptKind.column, detail: cte.name),
     ];
     if (cte.starSources.isEmpty || depth > 4) return out;
-    final bodyAliases = _aliases(cte.body);
+    final bodyAliases = sqlTableAliases(cte.body);
     for (final q in cte.starSources) {
       final sources = q == null ? bodyAliases.values.toSet() : {bodyAliases[q.toLowerCase()] ?? q};
       for (final src in sources) {
         // A recursive CTE references itself.
         if (src.toLowerCase() == cte.name.toLowerCase()) continue;
-        for (final p in _columnsFor(dc, src, text: cte.body, depth: depth + 1)) {
+        final other = scope.cte(src);
+        final cols = other != null ? _cteColumns(dc, other, scope, depth + 1) : _tableColumns(dc, src);
+        for (final p in cols) {
           out.add(SqlPrompt(word: p.word, kind: PromptKind.column, detail: '${cte.name} · ${p.detail ?? ''}'));
         }
       }
