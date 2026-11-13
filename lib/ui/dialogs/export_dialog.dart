@@ -26,6 +26,7 @@ Future<void> showResultExportDialog(BuildContext context, ResultSetModel m) {
       sql: m.sql,
       params: m.params,
       catalog: table?.catalog ?? m.catalog,
+      dataFilter: m.dataFilter,
     ),
   );
 }
@@ -84,6 +85,7 @@ class _ExportDialog extends StatefulWidget {
     required this.sql,
     required this.params,
     this.catalog,
+    this.dataFilter,
   });
 
   final DbConnection connection;
@@ -95,6 +97,10 @@ class _ExportDialog extends StatefulWidget {
   final String sql;
   final List<Object?> params;
   final String? catalog;
+
+  /// WHERE / ORDER BY of the table data page, shown so it is clear which
+  /// rows are exported.
+  final String? dataFilter;
 
   @override
   State<_ExportDialog> createState() => _ExportDialogState();
@@ -199,6 +205,18 @@ class _ExportDialogState extends State<_ExportDialog> {
                   onChanged: _running ? null : (x) => setState(() => _o.format = x),
                 ),
               ),
+              if (widget.dataFilter != null)
+                FormRow(
+                  label: 'Filtro',
+                  child: widget.dataFilter!.isEmpty
+                      ? Text('Nessuno · tutta la tabella', style: uiText(TypeSize.body, color: c.textSecondary))
+                      : SelectableText(
+                          widget.dataFilter!,
+                          maxLines: 3,
+                          textAlign: TextAlign.end,
+                          style: monoStyle(context, size: TypeSize.mono, color: c.text),
+                        ),
+                ),
               if (widget.loadedRows != null)
                 FormRow(
                   label: 'Righe',

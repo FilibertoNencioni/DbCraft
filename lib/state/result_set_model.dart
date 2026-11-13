@@ -29,6 +29,7 @@ class ResultSetModel extends ChangeNotifier {
     this.table,
     this.catalog,
     this.params = const [],
+    this.dataFilter,
   }) : columns = first.columns,
        _cursorId = first.cursorId,
        hasMore = first.hasMore,
@@ -41,6 +42,10 @@ class ResultSetModel extends ChangeNotifier {
   final DbConnection connection;
   final String sql;
   final List<Object?> params;
+
+  /// WHERE / ORDER BY the table data page loaded these rows with ('' when
+  /// unfiltered); null for results that do not come from a table data page.
+  final String? dataFilter;
   final int fetchSize;
   final List<ColumnInfo> columns;
   final List<ResultRow> rows = [];

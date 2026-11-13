@@ -284,12 +284,17 @@ class _TableEditorViewState extends State<TableEditorView> {
     super.dispose();
   }
 
+  /// The WHERE / ORDER BY part of [_dataSql] ('' when unfiltered).
+  String get _dataClauses {
+    final where = _where.text.trim();
+    final order = _order.text.trim();
+    return [if (where.isNotEmpty) 'WHERE $where', if (order.isNotEmpty) 'ORDER BY $order'].join(' ');
+  }
+
   String get _dataSql {
-    final d = tab.connection.dialect;
-    final sb = StringBuffer('SELECT * FROM ${d.tableName(table)}');
-    if (_where.text.trim().isNotEmpty) sb.write(' WHERE ${_where.text.trim()}');
-    if (_order.text.trim().isNotEmpty) sb.write(' ORDER BY ${_order.text.trim()}');
-    return sb.toString();
+    final clauses = _dataClauses;
+    final from = 'SELECT * FROM ${tab.connection.dialect.tableName(table)}';
+    return clauses.isEmpty ? from : '$from $clauses';
   }
 
   Future<void> _loadData() async {
@@ -309,11 +314,14 @@ class _TableEditorViewState extends State<TableEditorView> {
     final app = mounted ? AppScope.read(context) : null;
     try {
       await tab.data?.close();
-      final page = await c.mainFor(table.catalog)!.execute(_dataSql, fetchSize: app?.settings.fetchSize ?? 200);
+      final sql = _dataSql;
+      final clauses = _dataClauses;
+      final page = await c.mainFor(table.catalog)!.execute(sql, fetchSize: app?.settings.fetchSize ?? 200);
       final m = ResultSetModel(
         connection: c,
         first: page,
-        sql: _dataSql,
+        sql: sql,
+        dataFilter: clauses,
         fetchSize: app?.settings.fetchSize ?? 200,
         table: table,
         catalog: table.catalog,
@@ -544,7 +552,8 @@ class _TableEditorViewState extends State<TableEditorView> {
                           catalog: table.catalog,
                         ),
                   ),
-                if (!tab.isNew)
+                // The data page exports from its own grid, filters included.
+                if (!tab.isNew && _page != _pageData)
                   ToolButton(
                     icon: AppIcons.share,
                     tooltip: 'Esporta dati…',
