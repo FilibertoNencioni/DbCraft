@@ -16,6 +16,7 @@ import '../../state/db_connection.dart';
 import '../../state/editor_zoom.dart';
 import '../widgets/common.dart';
 import 'code_folding.dart';
+import 'drag_autoscroll.dart';
 
 /// Removes Ctrl/Cmd+Enter from "new line" so it can run the statement.
 class SqlShortcutsActivatorsBuilder extends CodeShortcutsActivatorsBuilder {
@@ -611,7 +612,13 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
 
   double get _fontSize => widget.zoom?.fontSize(widget.fontSize) ?? widget.fontSize;
 
-  Widget _editor(DbColors c, SqlCodeEditor w) => CodeEditor(
+  Widget _editor(DbColors c, SqlCodeEditor w) => DragSelectAutoScroll(
+    controller: w.controller,
+    scroll: _scroll,
+    child: _codeEditor(c, w),
+  );
+
+  Widget _codeEditor(DbColors c, SqlCodeEditor w) => CodeEditor(
     controller: w.controller,
     scrollController: _scroll,
     findController: w.findController,
