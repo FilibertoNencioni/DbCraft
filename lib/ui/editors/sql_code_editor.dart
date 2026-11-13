@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/sql.dart';
 import 'package:re_highlight/styles/github-dark-dimmed.dart';
@@ -269,12 +270,51 @@ class SqlPromptsBuilder implements CodeAutocompletePromptsBuilder {
   }
 }
 
+/// The autocompletion popup currently shown by an editor, if any: lets the
+/// editor accept the selected prompt with Tab and close the popup with Esc.
+class SqlAutocompleteSession {
+  Object? _owner;
+  ValueNotifier<CodeAutocompleteEditingValue>? _notifier;
+  ValueChanged<CodeAutocompleteResult>? _onSelected;
+
+  bool get isOpen => _notifier != null;
+
+  void _attach(Object owner, ValueNotifier<CodeAutocompleteEditingValue> n, ValueChanged<CodeAutocompleteResult> f) {
+    _owner = owner;
+    _notifier = n;
+    _onSelected = f;
+  }
+
+  void _detach(Object owner) {
+    if (_owner == owner) clear();
+  }
+
+  /// Forgets the popup (it is being closed).
+  void clear() {
+    _owner = null;
+    _notifier = null;
+    _onSelected = null;
+  }
+
+  /// Inserts the selected prompt; false when no popup is shown.
+  bool accept() {
+    final n = _notifier, f = _onSelected;
+    if (n == null || f == null) return false;
+    clear();
+    f(n.value.autocomplete);
+    return true;
+  }
+}
+
 /// Popup list shown by the autocompletion ([CompletionList]).
 class SqlAutocompleteView extends StatefulWidget implements PreferredSizeWidget {
-  const SqlAutocompleteView({super.key, required this.notifier, required this.onSelected});
+  const SqlAutocompleteView({super.key, required this.notifier, required this.onSelected, this.session});
 
   final ValueNotifier<CodeAutocompleteEditingValue> notifier;
   final ValueChanged<CodeAutocompleteResult> onSelected;
+
+  /// Tracks this popup while it is shown (Tab accepts, Esc closes).
+  final SqlAutocompleteSession? session;
 
   static const double width = 380;
 
@@ -290,11 +330,24 @@ class _SqlAutocompleteViewState extends State<SqlAutocompleteView> {
   void initState() {
     super.initState();
     widget.notifier.addListener(_changed);
+    widget.session?._attach(this, widget.notifier, widget.onSelected);
+  }
+
+  @override
+  void didUpdateWidget(SqlAutocompleteView old) {
+    super.didUpdateWidget(old);
+    if (old.notifier != widget.notifier) {
+      old.notifier.removeListener(_changed);
+      widget.notifier.addListener(_changed);
+    }
+    if (old.session != widget.session) old.session?._detach(this);
+    widget.session?._attach(this, widget.notifier, widget.onSelected);
   }
 
   @override
   void dispose() {
     widget.notifier.removeListener(_changed);
+    widget.session?._detach(this);
     super.dispose();
   }
 
@@ -474,7 +527,7 @@ CodeIndicatorBuilder sqlLineNumbers(double fontSize) => (context, editingControl
 };
 
 /// The SQL source editor (highlighting, line numbers, autocompletion).
-class SqlCodeEditor extends StatelessWidget {
+class SqlCodeEditor extends StatefulWidget {
   const SqlCodeEditor({
     super.key,
     required this.controller,
@@ -491,30 +544,82 @@ class SqlCodeEditor extends StatelessWidget {
   final FocusNode? focusNode;
 
   @override
+  State<SqlCodeEditor> createState() => _SqlCodeEditorState();
+}
+
+/// Autocompletion keys: Tab accepts the selected prompt, Enter always inserts
+/// a new line (closing the popup), Esc closes the popup.
+class _SqlCodeEditorState extends State<SqlCodeEditor> {
+  final _session = SqlAutocompleteSession();
+
+  late final Map<Type, Action<Intent>> _actions = {
+    // Mapped (and disabled) here so the editor handles Enter itself instead
+    // of the autocompletion's "accept on Enter" action above.
+    CodeShortcutNewLineIntent: _SqlEditorAction<CodeShortcutNewLineIntent>(() => false, (_) => null),
+    CodeShortcutIndentIntent: _SqlEditorAction<CodeShortcutIndentIntent>(() => _session.isOpen, (i) {
+      _session.accept();
+      return i;
+    }),
+  };
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent || e.logicalKey != LogicalKeyboardKey.escape || !_session.isOpen) {
+      return KeyEventResult.ignored;
+    }
+    _session.clear();
+    // The editor closes the popup on selection-only changes: flip the cursor
+    // affinity back and forth (no visible change, wordWrap is off).
+    final ctrl = widget.controller, sel = ctrl.selection;
+    ctrl.selection = sel.copyWith(
+      extentAffinity: sel.extentAffinity == TextAffinity.upstream ? TextAffinity.downstream : TextAffinity.upstream,
+    );
+    ctrl.selection = sel;
+    return KeyEventResult.handled;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
+    final w = widget;
     return CodeAutocomplete(
-      viewBuilder: (context, notifier, onSelected) => SqlAutocompleteView(notifier: notifier, onSelected: onSelected),
-      promptsBuilder: promptsBuilder.builder,
-      child: CodeEditor(
-        controller: controller,
-        findController: findController,
-        focusNode: focusNode,
-        wordWrap: false,
-        autofocus: true,
-        shortcutsActivatorsBuilder: const SqlShortcutsActivatorsBuilder(),
-        commentFormatter: DefaultCodeCommentFormatter(
-          singleLinePrefix: '--',
-          multiLinePrefix: '/*',
-          multiLineSuffix: '*/',
+      viewBuilder: (context, notifier, onSelected) =>
+          SqlAutocompleteView(notifier: notifier, onSelected: onSelected, session: _session),
+      promptsBuilder: w.promptsBuilder.builder,
+      child: Actions(
+        actions: _actions,
+        child: Focus(
+          canRequestFocus: false,
+          skipTraversal: true,
+          includeSemantics: false,
+          onKeyEvent: _onKey,
+          child: _editor(c, w),
         ),
-        findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
-        style: sqlCodeEditorStyle(context, fontSize),
-        indicatorBuilder: sqlLineNumbers(fontSize),
-        leadingDivider: Container(width: 0.5, color: c.separator),
       ),
     );
   }
+
+  Widget _editor(DbColors c, SqlCodeEditor w) => CodeEditor(
+    controller: w.controller,
+    findController: w.findController,
+    focusNode: w.focusNode,
+    wordWrap: false,
+    autofocus: true,
+    shortcutsActivatorsBuilder: const SqlShortcutsActivatorsBuilder(),
+    commentFormatter: DefaultCodeCommentFormatter(singleLinePrefix: '--', multiLinePrefix: '/*', multiLineSuffix: '*/'),
+    findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
+    style: sqlCodeEditorStyle(context, w.fontSize),
+    indicatorBuilder: sqlLineNumbers(w.fontSize),
+    leadingDivider: Container(width: 0.5, color: c.separator),
+  );
+}
+
+/// Callback action whose enabled state is evaluated when the key is pressed.
+class _SqlEditorAction<T extends Intent> extends CallbackAction<T> {
+  _SqlEditorAction(this._enabled, Object? Function(T) onInvoke) : super(onInvoke: onInvoke);
+  final bool Function() _enabled;
+
+  @override
+  bool get isActionEnabled => _enabled();
 }
 
 /// Read-only SQL viewer (DDL, generated scripts): same highlighting and

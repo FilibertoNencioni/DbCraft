@@ -169,6 +169,7 @@ abstract final class AppIcons {
   static const IconData chevronDown = IconData(0xe136, fontFamily: 'PhosphorBold'); // caretDown
   static const IconData chevronUp = IconData(0xe13c, fontFamily: 'PhosphorBold'); // caretUp
   static const IconData upDown = IconData(0xe140, fontFamily: 'PhosphorBold'); // caretUpDown
+  static const IconData tabKey = IconData(0xe064, fontFamily: 'PhosphorBold'); // arrowLineRight
   static const IconData expandAll = IconData(0xe126, fontFamily: 'PhosphorRegular'); // caretDoubleDown
   static const IconData collapseAll = IconData(0xe532, fontFamily: 'PhosphorRegular'); // arrowsInLineVertical
   static const IconData firstPage = IconData(0xe132, fontFamily: 'PhosphorRegular'); // caretLineLeft
@@ -365,6 +366,7 @@ abstract final class AppIcons {
     'chevronLeft': chevronLeft,
     'chevronDown': chevronDown,
     'chevronUp': chevronUp,
+    'tabKey': tabKey,
     'upDown': upDown,
     'expandAll': expandAll,
     'collapseAll': collapseAll,

@@ -18,20 +18,9 @@ String shortcutLabel(SingleActivator a, {bool? mac}) {
   final isMac = mac ?? Platform.isMacOS;
   final key = _keyName(a.trigger, isMac);
   if (isMac) {
-    return [
-      if (a.control) '⌃',
-      if (a.alt) '⌥',
-      if (a.shift) '⇧',
-      if (a.meta) '⌘',
-      key,
-    ].join();
+    return [if (a.control) '⌃', if (a.alt) '⌥', if (a.shift) '⇧', if (a.meta) '⌘', key].join();
   }
-  return [
-    if (a.control || a.meta) 'Ctrl',
-    if (a.alt) 'Alt',
-    if (a.shift) 'Shift',
-    key,
-  ].join('+');
+  return [if (a.control || a.meta) 'Ctrl', if (a.alt) 'Alt', if (a.shift) 'Shift', key].join('+');
 }
 
 String _keyName(LogicalKeyboardKey k, bool mac) {
@@ -144,6 +133,7 @@ class MenuEntry<T> {
   final SingleActivator? shortcut;
   final bool checked;
   final bool enabled;
+
   /// Red label and icon: Elimina, Rimuovi, Svuota, Disconnetti tutto.
   final bool destructive;
 
@@ -158,7 +148,8 @@ class MenuEntry<T> {
   bool get _selectable => enabled && (_kind == _EntryKind.item || _kind == _EntryKind.submenu);
 
   IconData? _iconFor(bool commandIcons) =>
-      icon ?? (commandIcons && _kind != _EntryKind.divider && _kind != _EntryKind.header ? standardMenuIcon(label) : null);
+      icon ??
+      (commandIcons && _kind != _EntryKind.divider && _kind != _EntryKind.header ? standardMenuIcon(label) : null);
 
   bool _destructiveFor(bool commandIcons) => destructive || (commandIcons && isDestructiveCommand(label));
 
@@ -316,7 +307,9 @@ Future<T?> showMacMenu<T>(
   assert(position != null || anchor != null);
   if (entries.isEmpty) return null;
   final navigator = Navigator.of(context, rootNavigator: true);
-  final initialIndex = initial == null ? -1 : entries.indexWhere((e) => e._kind == _EntryKind.item && e.value == initial);
+  final initialIndex = initial == null
+      ? -1
+      : entries.indexWhere((e) => e._kind == _EntryKind.item && e.value == initial);
   final chosen = await navigator.push(
     _MacMenuRoute<T>(
       entries: entries,
@@ -372,14 +365,16 @@ class _MacMenuRoute<T> extends PopupRoute<MenuEntry<T>> {
 
   @override
   Widget buildPage(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation) =>
-      capturedThemes.wrap(MediaQuery.removePadding(
-        context: context,
-        removeTop: true,
-        removeBottom: true,
-        removeLeft: true,
-        removeRight: true,
-        child: _MenuStack<T>(route: this),
-      ));
+      capturedThemes.wrap(
+        MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          removeBottom: true,
+          removeLeft: true,
+          removeRight: true,
+          child: _MenuStack<T>(route: this),
+        ),
+      );
 
   @override
   Widget buildTransitions(
@@ -510,9 +505,7 @@ class _MenuStackState<T> extends State<_MenuStack<T>> {
       } else {
         Navigator.of(context).pop();
       }
-    } else if (k == LogicalKeyboardKey.enter ||
-        k == LogicalKeyboardKey.numpadEnter ||
-        k == LogicalKeyboardKey.space) {
+    } else if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter || k == LogicalKeyboardKey.space) {
       if (l.highlight < 0) return KeyEventResult.handled;
       final e = l.entries[l.highlight];
       if (e._kind == _EntryKind.submenu) {
@@ -581,7 +574,11 @@ class MacMenuPreview extends StatelessWidget {
 class _MenuLayout extends SingleChildLayoutDelegate {
   _MenuLayout.at(Offset p, this.minWidth) : point = p, anchor = null, alignOffset = null, beside = false;
   _MenuLayout.below(Rect r, this.minWidth) : point = null, anchor = r, alignOffset = null, beside = false;
-  _MenuLayout.alignTo(Rect r, double offset, this.minWidth) : point = null, anchor = r, alignOffset = offset, beside = false;
+  _MenuLayout.alignTo(Rect r, double offset, this.minWidth)
+    : point = null,
+      anchor = r,
+      alignOffset = offset,
+      beside = false;
   _MenuLayout.beside(Rect r) : point = null, anchor = r, alignOffset = null, beside = true, minWidth = 0;
 
   final Offset? point;
@@ -734,7 +731,10 @@ class _MenuRow<T> extends StatelessWidget {
           height: _kItemHeight,
           alignment: Alignment.centerLeft,
           padding: EdgeInsets.only(left: _labelInset, right: _kRowInset + 2),
-          child: Text(entry.label, style: uiText(TypeSize.caption, weight: FontWeight.w600, color: c.textSecondary)),
+          child: Text(
+            entry.label,
+            style: uiText(TypeSize.caption, weight: FontWeight.w600, color: c.textSecondary),
+          ),
         );
       case _EntryKind.item:
       case _EntryKind.submenu:
@@ -758,10 +758,7 @@ class _MenuRow<T> extends StatelessWidget {
         child: Container(
           height: _kItemHeight,
           padding: const EdgeInsets.only(right: _kRowInset + 2),
-          decoration: BoxDecoration(
-            color: on ? c.accent : null,
-            borderRadius: BorderRadius.circular(Radii.small),
-          ),
+          decoration: BoxDecoration(color: on ? c.accent : null, borderRadius: BorderRadius.circular(Radii.small)),
           child: RowTint(
             background: on ? c.accent : c.menuBackground,
             emphasized: on,
@@ -794,7 +791,10 @@ class _MenuRow<T> extends StatelessWidget {
                 if (entry.trailing != null) ...[const SizedBox(width: Gap.md), entry.trailing!],
                 if (entry.shortcut != null) ...[
                   const SizedBox(width: Gap.xl),
-                  Text(shortcutLabel(entry.shortcut!), style: uiText(TypeSize.body, color: entry.enabled ? secondary : c.textTertiary)),
+                  Text(
+                    shortcutLabel(entry.shortcut!),
+                    style: uiText(TypeSize.body, color: entry.enabled ? secondary : c.textTertiary),
+                  ),
                 ],
                 if (entry._kind == _EntryKind.submenu) ...[
                   const SizedBox(width: Gap.xl),
@@ -896,7 +896,10 @@ class _PopoverRoute<T> extends PopupRoute<T> {
             return CustomMultiChildLayout(
               delegate: _PopoverLayout(anchor, preferred, arrow, _direction),
               children: [
-                LayoutId(id: _PopoverPart.body, child: Material(type: MaterialType.transparency, child: body)),
+                LayoutId(
+                  id: _PopoverPart.body,
+                  child: Material(type: MaterialType.transparency, child: body),
+                ),
                 if (arrow)
                   LayoutId(
                     id: _PopoverPart.arrow,
@@ -914,7 +917,10 @@ class _PopoverRoute<T> extends PopupRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) => FadeTransition(opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut), child: child);
+  ) => FadeTransition(
+    opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+    child: child,
+  );
 }
 
 enum _PopoverPart { body, arrow }
@@ -933,10 +939,7 @@ class _PopoverLayout extends MultiChildLayoutDelegate {
   void performLayout(Size size) {
     const m = _kScreenMargin * 2;
     final gap = arrow ? _kArrowHeight : 4.0;
-    final body = layoutChild(
-      _PopoverPart.body,
-      BoxConstraints.loose(Size(size.width - 2 * m, size.height - 2 * m)),
-    );
+    final body = layoutChild(_PopoverPart.body, BoxConstraints.loose(Size(size.width - 2 * m, size.height - 2 * m)));
     final vertical = preferred == AxisDirection.down || preferred == AxisDirection.up;
     var dir = preferred;
     if (vertical) {
@@ -974,7 +977,9 @@ class _PopoverLayout extends MultiChildLayoutDelegate {
     final horizontalArrow = dir == AxisDirection.down || dir == AxisDirection.up;
     final arrowSize = layoutChild(
       _PopoverPart.arrow,
-      BoxConstraints.tight(horizontalArrow ? const Size(_kArrowWidth, _kArrowHeight) : const Size(_kArrowHeight, _kArrowWidth)),
+      BoxConstraints.tight(
+        horizontalArrow ? const Size(_kArrowWidth, _kArrowHeight) : const Size(_kArrowHeight, _kArrowWidth),
+      ),
     );
     const inset = Radii.sheet + 2;
     final ax = (anchor.center.dx - arrowSize.width / 2).clamp(x + inset, x + body.width - inset - arrowSize.width);
@@ -1071,8 +1076,14 @@ class CompletionBadge extends StatelessWidget {
       width: 14,
       height: 14,
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: color.withValues(alpha: Tint.strong), borderRadius: BorderRadius.circular(3)),
-      child: Text(kind.letter, style: uiText(TypeSize.mini, weight: FontWeight.w700, color: color, height: 1)),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: Tint.strong),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(
+        kind.letter,
+        style: uiText(TypeSize.mini, weight: FontWeight.w700, color: color, height: 1),
+      ),
     );
   }
 }
@@ -1096,9 +1107,13 @@ class CompletionList extends StatefulWidget {
     required this.onSelect,
     this.width = 380,
     this.maxHeight = 240,
+    this.acceptHint = true,
   });
 
   final List<CompletionItem> items;
+
+  /// Shows a Tab key cap on the selected row (the key that accepts it).
+  final bool acceptHint;
   final int selected;
   final ValueChanged<int> onSelect;
   final double width;
@@ -1107,8 +1122,7 @@ class CompletionList extends StatefulWidget {
   static const double rowHeight = 20;
 
   /// Height for [count] rows, including the frame.
-  static double heightFor(int count, {double maxHeight = 240}) =>
-      math.min(rowHeight * count + 2 * 4, maxHeight) + 1;
+  static double heightFor(int count, {double maxHeight = 240}) => math.min(rowHeight * count + 2 * 4, maxHeight) + 1;
 
   @override
   State<CompletionList> createState() => _CompletionListState();
@@ -1189,15 +1203,46 @@ class _CompletionListState extends State<CompletionList> {
                         padding: const EdgeInsets.only(left: Gap.sm),
                         child: Text(
                           it.detail!,
-                          style: uiText(TypeSize.caption, color: on ? c.onAccent.withValues(alpha: 0.85) : c.textTertiary),
+                          style: uiText(
+                            TypeSize.caption,
+                            color: on ? c.onAccent.withValues(alpha: 0.85) : c.textTertiary,
+                          ),
                         ),
                       ),
+                    if (on && widget.acceptHint) const _AcceptHint(),
                   ],
                 ),
               ),
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// Tab key cap on the selected completion row, drawn on the accent fill.
+class _AcceptHint extends StatelessWidget {
+  const _AcceptHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DbColors.of(context);
+    return Container(
+      height: 14,
+      margin: const EdgeInsets.only(left: Gap.sm),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Radii.small),
+        border: Border.all(color: c.onAccent.withValues(alpha: 0.6), width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(AppIcons.tabKey, size: 10, color: c.onAccent),
+          const SizedBox(width: 2),
+          Text('Tab', style: uiText(TypeSize.mini, color: c.onAccent, height: 1.0)),
+        ],
       ),
     );
   }
@@ -1225,7 +1270,10 @@ class RichTooltip extends StatelessWidget {
     return Tooltip(
       richMessage: TextSpan(
         children: [
-          TextSpan(text: title, style: uiText(TypeSize.caption, weight: FontWeight.w600, color: c.text)),
+          TextSpan(
+            text: title,
+            style: uiText(TypeSize.caption, weight: FontWeight.w600, color: c.text),
+          ),
           for (final (k, v) in rows) ...[
             const TextSpan(text: '\n'),
             TextSpan(text: '$k  ', style: label),
