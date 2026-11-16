@@ -290,6 +290,8 @@ const kGitRequiredIgnores = [
   'vault.key',
   '*.tmp',
   '.dbcraft/*.local.json',
+  '.dbcraft/drafts/',
+  '.dbcraft/trash/',
   '*.pem',
   '*.p12',
   '*.pfx',

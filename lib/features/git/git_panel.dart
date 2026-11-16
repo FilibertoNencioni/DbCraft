@@ -124,10 +124,33 @@ class _GitPanelState extends State<GitPanel> {
     if (u.changed && mounted) showToast(context, '${u.changedFiles.length} file aggiornati dal repository remoto');
   }
 
-  Future<void> _saveEditors() async {
-    for (final t in app.tabs.whereType<SqlEditorTab>()) {
-      if (t.isDirty) await t.save();
+  /// Scripts of the workspace open with unsaved changes: asks whether to
+  /// save them first (drafts are not in the project). False: cancelled.
+  Future<bool> _saveEditors() async {
+    final unsaved = app.tabs
+        .whereType<SqlEditorTab>()
+        .where((t) => t.hasUnsavedChanges && app.library.relOf(t.file!.path) != null)
+        .toList();
+    if (unsaved.isEmpty) return true;
+    final names = unsaved.map((t) => t.name).join(', ');
+    final save = await showAlert<bool?>(
+      context,
+      title: unsaved.length == 1 ? 'Salvare lo script modificato?' : 'Salvare ${unsaved.length} script modificati?',
+      message: '$names: le modifiche non salvate non entrano nel repository.',
+      style: AlertStyle.warning,
+      buttons: const [
+        AlertButton('Salva', true, role: AlertRole.defaultAction),
+        AlertButton('Non salvare', false),
+        AlertButton('Annulla', null, role: AlertRole.cancel),
+      ],
+    );
+    if (save == null || !mounted) return false;
+    if (save) {
+      for (final t in unsaved) {
+        if (!await guarded(context, t.save, title: 'Impossibile salvare "${t.name}"') || !mounted) return false;
+      }
     }
+    return true;
   }
 
   Future<void> _init() => _op('Inizializzazione', () async {
@@ -145,33 +168,39 @@ class _GitPanelState extends State<GitPanel> {
     await _op('Collegamento', () async => _changed(await git.connect(url.trim())));
   }
 
-  Future<void> _pull() => _op('Pull', () async {
-    await _saveEditors();
-    final s = await GitSettings.load(app.workspace.root);
-    _changed(await git.pull(rebase: s.rebase));
-  });
+  Future<void> _pull() async {
+    if (!await _saveEditors()) return;
+    await _op('Pull', () async {
+      final s = await GitSettings.load(app.workspace.root);
+      _changed(await git.pull(rebase: s.rebase));
+    });
+  }
 
   Future<void> _push() => _op('Push', () async {
     await git.push();
     if (mounted) showToast(context, 'Modifiche pubblicate');
   });
 
-  Future<void> _sync() => _op('Sincronizzazione', () async {
-    await _saveEditors();
-    final s = await GitSettings.load(app.workspace.root);
-    _changed(await git.pull(rebase: s.rebase));
-    final st = await git.status();
-    if (st.hasCommits && (st.upstream == null || st.ahead > 0)) await git.push();
-    if (mounted) showToast(context, 'Progetto sincronizzato');
-  });
+  Future<void> _sync() async {
+    if (!await _saveEditors()) return;
+    await _op('Sincronizzazione', () async {
+      final s = await GitSettings.load(app.workspace.root);
+      _changed(await git.pull(rebase: s.rebase));
+      final st = await git.status();
+      if (st.hasCommits && (st.upstream == null || st.ahead > 0)) await git.push();
+      if (mounted) showToast(context, 'Progetto sincronizzato');
+    });
+  }
 
-  Future<void> _commit() => _op('Commit', () async {
-    await _saveEditors();
-    await git.commit(_message.text);
-    _message.clear();
-    final s = await GitSettings.load(app.workspace.root);
-    if (s.autoPush && _remote != null) await git.push();
-  });
+  Future<void> _commit() async {
+    if (!await _saveEditors()) return;
+    await _op('Commit', () async {
+      await git.commit(_message.text);
+      _message.clear();
+      final s = await GitSettings.load(app.workspace.root);
+      if (s.autoPush && _remote != null) await git.push();
+    });
+  }
 
   Future<void> _discard(GitFileChange f) async {
     final ok = await confirmDialog(

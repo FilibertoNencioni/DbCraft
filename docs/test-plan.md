@@ -219,7 +219,7 @@ Ogni caso ha un ID; nel report l'esito è per coppia *(caso, target)*: ✅ ok, �
 | SQL-11 | **Piano di esecuzione** testuale e **piano visuale** (⌘⌥E): costi, stime vs reali, avvisi | Presenti per ogni DBMS che li supporta, messaggio chiaro altrove |
 | SQL-12 | Errori: sintassi con riga/colonna, oggetto inesistente, violazione vincolo | Messaggio del server leggibile, cursore sulla riga |
 | SQL-13 | Log di esecuzione e **Query Manager** (ricerca, filtro errori, riapri nell'editor) | Tutte le istruzioni registrate, nessuna password |
-| SQL-14 | Script: salvataggio automatico, pannello *Script*, rinomina, elimina, apri file, salva come | Persistenti dopo riavvio |
+| SQL-14 | Script: bozze (nessun file finché non si salva), ⌘S / Salva come con scelta cartella, avviso alla chiusura, chiuse di recente e ⌘⇧T, cartelle, trascinamento, rinomina, cestino e ripristino, preferiti/recenti, ricerca nel contenuto, ⌘P | Bozze e modifiche non salvate ripristinate dopo il riavvio; file cambiati solo con un salvataggio esplicito |
 | SQL-15 | **Crea vista dalla query** | Apre il designer della vista con la definizione |
 | SQL-16 | NoSQL: shell Mongo (`find`, `aggregate`, `insertOne`, `updateMany`, `deleteOne`, `countDocuments`…), comandi Redis, CQL, **sottoinsieme SQL** (`SELECT * FROM … WHERE … ORDER BY … LIMIT`) | Risultati in griglia, errori chiari per la sintassi non supportata |
 | SQL-17 | Generazione SQL dal navigator: SELECT, INSERT, UPDATE, DELETE, DDL, CALL, TRUNCATE, DROP, conteggio righe | SQL valido ed eseguibile per il dialetto |

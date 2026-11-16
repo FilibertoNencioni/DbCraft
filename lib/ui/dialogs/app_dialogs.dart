@@ -158,6 +158,18 @@ class _SettingsWindowState extends State<SettingsWindow> {
             ],
           ),
           FormGroup(
+            title: 'Script',
+            footer: 'Gli editor nuovi sono bozze: diventano script della libreria solo quando li salvi.',
+            children: [
+              _switch(
+                'Riapri gli editor all\'avvio',
+                'Con le bozze e le modifiche non salvate',
+                s.rememberTabs,
+                (v) => s.rememberTabs = v,
+              ),
+            ],
+          ),
+          FormGroup(
             title: 'Sicurezza',
             children: [
               _switch(

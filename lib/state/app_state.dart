@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../features/design/table_design.dart';
 import '../model/connection_config.dart';
 import '../model/connection_folders.dart';
 import '../model/db_objects.dart';
+import '../services/script_library.dart';
+import '../services/script_session.dart';
 import '../services/storage.dart';
 import '../services/vault.dart';
 import 'db_connection.dart';
@@ -15,7 +18,14 @@ import 'editor_zoom.dart';
 
 /// Global application state (connections, editors, settings, history).
 class AppState extends ChangeNotifier {
-  AppState(this.workspace, this.vault, this.settings, List<ConnectionConfig> configs, this.history) {
+  AppState(
+    this.workspace,
+    this.vault,
+    this.settings,
+    List<ConnectionConfig> configs,
+    this.history, {
+    required this.scriptSession,
+  }) : library = ScriptLibrary(root: workspace.scriptsDir, stateDir: workspace.stateDir) {
     for (final c in configs) {
       _injectSecrets(c);
       connections.add(_newConnection(c));
@@ -39,17 +49,25 @@ class AppState extends ChangeNotifier {
     final settings = await ws.loadSettings();
     final configs = await ws.loadConnections();
     final history = await ws.loadHistory();
-    final state = AppState(ws, vault, settings, configs, history);
+    final session = await ScriptSession.load(ws.stateDir);
+    final state = AppState(ws, vault, settings, configs, history, scriptSession: session);
     // Passwords saved in clear text by older versions, or written in a
     // connection string, move to the vault.
     final inStrings = configs.where((c) => c.movePasswordToVault()).length;
     if (inStrings > 0 || configs.any((c) => c.password.isNotEmpty) && await ws.connectionsContainPasswords()) {
       await state._saveConnections();
     }
+    await state._restoreScripts();
     return state;
   }
 
   final Workspace workspace;
+
+  /// Saved scripts (the `scripts` folder) and their trash.
+  final ScriptLibrary library;
+
+  /// Drafts, open editors and other local state of the scripts.
+  final ScriptSession scriptSession;
 
   /// Encrypted credential store (passwords, secrets, API keys).
   final Vault vault;
@@ -152,17 +170,11 @@ class AppState extends ChangeNotifier {
       final f = t.file;
       if (f == null || t.isDirty || !await f.exists()) continue;
       final text = await f.readAsString();
-      if (text != t.controller.text) {
-        t.controller.text = text;
-        await t.save();
-      }
+      if (text != t.controller.text) t.reloadFrom(text);
     }
     scriptsRevision++;
     notifyListeners();
   }
-
-  /// Bumped when scripts may have changed on disk (refreshes the panel).
-  int scriptsRevision = 0;
 
   /// Saves the connections (after editing shared properties).
   Future<void> saveConnections() async {
@@ -187,7 +199,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteConnection(DbConnection dc) async {
     for (final t in tabs.where((t) => t.connection == dc).toList()) {
-      closeTab(t);
+      // SQL editors keep their text, without a connection.
+      if (t is SqlEditorTab) {
+        t.connection = null;
+      } else {
+        closeTab(t);
+      }
     }
     await dc.disconnect();
     connections.remove(dc);
@@ -362,6 +379,7 @@ class AppState extends ChangeNotifier {
     tabs.add(t);
     t.addListener(notifyListeners);
     activeTab = tabs.length - 1;
+    _sessionChanged();
     notifyListeners();
   }
 
@@ -370,18 +388,24 @@ class AppState extends ChangeNotifier {
     if (i >= 0) {
       activeTab = i;
       if (t.connection != null) selectedConnection = t.connection;
+      _sessionChanged();
       notifyListeners();
     }
   }
 
-  void closeTab(EditorTab t) {
+  /// Closes [t]. The text of a SQL editor not written to its file (a draft
+  /// with some text, unsaved changes of a script) goes to "Chiuse di
+  /// recente" unless [keepText] is false.
+  void closeTab(EditorTab t, {bool keepText = true}) {
     final i = tabs.indexOf(t);
     if (i < 0) return;
+    if (t is SqlEditorTab) _releaseSql(t, keep: keepText);
     tabs.removeAt(i);
     t.removeListener(notifyListeners);
     t.dispose();
     if (activeTab >= tabs.length) activeTab = tabs.length - 1;
     if (activeTab > i) activeTab--;
+    _sessionChanged();
     notifyListeners();
   }
 
@@ -397,21 +421,61 @@ class AppState extends ChangeNotifier {
     final t = tabs.removeAt(from);
     tabs.insert(to.clamp(0, tabs.length), t);
     activeTab = tabs.indexOf(t);
+    _sessionChanged();
     notifyListeners();
   }
 
-  Future<SqlEditorTab> openSqlEditor(DbConnection? c, {String initialSql = '', File? file, String? catalog}) async {
-    final f = file ?? await workspace.newScriptFile();
-    var text = initialSql;
-    if (file != null && await file.exists()) text = await file.readAsString();
-    if (file == null && initialSql.isNotEmpty) await f.writeAsString(initialSql);
+  /// Opens a new SQL editor: a draft (no file until the user saves it),
+  /// proposed in the library [folder] when saved. With [file] it opens that
+  /// script instead (see [openScript]).
+  Future<SqlEditorTab> openSqlEditor(
+    DbConnection? c, {
+    String initialSql = '',
+    File? file,
+    String? catalog,
+    String? folder,
+  }) async {
+    if (file != null) return openScript(file, connection: c, catalog: catalog);
     final tab = SqlEditorTab(
       settings: settings,
       connection: c,
       catalog: catalog,
-      file: f,
-      initialText: text,
+      initialText: initialSql,
+      draftName: scriptSession.newDraftName(),
+      suggestedFolder: folder,
     );
+    _attachSql(tab);
+    _open(tab);
+    if (initialSql.isNotEmpty) await _writeBuffer(tab);
+    return tab;
+  }
+
+  /// Opens the script [file], or activates its editor. Without [connection]
+  /// it uses the connection and database last used with the script, the
+  /// active connection otherwise.
+  Future<SqlEditorTab> openScript(File file, {DbConnection? connection, String? catalog}) async {
+    final open = sqlTabOf(file);
+    if (open != null) {
+      activate(open);
+      return open;
+    }
+    final text = await file.exists() ? await file.readAsString() : '';
+    final key = scriptKey(file);
+    var c = connection;
+    var cat = catalog;
+    if (c == null) {
+      final b = scriptSession.bindings[key];
+      final bound = b?.connection == null ? null : byId(b!.connection!);
+      if (bound != null) {
+        c = bound;
+        cat = b!.catalog;
+      } else {
+        c = activeConnection;
+      }
+    }
+    final tab = SqlEditorTab(settings: settings, connection: c, catalog: cat, file: file, initialText: text);
+    _attachSql(tab);
+    scriptSession.touchRecent(key);
     _open(tab);
     return tab;
   }
@@ -491,10 +555,340 @@ class AppState extends ChangeNotifier {
     _open(ConnectionInfoTab(c));
   }
 
-  Future<void> shutdown() async {
-    for (final t in List.of(tabs)) {
-      if (t is SqlEditorTab) await t.save();
+  // -------------------------------------------------------------------------
+  // Scripts: drafts, buffers, session (see script_session.dart)
+  // -------------------------------------------------------------------------
+
+  /// Bumped when scripts may have changed on disk (refreshes the panel).
+  int scriptsRevision = 0;
+
+  /// Key of [file] in the script session: its library path, or its
+  /// absolute path outside the library.
+  String scriptKey(File file) => library.relOf(file.path) ?? p.normalize(p.absolute(file.path));
+
+  /// The file of a session key.
+  File scriptFile(String key) => p.isAbsolute(key) ? File(key) : library.fileOf(key);
+
+  /// The editor of [file], if open.
+  SqlEditorTab? sqlTabOf(File file) {
+    final path = p.normalize(p.absolute(file.path));
+    for (final t in tabs) {
+      if (t is SqlEditorTab && t.file != null && p.normalize(p.absolute(t.file!.path)) == path) return t;
     }
+    return null;
+  }
+
+  void _attachSql(SqlEditorTab t) {
+    t
+      ..onBuffer = _writeBuffer
+      ..onSaved = _scriptSaved
+      ..onBindingChanged = _bindingChanged;
+    final meta = scriptSession.buffers.putIfAbsent(t.bufferId, () => BufferMeta(id: t.bufferId));
+    meta
+      ..name = t.draftName
+      ..file = t.file?.path
+      ..folder = t.suggestedFolder
+      ..closedAt = null;
+  }
+
+  /// Autosave: the unsaved text goes to the buffer (never to the file).
+  Future<void> _writeBuffer(SqlEditorTab t) async {
+    final text = t.controller.text;
+    final keep = t.isDraft ? text.isNotEmpty : t.hasUnsavedChanges;
+    try {
+      if (keep) {
+        await scriptSession.writeBuffer(t.bufferId, text);
+      } else {
+        await scriptSession.deleteBuffer(t.bufferId);
+      }
+      t.markBuffered(text);
+    } catch (_) {
+      // Retried at the next change or at shutdown.
+    }
+  }
+
+  void _scriptSaved(SqlEditorTab t) {
+    final f = t.file;
+    if (f == null) return;
+    t.markBuffered(t.controller.text);
+    scriptSession.deleteBufferSync(t.bufferId);
+    final key = scriptKey(f);
+    scriptSession.touchRecent(key);
+    _bindingChanged(t);
+    scriptsRevision++;
+    notifyListeners();
+  }
+
+  void _bindingChanged(SqlEditorTab t) {
+    final f = t.file;
+    if (f != null) {
+      scriptSession.bindings[scriptKey(f)] = ScriptBinding(
+        connection: t.connection?.config.id,
+        catalog: t.explicitCatalog,
+      );
+    }
+    _sessionChanged();
+  }
+
+  /// A SQL editor is closing: keep its unsaved text as a closed buffer, or
+  /// drop it.
+  void _releaseSql(SqlEditorTab t, {required bool keep}) {
+    final text = t.controller.text;
+    final worth = t.isDraft ? text.trim().isNotEmpty : t.hasUnsavedChanges;
+    final meta = scriptSession.buffers[t.bufferId];
+    if (keep && worth && meta != null) {
+      meta
+        ..name = t.draftName
+        ..file = t.file?.path
+        ..folder = t.suggestedFolder
+        ..connection = t.connection?.config.id
+        ..catalog = t.explicitCatalog
+        ..closedAt = DateTime.now();
+      try {
+        scriptSession.writeBufferSync(t.bufferId, text);
+      } catch (_) {}
+    } else {
+      scriptSession.buffers.remove(t.bufferId);
+      scriptSession.deleteBufferSync(t.bufferId);
+    }
+    scriptsRevision++;
+  }
+
+  /// Closed editors whose text was kept ("Chiuse di recente").
+  List<BufferMeta> get closedDrafts => scriptSession.closed;
+
+  /// Reopens a closed editor with its text.
+  Future<SqlEditorTab?> reopenClosed(String id) async {
+    final meta = scriptSession.buffers[id];
+    if (meta == null || meta.closedAt == null) return null;
+    final text = await scriptSession.readBuffer(id) ?? '';
+    final f = meta.file == null ? null : File(meta.file!);
+    if (f != null) {
+      final open = sqlTabOf(f);
+      if (open != null) {
+        // The script is open again: its old changes come back as a draft.
+        meta
+          ..file = null
+          ..name = '${meta.label} (modifiche)';
+      }
+    }
+    final file = meta.file == null ? null : File(meta.file!);
+    final saved = file != null && await file.exists() ? await file.readAsString() : '';
+    final c = meta.connection == null ? null : byId(meta.connection!);
+    final tab = SqlEditorTab(
+      settings: settings,
+      connection: c,
+      catalog: c == null ? null : meta.catalog,
+      file: file,
+      initialText: text,
+      savedText: file == null ? null : saved,
+      bufferId: id,
+      draftName: file == null ? meta.name : null,
+      suggestedFolder: meta.folder,
+    );
+    _attachSql(tab);
+    scriptsRevision++;
+    _open(tab);
+    return tab;
+  }
+
+  /// Reopens the editor closed last (⌘⇧T).
+  Future<SqlEditorTab?> reopenLastClosed() async {
+    final c = closedDrafts;
+    return c.isEmpty ? null : reopenClosed(c.first.id);
+  }
+
+  /// Forgets a closed editor and its text.
+  Future<void> discardClosed(String id) async {
+    scriptSession.buffers.remove(id);
+    await scriptSession.deleteBuffer(id);
+    scriptsRevision++;
+    _sessionChanged();
+    notifyListeners();
+  }
+
+  /// Text of a closed editor (preview).
+  Future<String?> closedText(String id) => scriptSession.readBuffer(id);
+
+  /// The library script or folder [from] is now [to]: the editors, the
+  /// buffers and the session follow it.
+  void scriptsMoved(String from, String to) {
+    for (final t in tabs.whereType<SqlEditorTab>()) {
+      final r = t.file == null ? null : library.relOf(t.file!.path);
+      if (r != null && isInFolder(r, from)) {
+        t.file = library.fileOf(rebaseFolder(r, from, to));
+        scriptSession.buffers[t.bufferId]?.file = t.file!.path;
+        t.refresh();
+      }
+    }
+    for (final b in scriptSession.buffers.values) {
+      final r = b.file == null ? null : library.relOf(b.file!);
+      if (r != null && isInFolder(r, from)) b.file = library.abs(rebaseFolder(r, from, to));
+    }
+    scriptSession.moved(from, to);
+    scriptsRevision++;
+    _sessionChanged();
+    notifyListeners();
+  }
+
+  /// The library script or folder [path] was deleted: its editors close
+  /// (without keeping their text) and the session forgets it.
+  void scriptsRemoved(String path) {
+    for (final t in tabs.whereType<SqlEditorTab>().toList()) {
+      final r = t.file == null ? null : library.relOf(t.file!.path);
+      if (r != null && isInFolder(r, path)) closeTab(t, keepText: false);
+    }
+    scriptSession.buffers.removeWhere((_, b) {
+      final r = b.file == null ? null : library.relOf(b.file!);
+      return b.closedAt != null && r != null && isInFolder(r, path);
+    });
+    scriptSession.removed(path);
+    scriptsRevision++;
+    _sessionChanged();
+    notifyListeners();
+  }
+
+  /// Library changed (new script, folder, restore…): refresh the panel.
+  void scriptsChanged() {
+    scriptsRevision++;
+    _sessionChanged();
+    notifyListeners();
+  }
+
+  void toggleFavorite(String key) {
+    scriptSession.toggleFavorite(key);
+    _sessionChanged();
+    notifyListeners();
+  }
+
+  void setScriptSort(ScriptSort s) {
+    scriptSession.sort = s;
+    _sessionChanged();
+    notifyListeners();
+  }
+
+  /// Expands or collapses a library folder in the panel.
+  void setScriptFolderExpanded(String path, bool expanded) {
+    if (expanded) {
+      scriptSession.expanded.add(path);
+    } else {
+      scriptSession.expanded.remove(path);
+    }
+    _sessionChanged();
+    notifyListeners();
+  }
+
+  Future<void>? _sessionWrite;
+  bool _sessionPending = false;
+
+  /// Saves the session soon (writes are serialized and coalesced).
+  void _sessionChanged() {
+    _sessionPending = true;
+    _sessionWrite ??= _flushSession();
+  }
+
+  Future<void> _flushSession() async {
+    try {
+      while (_sessionPending) {
+        _sessionPending = false;
+        _captureSession();
+        await scriptSession.save();
+      }
+    } catch (_) {
+      // Saved again at the next change or at shutdown.
+    } finally {
+      _sessionWrite = null;
+    }
+  }
+
+  /// Copies the open SQL editors into the session.
+  void _captureSession() {
+    final open = <String>[];
+    for (final t in tabs.whereType<SqlEditorTab>()) {
+      final meta = scriptSession.buffers.putIfAbsent(t.bufferId, () => BufferMeta(id: t.bufferId));
+      meta
+        ..name = t.draftName
+        ..file = t.file?.path
+        ..folder = t.suggestedFolder
+        ..connection = t.connection?.config.id
+        ..catalog = t.explicitCatalog
+        ..closedAt = null;
+      open.add(t.bufferId);
+    }
+    scriptSession.open = open;
+    final cur = currentTab;
+    if (cur is SqlEditorTab) scriptSession.active = cur.bufferId;
+    if (!open.contains(scriptSession.active)) scriptSession.active = null;
+  }
+
+  /// At startup: purges trash and old closed editors, then reopens the SQL
+  /// editors of the last session (or, with "rememberTabs" off, moves their
+  /// text to "Chiuse di recente").
+  Future<void> _restoreScripts() async {
+    final s = scriptSession;
+    try {
+      await library.purgeTrash();
+    } catch (_) {}
+    if (!settings.rememberTabs) {
+      for (final id in s.open) {
+        final text = await s.readBuffer(id);
+        if (text != null && text.trim().isNotEmpty) s.buffers[id]?.closedAt ??= DateTime.now();
+      }
+      s.open = [];
+    }
+    try {
+      await s.purge();
+    } catch (_) {}
+    for (final id in List.of(s.open)) {
+      final meta = s.buffers[id];
+      if (meta == null) continue;
+      final buffer = await s.readBuffer(id);
+      final file = meta.file == null ? null : File(meta.file!);
+      String? saved;
+      if (file != null && await file.exists()) {
+        try {
+          saved = await file.readAsString();
+        } catch (_) {}
+      }
+      // A clean script deleted meanwhile: nothing to reopen.
+      if (file != null && saved == null && buffer == null) {
+        s.buffers.remove(id);
+        continue;
+      }
+      if (file != null && sqlTabOf(file) != null) continue;
+      final c = meta.connection == null ? null : byId(meta.connection!);
+      final tab = SqlEditorTab(
+        settings: settings,
+        connection: c,
+        catalog: c == null ? null : meta.catalog,
+        file: file,
+        initialText: buffer ?? saved ?? '',
+        savedText: file == null ? null : (saved ?? ''),
+        bufferId: id,
+        draftName: file == null ? (meta.name ?? s.newDraftName()) : null,
+        suggestedFolder: meta.folder,
+      );
+      _attachSql(tab);
+      tabs.add(tab);
+      tab.addListener(notifyListeners);
+    }
+    final i = tabs.indexWhere((t) => t is SqlEditorTab && t.bufferId == s.active);
+    activeTab = i >= 0 ? i : tabs.length - 1;
+    _captureSession();
+    try {
+      await s.save();
+    } catch (_) {}
+  }
+
+  Future<void> shutdown() async {
+    // The open editors come back at the next start (see _restoreScripts):
+    // their unsaved text goes to the buffers, the files are left alone.
+    for (final t in tabs.whereType<SqlEditorTab>()) {
+      if (t.needsBuffer) await _writeBuffer(t);
+    }
+    _captureSession();
+    await _sessionWrite;
+    await scriptSession.save();
     await workspace.saveHistory(history);
     await disconnectAll();
   }

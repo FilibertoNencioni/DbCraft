@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/gestures.dart' show kDoubleTapSlop, kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as p;
 
 import '../features/ai/ai.dart';
 import '../features/data_compare/data_compare_tab.dart';
@@ -32,6 +31,8 @@ import 'editors/table_editor_view.dart';
 import 'navigator/nav_nodes.dart' show hasSecurity;
 import 'navigator/navigator_panel.dart';
 import 'platform/window_bridge.dart';
+import 'scripts/script_actions.dart';
+import 'scripts/scripts_panel.dart';
 import 'widgets/common.dart';
 import 'widgets/split_view.dart';
 
@@ -109,6 +110,8 @@ class _HomePageState extends State<HomePage> {
         _a(LogicalKeyboardKey.bracketRight): () => openSqlEditor(context),
         _a(LogicalKeyboardKey.keyN, shift: true): () => newConnection(context),
         _a(LogicalKeyboardKey.keyO): () => openScriptFile(context),
+        _a(LogicalKeyboardKey.keyP): () => quickOpenScript(context),
+        _a(LogicalKeyboardKey.keyT, shift: true): () => app.reopenLastClosed(),
         _a(LogicalKeyboardKey.keyW): () {
           final t = app.currentTab;
           if (t != null) _closeTab(t);
@@ -214,12 +217,18 @@ class _HomePageState extends State<HomePage> {
         _MenuAction('Nuovo editor SQL', () => openSqlEditor(context), _a(LogicalKeyboardKey.keyN)),
         _MenuAction('Nuova connessione…', () => newConnection(context), _a(LogicalKeyboardKey.keyN, shift: true)),
         _MenuAction('Apri script SQL…', () => openScriptFile(context), _a(LogicalKeyboardKey.keyO)),
+        _MenuAction('Apri rapido…', () => quickOpenScript(context), _a(LogicalKeyboardKey.keyP)),
+        _MenuAction(
+          'Riapri editor chiuso',
+          app.closedDrafts.isEmpty ? null : () => app.reopenLastClosed(),
+          _a(LogicalKeyboardKey.keyT, shift: true),
+        ),
         const _MenuDivider(),
         _MenuAction(
           feature != null
               ? (feature.saveLabel ?? 'Salva')
               : table == null
-              ? 'Salva script'
+              ? (sql != null && sql.isDraft ? 'Salva script…' : 'Salva script')
               : table.designDirty
               ? 'Salva struttura della tabella'
               : 'Salva modifiche ai dati',
@@ -229,7 +238,7 @@ class _HomePageState extends State<HomePage> {
               ? (table.designDirty
                     ? () => table.viewDesign != null ? saveViewDesign(context, table) : saveTableDesign(context, table)
                     : (table.dataDirty ? () => _saveTableData(table) : null))
-              : (sql == null ? null : () => sql.save()),
+              : (sql == null ? null : () => saveSqlTab(context, sql)),
           _a(LogicalKeyboardKey.keyS),
         ),
         _MenuAction('Salva script come…', sqlCmd(SqlCommand.saveAs), _a(LogicalKeyboardKey.keyS, shift: true)),
@@ -528,7 +537,7 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: IndexedStack(index: _leftTab, children: [
             const NavigatorPanel(),
-            _ScriptsPanel(revision: '${app.tabs.length}:${app.scriptsRevision}'),
+            ScriptsPanel(revision: app.scriptsRevision),
             const StoragePanel(),
             GitPanel(onWorkspaceChanged: app.reloadWorkspace),
           ]),
@@ -541,7 +550,7 @@ class _HomePageState extends State<HomePage> {
   // Editors
   // -------------------------------------------------------------------------
 
-  Future<void> _closeTab(EditorTab t) async {
+  Future<void> _closeTab(EditorTab t, {bool ask = true}) async {
     final app = AppScope.read(context);
     if (t is TableEditorTab && t.isDirty) {
       final what = t.isNew
@@ -555,23 +564,62 @@ class _HomePageState extends State<HomePage> {
     }
     if (!mounted) return;
     if (t is FeatureTab && !await t.canClose(context)) return;
+    if (t is SqlEditorTab && t.isDirty && !await _confirmCloseSql(t, ask: ask)) return;
     if (t is SqlEditorTab && t.running) t.cancel();
-    if (t is SqlEditorTab && t.isDirty) await t.save();
     app.closeTab(t);
   }
 
-  Future<void> _closeAll(AppState app) async {
-    for (final t in List.of(app.tabs)) {
-      await _closeTab(t);
+  /// A SQL editor with unsaved text (a draft with some text, a modified
+  /// script): asks whether to save it. "Non salvare" keeps the text in
+  /// "Chiuse di recente". False: keep the tab open.
+  Future<bool> _confirmCloseSql(SqlEditorTab t, {required bool ask}) async {
+    if (!ask) return true;
+    AppScope.read(context).activate(t);
+    final r = await askSaveBeforeClose(context, t);
+    return r != CloseChoice.cancel;
+  }
+
+  /// Closes [list]; with more than one SQL editor holding unsaved text a
+  /// single question comes first.
+  Future<void> _closeTabs(AppState app, List<EditorTab> list) async {
+    final unsaved = list.whereType<SqlEditorTab>().where((t) => t.isDirty).toList();
+    var ask = true;
+    if (unsaved.length > 1) {
+      final r = await showAlert<bool?>(
+        context,
+        title: '${unsaved.length} editor SQL non sono salvati',
+        message: 'Chiudendoli senza salvare, il loro testo resta tra le chiuse di recente per 30 giorni.',
+        style: AlertStyle.warning,
+        buttons: const [
+          AlertButton('Rivedi…', true, role: AlertRole.defaultAction),
+          AlertButton('Chiudi senza salvare', false),
+          AlertButton('Annulla', null, role: AlertRole.cancel),
+        ],
+      );
+      if (r == null || !mounted) return;
+      ask = r;
+    }
+    for (final t in list) {
+      if (!mounted || !app.tabs.contains(t)) continue;
+      await _closeTab(t, ask: ask);
     }
   }
+
+  Future<void> _closeAll(AppState app) => _closeTabs(app, List.of(app.tabs));
 
   void _tabMenu(AppState app, EditorTab t, Offset pos) => showMacMenu<void>(
         context,
         position: pos,
         entries: [
           MenuEntry('Chiudi', onSelected: () => _closeTab(t), shortcut: _a(LogicalKeyboardKey.keyW)),
-          MenuEntry('Chiudi le altre', onSelected: () => app.closeOtherTabs(t), enabled: app.tabs.length > 1),
+          MenuEntry(
+            'Chiudi le altre',
+            onSelected: () async {
+              await _closeTabs(app, app.tabs.where((e) => e != t).toList());
+              if (mounted && app.tabs.contains(t)) app.activate(t);
+            },
+            enabled: app.tabs.length > 1,
+          ),
           MenuEntry('Chiudi tutte', onSelected: () => _closeAll(app)),
         ],
       );
@@ -645,6 +693,9 @@ class _HomePageState extends State<HomePage> {
         h('Nuovo editor SQL', [_a(LogicalKeyboardKey.keyN)]),
         h('Nuova connessione', [_a(LogicalKeyboardKey.keyN, shift: true)]),
         h('Apri script', [_a(LogicalKeyboardKey.keyO)]),
+        h('Apri rapido script', [_a(LogicalKeyboardKey.keyP)]),
+        h('Riapri editor chiuso', [_a(LogicalKeyboardKey.keyT, shift: true)]),
+        h('Salva script', [_a(LogicalKeyboardKey.keyS)]),
         h('Chiudi scheda', [_a(LogicalKeyboardKey.keyW)]),
         h('Mostra/nascondi barra laterale', [_a(LogicalKeyboardKey.digit0)]),
         h('Query Manager', [_a(LogicalKeyboardKey.keyH, shift: true)]),
@@ -1002,206 +1053,5 @@ class _RecentConnection extends StatelessWidget {
       trailingOnHover: LinkButton(label: 'Apri', small: true, onPressed: () => _open(context)),
       onTap: () => _open(context),
     );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Scripts (workspace)
-// ---------------------------------------------------------------------------
-
-class _ScriptsPanel extends StatefulWidget {
-  const _ScriptsPanel({required this.revision});
-
-  /// Changes when scripts may have been saved, renamed or pulled: the list
-  /// reloads, keeping the filter.
-  final String revision;
-
-  @override
-  State<_ScriptsPanel> createState() => _ScriptsPanelState();
-}
-
-class _ScriptsPanelState extends State<_ScriptsPanel> {
-  late Future<List<({File file, DateTime modified})>> _files = AppScope.read(context).workspace.listScripts();
-  final _filter = TextEditingController();
-
-  /// Row picked with the arrows; follows the active editor's file otherwise.
-  String? _picked;
-  String? _lastCurrent;
-
-  /// Script being renamed in place.
-  String? _renaming;
-
-  @override
-  void didUpdateWidget(_ScriptsPanel old) {
-    super.didUpdateWidget(old);
-    if (old.revision != widget.revision) _files = AppScope.read(context).workspace.listScripts();
-  }
-
-  @override
-  void dispose() {
-    _filter.dispose();
-    super.dispose();
-  }
-
-  void _reload() => setState(() {
-        _files = AppScope.read(context).workspace.listScripts();
-      });
-
-  Future<void> _newScript() async {
-    await openSqlEditor(context);
-    _reload();
-  }
-
-  String _ago(DateTime t) {
-    final d = DateTime.now().difference(t);
-    if (d.inMinutes < 1) return 'adesso';
-    if (d.inHours < 1) return '${d.inMinutes} min fa';
-    if (d.inDays < 1) return '${d.inHours} h fa';
-    if (d.inDays < 7) return '${d.inDays} g fa';
-    return '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')}/${t.year}';
-  }
-
-  void _open(File f) {
-    final app = AppScope.read(context);
-    setState(() => _picked = null);
-    for (final t in app.tabs) {
-      if (t is SqlEditorTab && t.file?.path == f.path) {
-        app.activate(t);
-        return;
-      }
-    }
-    app.openSqlEditor(app.activeConnection, file: f);
-  }
-
-  Future<void> _menu(File f, Offset pos) async {
-    final app = AppScope.read(context);
-    final v = await showMacMenu<int>(
-      context,
-      position: pos,
-      entries: const [MenuEntry('Rinomina', value: 0), MenuEntry('Elimina', value: 1)],
-    );
-    if (v == null || !mounted) return;
-    if (v == 0) {
-      setState(() => _renaming = f.path);
-      return;
-    } else {
-      final ok = await confirmDialog(context, 'Elimina script', 'Eliminare ${p.basename(f.path)}?',
-          ok: 'Elimina', destructive: true);
-      if (!ok) return;
-      for (final t in List.of(app.tabs)) {
-        if (t is SqlEditorTab && t.file?.path == f.path) app.closeTab(t);
-      }
-      if (await f.exists()) await f.delete();
-    }
-    _reload();
-  }
-
-  Future<void> _rename(File f, String input) async {
-    final app = AppScope.read(context);
-    final name = input.trim();
-    setState(() => _renaming = null);
-    if (name.isEmpty || name == p.basenameWithoutExtension(f.path)) return;
-    final target = p.join(f.parent.path, '$name.sql');
-    try {
-      if (name.contains(RegExp(r'[/\\:]'))) {
-        throw Exception('Il nome non può contenere / \\ o :');
-      }
-      // Case-only renames point at the same file on macOS and Windows.
-      if (target.toLowerCase() != f.path.toLowerCase() && await File(target).exists()) {
-        throw Exception('Esiste già uno script "$name"');
-      }
-      final renamed = await f.rename(target);
-      for (final t in app.tabs) {
-        if (t is SqlEditorTab && t.file?.path == f.path) {
-          t.file = renamed;
-          t.refresh();
-        }
-      }
-      if (_picked == f.path) _picked = renamed.path;
-    } catch (e) {
-      if (mounted) showErrorDialog(context, e, title: 'Impossibile rinominare lo script');
-    }
-    _reload();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppScope.read(context);
-    final current = app.currentTab is SqlEditorTab ? (app.currentTab as SqlEditorTab).file?.path : null;
-    if (current != _lastCurrent) {
-      _lastCurrent = current;
-      _picked = null;
-    }
-    return Column(children: [
-      SectionLabel('Script nel workspace',
-          padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm, Gap.xs, 2),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            ToolButton(icon: AppIcons.add, tooltip: 'Nuovo script', onPressed: _newScript),
-            ToolButton(icon: AppIcons.refresh, tooltip: 'Aggiorna', onPressed: _reload),
-          ])),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(Gap.sm, 2, Gap.sm, Gap.sm),
-        child: SearchField(controller: _filter, hint: 'Filtra script', onChanged: (_) => setState(() {})),
-      ),
-      Expanded(
-        child: FutureBuilder<List<({File file, DateTime modified})>>(
-          future: _files,
-          builder: (context, snap) {
-            final all = snap.data ?? const <({File file, DateTime modified})>[];
-            if (all.isEmpty) {
-              return snap.connectionState == ConnectionState.done
-                  ? EmptyState(
-                      icon: AppIcons.document,
-                      title: 'Nessuno script',
-                      message: 'Gli editor SQL vengono salvati qui automaticamente.',
-                      action: PushButton(label: 'Nuovo script', onPressed: _newScript),
-                    )
-                  : const SizedBox.shrink();
-            }
-            final q = _filter.text.trim().toLowerCase();
-            final files = q.isEmpty
-                ? all
-                : all.where((s) => p.basenameWithoutExtension(s.file.path).toLowerCase().contains(q)).toList();
-            if (files.isEmpty) {
-              return EmptyState(
-                icon: AppIcons.search,
-                title: 'Nessun risultato',
-                message: 'Nessuno script contiene "${_filter.text.trim()}".',
-              );
-            }
-            final sel = files.indexWhere((s) => s.file.path == (_picked ?? current));
-            return SourceList(
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, Gap.md),
-              itemCount: files.length,
-              selectedIndex: sel < 0 ? null : sel,
-              onSelect: (i) => setState(() => _picked = files[i].file.path),
-              onActivate: (i) => _open(files[i].file),
-              itemBuilder: (context, i) {
-                final f = files[i].file;
-                final open = app.tabs.any((t) => t is SqlEditorTab && t.file?.path == f.path);
-                final name = p.basename(f.path);
-                return OutlineRow(
-                  icon: AppIcons.document,
-                  strong: open,
-                  title: p.basenameWithoutExtension(f.path),
-                  titleEditor: _renaming == f.path
-                      ? InlineRenameField(
-                          initial: p.basenameWithoutExtension(f.path),
-                          onSubmit: (v) => _rename(f, v),
-                          onCancel: () => setState(() => _renaming = null),
-                        )
-                      : null,
-                  detail: _ago(files[i].modified),
-                  selected: i == sel,
-                  tooltip: open ? '$name · aperto' : name,
-                  onTap: () => _open(f),
-                  onMenu: (pos) => _menu(f, pos),
-                );
-              },
-            );
-          },
-        ),
-      ),
-    ]);
   }
 }

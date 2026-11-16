@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../model/connection_config.dart';
 
 /// Workspace folder (like DBeaver's workspace): settings, connections,
-/// history and scripts.
+/// history, scripts (the library) and local state (`.dbcraft`).
 class Workspace {
   Workspace._(this.root);
 
@@ -25,6 +25,10 @@ class Workspace {
   File get _settingsFile => File(p.join(root.path, 'settings.json'));
   File get _historyFile => File(p.join(root.path, 'history.json'));
   Directory get scriptsDir => Directory(p.join(root.path, 'scripts'));
+
+  /// Local state of the app (`.dbcraft`): drafts, trash, session. The
+  /// `*.local.json` files and the drafts and trash folders are git-ignored.
+  Directory get stateDir => Directory(p.join(root.path, '.dbcraft'));
 
   Future<Object?> _read(File f) async {
     try {
@@ -71,33 +75,6 @@ class Workspace {
   }
 
   Future<void> saveHistory(List<HistoryEntry> h) => _write(_historyFile, h.map((e) => e.toJson()).toList());
-
-  /// The .sql files of the workspace with their modification time, newest
-  /// first. Files removed while listing are skipped.
-  Future<List<({File file, DateTime modified})>> listScripts() async {
-    if (!await scriptsDir.exists()) return [];
-    final out = <({File file, DateTime modified})>[];
-    await for (final e in scriptsDir.list()) {
-      if (e is! File || !e.path.toLowerCase().endsWith('.sql')) continue;
-      final st = await e.stat();
-      if (st.type == FileSystemEntityType.notFound) continue;
-      out.add((file: e, modified: st.modified));
-    }
-    out.sort((a, b) => b.modified.compareTo(a.modified));
-    return out;
-  }
-
-  Future<File> newScriptFile() async {
-    var i = 1;
-    while (true) {
-      final f = File(p.join(scriptsDir.path, 'Script-$i.sql'));
-      if (!await f.exists()) {
-        await f.writeAsString('');
-        return f;
-      }
-      i++;
-    }
-  }
 }
 
 class AppSettings {

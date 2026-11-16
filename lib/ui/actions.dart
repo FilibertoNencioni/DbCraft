@@ -126,7 +126,7 @@ Future<void> openScriptFile(BuildContext context) async {
     initialDirectory: app.workspace.scriptsDir.path,
   );
   if (f == null) return;
-  await app.openSqlEditor(app.activeConnection, file: File(f.path));
+  await app.openScript(File(f.path));
 }
 
 /// [ExecutionUi] implementation based on dialogs.

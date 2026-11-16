@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'package:dbcraft/features/git/git_service.dart';
 import 'package:dbcraft/main.dart';
 import 'package:dbcraft/state/app_state.dart';
+import 'package:dbcraft/ui/scripts/scripts_panel.dart';
 import 'package:dbcraft/ui/widgets/fields.dart';
 import 'package:dbcraft/ui/widgets/navigation.dart';
 import 'package:flutter/gestures.dart';
@@ -23,6 +24,9 @@ import 'package:integration_test/integration_test.dart';
 const shotDir = String.fromEnvironment('SHOT_DIR');
 
 final _shotKey = GlobalKey();
+
+/// [text] inside the Script panel.
+Finder inPanel(String text) => find.descendant(of: find.byType(ScriptsPanel), matching: find.text(text));
 
 /// Saves the sidebar column (left of the split) at 2x.
 Future<void> shot(WidgetTester tester, String name) async {
@@ -175,26 +179,37 @@ void main() {
       await settle(tester);
     }
 
-    // Deleting a script that is open in an editor: the tab closes and the
-    // list reloads without touching the removed file.
+    // Moving to the trash a script open in an editor: the tab closes and
+    // the list reloads without touching the removed file; it can be
+    // restored from the trash.
     await tester.tap(find.byTooltip('Script'));
     await settle(tester);
-    await tester.tap(find.text('ordini_per_mese'));
+    await tester.tap(inPanel('ordini_per_mese'));
     await settle(tester);
-    await tester.tap(find.text('ordini_per_mese').first, buttons: kSecondaryButton);
+    // Now also among the recents: the library row is the last one.
+    await tester.tap(inPanel('ordini_per_mese').last, buttons: kSecondaryButton);
     await settle(tester, 400);
-    await tester.tap(find.text('Elimina').last);
-    await settle(tester, 400);
-    await tester.tap(find.text('Elimina').last);
+    await tester.tap(find.text('Sposta nel cestino').last);
     await settle(tester);
     expect(tester.takeException(), isNull);
     expect(File('${scripts.path}/ordini_per_mese.sql').existsSync(), isFalse);
-    expect(find.text('ordini_per_mese'), findsNothing);
+    expect(inPanel('ordini_per_mese'), findsNothing);
+    expect(state.tabs, isEmpty);
     await shot(tester, 's4_scripts_after_delete');
+    await tester.tap(inPanel('Cestino'));
+    await settle(tester);
+    expect(inPanel('ordini_per_mese'), findsOneWidget);
+    await shot(tester, 's4b_scripts_trash');
+    await tester.tap(inPanel('ordini_per_mese'), buttons: kSecondaryButton);
+    await settle(tester, 400);
+    await tester.tap(find.text('Ripristina').last);
+    await settle(tester);
+    expect(File('${scripts.path}/ordini_per_mese.sql').existsSync(), isTrue);
+    expect(inPanel('Cestino'), findsNothing);
 
     // Rename in place from the context menu: the field keeps the focus once
     // the menu closes and Return renames the file.
-    await tester.tap(find.text('nuovo_report').first, buttons: kSecondaryButton);
+    await tester.tap(inPanel('nuovo_report').first, buttons: kSecondaryButton);
     await settle(tester, 400);
     await tester.tap(find.text('Rinomina').last);
     await settle(tester, 400);
@@ -208,7 +223,37 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(File('${scripts.path}/nuovo_report.sql').existsSync(), isFalse);
     expect(File('${scripts.path}/report_nuovo.sql').existsSync(), isTrue);
-    expect(find.text('report_nuovo'), findsOneWidget);
+    expect(inPanel('report_nuovo'), findsOneWidget);
     expect(find.byType(InlineRenameField), findsNothing);
+
+    // A new folder, then a script dragged into it.
+    await tester.tap(find.byTooltip('Nuova cartella'));
+    await settle(tester, 400);
+    await tester.enterText(find.byType(EditableText).last, 'Report');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(Directory('${scripts.path}/Report').existsSync(), isTrue);
+    final drag = await tester.startGesture(tester.getCenter(inPanel('report_nuovo')));
+    await tester.pump(const Duration(milliseconds: 50));
+    await drag.moveBy(const Offset(0, 6));
+    await tester.pump(const Duration(milliseconds: 50));
+    await drag.moveTo(tester.getCenter(inPanel('Report')));
+    await tester.pump(const Duration(milliseconds: 300));
+    await shot(tester, 's6_scripts_drag');
+    await drag.up();
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(File('${scripts.path}/Report/report_nuovo.sql').existsSync(), isTrue);
+    expect(inPanel('report_nuovo'), findsOneWidget, reason: 'the target folder opens');
+    await shot(tester, 's7_scripts_folder');
+
+    // A new editor is a draft: it shows under "Bozze", the library is
+    // untouched until it is saved.
+    final before = scripts.listSync(recursive: true).length;
+    await tester.tap(find.byTooltip('Nuovo script (bozza)'));
+    await settle(tester);
+    expect(inPanel('Bozza 1'), findsOneWidget);
+    expect(scripts.listSync(recursive: true).length, before);
+    await shot(tester, 's8_scripts_draft');
   });
 }

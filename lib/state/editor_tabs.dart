@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:re_editor/re_editor.dart';
 
 import '../features/design/table_design.dart';
 import '../features/design/view_design.dart';
 import '../model/db_objects.dart';
 import '../odbc/odbc_types.dart';
+import '../services/script_session.dart';
 import '../services/sql_splitter.dart';
 import '../services/storage.dart';
 import 'db_connection.dart';
@@ -82,6 +84,10 @@ abstract class ExecutionUi {
   Future<Map<String, Object?>?> askParameters(List<String> names, Map<String, Object?> previous);
 }
 
+/// A SQL editor. Without [file] it is a draft: its text lives only in the
+/// local buffer ([bufferId]) until the user saves it as a script. With a
+/// file, the file changes only on an explicit save; the unsaved changes
+/// live in the buffer meanwhile.
 class SqlEditorTab extends EditorTab {
   SqlEditorTab({
     required this.settings,
@@ -89,21 +95,49 @@ class SqlEditorTab extends EditorTab {
     String? catalog,
     this.file,
     String initialText = '',
+    String? savedText,
+    String? bufferId,
+    this.draftName,
+    this.suggestedFolder,
   }) : _connection = connection, // ignore: prefer_initializing_formals
        _catalog = catalog, // ignore: prefer_initializing_formals
+       bufferId = bufferId ?? ScriptSession.newId(),
        controller = CodeLineEditingController.fromText(initialText) {
-    _savedText = initialText;
+    _savedText = savedText ?? initialText;
+    _bufferedText = initialText;
+    _dirty = _computeDirty(initialText);
     controller.addListener(_onChanged);
   }
 
   final AppSettings settings;
   DbConnection? _connection;
   String? _catalog;
+
+  /// The script file; null for a draft.
   File? file;
+
+  /// Id of the local buffer holding the unsaved text.
+  final String bufferId;
+
+  /// Name of a draft ("Bozza 3").
+  String? draftName;
+
+  /// Library folder proposed when the draft is saved.
+  String? suggestedFolder;
   final CodeLineEditingController controller;
   String _savedText = '';
+  String _bufferedText = '';
   bool _dirty = false;
   Timer? _autosave;
+
+  /// Writes the text to the buffer (autosave, 2 s after the last change).
+  void Function(SqlEditorTab tab)? onBuffer;
+
+  /// The file was written (bookkeeping: the buffer goes away).
+  void Function(SqlEditorTab tab)? onSaved;
+
+  /// Connection or database changed (remembered for the script).
+  void Function(SqlEditorTab tab)? onBindingChanged;
 
   final List<ResultTab> results = [];
   int selectedResult = 0;
@@ -122,68 +156,102 @@ class SqlEditorTab extends EditorTab {
     if (c != _connection) _catalog = null;
     _connection = c;
     notifyListeners();
+    onBindingChanged?.call(this);
   }
 
   /// Database chosen for this editor; null = the connection default.
   /// A `USE xxx` run in the editor updates it.
   String? get catalog => _catalog ?? _connection?.defaultCatalog;
 
+  /// The database chosen explicitly (null: the connection default).
+  String? get explicitCatalog => _catalog;
+
   set catalog(String? v) {
     _catalog = v;
     notifyListeners();
+    onBindingChanged?.call(this);
   }
+
+  bool get isDraft => file == null;
+
+  /// Name of the script or draft, without the connection.
+  String get name => file == null ? (draftName ?? 'SQL') : p.basenameWithoutExtension(file!.path);
 
   @override
   String get title {
-    final f = file;
-    final name = f == null ? 'SQL' : f.uri.pathSegments.last.replaceAll('.sql', '');
     final c = _connection == null ? '' : ' <${_connection!.config.name}>';
     return '$name$c';
   }
 
   @override
-  IconData get icon => AppIcons.document;
+  IconData get icon => isDraft ? AppIcons.edit : AppIcons.document;
 
+  /// A draft is "dirty" while it has some text (closing it asks), a script
+  /// while its text differs from the file.
   @override
   bool get isDirty => _dirty;
 
+  /// The text differs from the file (always false for a draft).
+  bool get hasUnsavedChanges => file != null && controller.text != _savedText;
+
   @override
-  String get tooltip => file?.path ?? title;
+  String get tooltip => file?.path ?? '$name · bozza non salvata';
+
+  bool _computeDirty(String t) => file == null ? t.trim().isNotEmpty : t != _savedText;
+
+  /// The text not yet written to the buffer.
+  bool get needsBuffer => controller.text != _bufferedText;
+
+  /// The buffer now holds [text].
+  void markBuffered(String text) => _bufferedText = text;
 
   void _onChanged() {
     final t = controller.text;
-    final d = t != _savedText;
+    final d = _computeDirty(t);
     if (d != _dirty) {
       _dirty = d;
       notifyListeners();
     }
-    if (_dirty && file != null) {
+    if (t != _bufferedText) {
       _autosave?.cancel();
-      _autosave = Timer(const Duration(seconds: 2), save);
+      _autosave = Timer(const Duration(seconds: 2), () => onBuffer?.call(this));
     }
   }
 
+  /// Writes the text to the file. A draft has no file: save it with
+  /// [saveAs] (see the save sheet).
   Future<void> save() async {
     final f = file;
     if (f == null) return;
     final t = controller.text;
+    await f.parent.create(recursive: true);
     await f.writeAsString(t);
     _savedText = t;
     _dirty = false;
+    _autosave?.cancel();
     notifyListeners();
+    onSaved?.call(this);
   }
 
   Future<void> saveAs(File f) async {
     file = f;
+    draftName = null;
     await save();
+  }
+
+  /// The file was changed elsewhere (Git pull): take its [text] as saved.
+  void reloadFrom(String text) {
+    _savedText = text;
+    _bufferedText = text;
+    controller.text = text;
+    _dirty = false;
+    _autosave?.cancel();
+    notifyListeners();
   }
 
   @override
   void dispose() {
     _autosave?.cancel();
-    if (_dirty && file != null) {
-      file!.writeAsStringSync(controller.text);
-    }
     for (final r in results) {
       r.model?.close();
     }
@@ -477,7 +545,10 @@ class SqlEditorTab extends EditorTab {
     } finally {
       // Follow a `USE xxx` run by the script.
       final now = await c.syncMainCatalog();
-      if (now != null && now != cat) _catalog = now;
+      if (now != null && now != cat) {
+        _catalog = now;
+        onBindingChanged?.call(this);
+      }
       running = false;
       runningSql = null;
       runningSince = null;

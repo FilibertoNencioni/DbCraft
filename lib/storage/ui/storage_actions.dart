@@ -264,11 +264,10 @@ Future<void> storageOpenInEditor(BuildContext context, StorageAccount a, ObjectS
     if (!ok || !context.mounted) return;
   }
   final local = storageLocalCopy(app, a, o.bucket, o.key);
-  for (final t in app.tabs) {
-    if (t is SqlEditorTab && t.file?.path == local.path) {
-      app.activate(t);
-      return;
-    }
+  final open = app.sqlTabOf(local);
+  if (open != null) {
+    app.activate(open);
+    return;
   }
   final ok = await StorageTransfers.instance.run(
     o.name,
@@ -277,8 +276,8 @@ Future<void> storageOpenInEditor(BuildContext context, StorageAccount a, ObjectS
     body: (t) => s.download(o.bucket, o.key, local, onProgress: t.progress, cancel: t.cancel),
   );
   if (!ok) return;
-  await app.openSqlEditor(app.activeConnection, file: local);
-  if (context.mounted) showToast(context, 'Modifiche salvate in locale: usa "Salva nello storage" per caricarle');
+  await app.openScript(local, connection: app.activeConnection);
+  if (context.mounted) showToast(context, 'Copia locale aperta: "Salva nello storage" salva le modifiche e le carica');
 }
 
 /// Uploads the local copy (edited in the SQL editor) back to the object.

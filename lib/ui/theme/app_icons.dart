@@ -119,6 +119,8 @@ abstract final class AppIcons {
   static const IconData filter = IconData(0xe266, fontFamily: 'PhosphorRegular'); // funnel
   static const IconData filterOff = IconData(0xe26c, fontFamily: 'PhosphorRegular'); // funnelX
   static const IconData sort = IconData(0xe444, fontFamily: 'PhosphorRegular'); // sortAscending
+  static const IconData star = IconData(0xe46a, fontFamily: 'PhosphorRegular'); // star
+  static const IconData starFill = IconData(0xe46a, fontFamily: 'PhosphorFill'); // star
   static const IconData selectAll = IconData(0xe746, fontFamily: 'PhosphorRegular'); // selectionAll
   static const IconData deselectAll = IconData(0xe69e, fontFamily: 'PhosphorRegular'); // selectionSlash
   static const IconData doneAll = IconData(0xe53a, fontFamily: 'PhosphorRegular'); // checks
@@ -321,6 +323,8 @@ abstract final class AppIcons {
     'filter': filter,
     'filterOff': filterOff,
     'sort': sort,
+    'star': star,
+    'starFill': starFill,
     'selectAll': selectAll,
     'deselectAll': deselectAll,
     'doneAll': doneAll,

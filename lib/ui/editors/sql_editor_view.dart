@@ -20,6 +20,7 @@ import '../../state/editor_zoom.dart';
 import '../actions.dart';
 import '../dialogs/export_dialog.dart';
 import '../results/results_viewer.dart';
+import '../scripts/script_actions.dart';
 import '../widgets/common.dart';
 import '../widgets/split_view.dart';
 import 'sql_code_editor.dart';
@@ -208,16 +209,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
     tab.controller.replaceSelection(upper ? sel.toUpperCase() : sel.toLowerCase());
   }
 
-  Future<void> _saveAs() async {
-    final loc = await getSaveLocation(
-      suggestedName: tab.file?.uri.pathSegments.last ?? 'script.sql',
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'SQL', extensions: ['sql']),
-      ],
-    );
-    if (loc == null) return;
-    await tab.saveAs(File(loc.path));
-  }
+  Future<void> _saveAs() => saveSqlTabAs(context, tab);
 
   Future<void> _load() async {
     final f = await openFile(
@@ -344,7 +336,8 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       a(LogicalKeyboardKey.keyF, shift: true): _format,
       a(LogicalKeyboardKey.keyX, shift: true): () => _toUpper(true),
       a(LogicalKeyboardKey.keyY, shift: true): () => _toUpper(false),
-      a(LogicalKeyboardKey.keyS): tab.save,
+      a(LogicalKeyboardKey.keyS): () => saveSqlTab(context, tab),
+      a(LogicalKeyboardKey.keyS, shift: true): _saveAs,
       a(LogicalKeyboardKey.period): () {
         if (tab.running) tab.cancel();
       },
