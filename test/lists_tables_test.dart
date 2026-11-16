@@ -819,6 +819,62 @@ void main() {
     expect(tester.getCenter(find.text('a.sql')).dx, greaterThan(tester.getCenter(find.text('c.sql')).dx));
   });
 
+  testWidgets('window tabs drag from their edges and stay inside the strip', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final order = ['a.sql', 'b.sql', 'c.sql'];
+    final moves = <(int, int)>[];
+    await tester.pumpWidget(
+      _app(
+        Padding(
+          padding: const EdgeInsets.only(left: 200),
+          child: StatefulBuilder(
+            builder: (context, setState) => WindowTabBar(
+              itemCount: order.length,
+              itemKey: (i) => ValueKey(order[i]),
+              onReorder: (from, to) {
+                moves.add((from, to));
+                setState(() => order.insert(to, order.removeAt(from)));
+              },
+              itemBuilder: (_, i) => WindowTab(title: order[i], active: i == 0),
+            ),
+          ),
+        ),
+      ),
+    );
+    final strip = tester.getRect(find.byType(WindowTabBar));
+    Rect tab(String t) => tester.getRect(find.ancestor(of: find.text(t), matching: find.byType(WindowTab)));
+
+    // Grabbed 2px under the top edge, dragged far to the left (over what
+    // would be the sidebar): it stops at the start of the strip.
+    final drag = await tester.startGesture(tab('c.sql').topCenter + const Offset(0, 2));
+    await tester.pump();
+    for (var i = 0; i < 12; i++) {
+      await drag.moveBy(const Offset(-100, 3));
+      await tester.pump();
+      expect(tab('c.sql').left, greaterThanOrEqualTo(strip.left));
+      expect(tab('c.sql').top, strip.top);
+    }
+    expect(tab('c.sql').left, strip.left);
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(moves, [(2, 0)]);
+    expect(order, ['c.sql', 'a.sql', 'b.sql']);
+    expect(tab('c.sql').left, strip.left);
+
+    // And from the bottom edge to past the right end.
+    final back = await tester.startGesture(tab('c.sql').bottomCenter - const Offset(0, 2));
+    await tester.pump();
+    for (var i = 0; i < 12; i++) {
+      await back.moveBy(const Offset(100, 0));
+      await tester.pump();
+    }
+    expect(tab('c.sql').right, 200 + 3 * 240);
+    await back.up();
+    await tester.pumpAndSettle();
+    expect(order, ['a.sql', 'b.sql', 'c.sql']);
+  });
+
   group('table refinements', () {
     /// First filled Container above [text]: the cell when it is tinted,
     /// the row otherwise.

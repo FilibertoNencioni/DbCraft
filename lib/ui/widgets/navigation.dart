@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -152,7 +155,11 @@ class _WindowTabState extends State<WindowTab> {
 /// The document tab strip (`tabStrip` 30): [WindowTab]s that share the
 /// width (110–240 each, scrolling past that), drag to reorder, and a
 /// [trailing] accessory (the "+" for a new editor).
-class WindowTabBar extends StatelessWidget {
+///
+/// A tab is dragged from anywhere on it and stays inside the strip, as in
+/// Safari: it follows the pointer along the strip, clamped to its ends
+/// (scrolling it when it overflows), while the others slide aside.
+class WindowTabBar extends StatefulWidget {
   const WindowTabBar({
     super.key,
     required this.itemCount,
@@ -178,9 +185,98 @@ class WindowTabBar extends StatelessWidget {
   static const double maxTabWidth = 240;
 
   @override
+  State<WindowTabBar> createState() => _WindowTabBarState();
+}
+
+/// A tab being dragged: [left] is its position in the strip, the pointer
+/// moving it from [startLeft] by its travel since [startX].
+class _TabDrag {
+  _TabDrag(this.key, this.startLeft, this.startX) : left = startLeft;
+
+  final Key key;
+  final double startLeft;
+  final double startX;
+  double left;
+}
+
+class _WindowTabBarState extends State<WindowTabBar> {
+  static const _slide = Duration(milliseconds: 150);
+
+  final _scroll = ScrollController();
+  _TabDrag? _drag;
+
+  /// Tabs slide only during a drag and while the dropped one settles, not
+  /// when the strip is resized or a tab opens or closes.
+  bool _animate = false;
+  Timer? _settle;
+
+  /// Tab width of the last layout.
+  double _w = WindowTabBar.maxTabWidth;
+
+  @override
+  void dispose() {
+    _settle?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  int _indexOf(Key key) {
+    for (var i = 0; i < widget.itemCount; i++) {
+      if (widget.itemKey(i) == key) return i;
+    }
+    return -1;
+  }
+
+  /// The slot the dragged tab drops into: the one under its center.
+  int _target(double left) => ((left + _w / 2) / _w).floor().clamp(0, widget.itemCount - 1);
+
+  void _start(int i, DragStartDetails d) {
+    _settle?.cancel();
+    setState(() {
+      _animate = true;
+      _drag = _TabDrag(widget.itemKey(i), i * _w, d.globalPosition.dx);
+    });
+  }
+
+  void _update(DragUpdateDetails d) {
+    final drag = _drag;
+    if (drag == null) return;
+    final max = math.max(0.0, (widget.itemCount - 1) * _w);
+    setState(() => drag.left = (drag.startLeft + d.globalPosition.dx - drag.startX).clamp(0.0, max));
+    _reveal(drag.left);
+  }
+
+  /// Scrolls an overflowing strip to keep the dragged tab in view.
+  void _reveal(double left) {
+    if (!_scroll.hasClients) return;
+    final p = _scroll.position;
+    if (left < p.pixels) {
+      _scroll.jumpTo(math.max(left, p.minScrollExtent));
+    } else if (left + _w > p.pixels + p.viewportDimension) {
+      _scroll.jumpTo(math.min(left + _w - p.viewportDimension, p.maxScrollExtent));
+    }
+  }
+
+  void _end() {
+    final drag = _drag;
+    if (drag == null) return;
+    final from = _indexOf(drag.key);
+    setState(() => _drag = null);
+    if (from >= 0) {
+      final to = _target(drag.left);
+      if (to != from) widget.onReorder?.call(from, to);
+    }
+    _settle = Timer(_slide, () {
+      if (mounted) setState(() => _animate = false);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final line = BorderSide(color: c.separator, width: 0.5);
+    final n = widget.itemCount;
+    final reorder = widget.onReorder != null && n > 1;
     return Container(
       height: BarHeight.tabStrip,
       color: _stripFill(c),
@@ -192,43 +288,73 @@ class WindowTabBar extends StatelessWidget {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, box) {
-                    final w = itemCount == 0
-                        ? maxTabWidth
-                        : (box.maxWidth / itemCount).clamp(minTabWidth, maxTabWidth).toDouble();
-                    Widget item(BuildContext context, int i) {
-                      final tab = SizedBox(width: w, child: itemBuilder(context, i));
-                      return onReorder == null
-                          ? KeyedSubtree(key: itemKey(i), child: tab)
-                          : ReorderableDragStartListener(key: itemKey(i), index: i, child: tab);
+                    final w = _w = n == 0
+                        ? WindowTabBar.maxTabWidth
+                        : (box.maxWidth / n).clamp(WindowTabBar.minTabWidth, WindowTabBar.maxTabWidth).toDouble();
+                    final drag = _drag;
+                    final from = drag == null ? -1 : _indexOf(drag.key);
+                    final to = from < 0 ? -1 : _target(drag!.left);
+
+                    double left(int i) {
+                      if (i == from) return drag!.left;
+                      var slot = i;
+                      if (from >= 0 && i > from && i <= to) slot = i - 1;
+                      if (from >= 0 && i < from && i >= to) slot = i + 1;
+                      return slot * w;
                     }
 
-                    if (onReorder == null) {
-                      return ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: itemCount,
-                        itemBuilder: item,
+                    Widget tab(int i) {
+                      final dragged = i == from;
+                      Widget child = DecoratedBox(
+                        decoration: BoxDecoration(
+                          boxShadow: dragged ? Elevation.node(Theme.of(context).brightness) : null,
+                        ),
+                        child: widget.itemBuilder(context, i),
+                      );
+                      if (reorder) {
+                        child = GestureDetector(
+                          onHorizontalDragStart: (d) => _start(i, d),
+                          onHorizontalDragUpdate: _update,
+                          onHorizontalDragEnd: (_) => _end(),
+                          onHorizontalDragCancel: _end,
+                          child: child,
+                        );
+                      }
+                      return AnimatedPositioned(
+                        key: widget.itemKey(i),
+                        duration: _animate && !dragged ? Motion.of(context, _slide) : Duration.zero,
+                        curve: Curves.easeOutCubic,
+                        left: left(i),
+                        top: 0,
+                        bottom: 0,
+                        width: w,
+                        child: child,
                       );
                     }
-                    return ReorderableListView.builder(
+
+                    return SingleChildScrollView(
+                      controller: _scroll,
                       scrollDirection: Axis.horizontal,
-                      buildDefaultDragHandles: false,
-                      itemCount: itemCount,
-                      onReorderItem: onReorder!,
-                      proxyDecorator: (child, _, _) => DecoratedBox(
-                        decoration: BoxDecoration(boxShadow: Elevation.menu(Theme.of(context).brightness)),
-                        child: child,
+                      child: SizedBox(
+                        width: n * w,
+                        height: BarHeight.tabStrip,
+                        // The dragged tab paints over the others.
+                        child: Stack(children: [
+                          for (var i = 0; i < n; i++)
+                            if (i != from) tab(i),
+                          if (from >= 0) tab(from),
+                        ]),
                       ),
-                      itemBuilder: item,
                     );
                   },
                 ),
               ),
-              if (trailing != null)
+              if (widget.trailing != null)
                 Container(
                   height: BarHeight.tabStrip,
                   padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
                   decoration: BoxDecoration(border: Border(bottom: line)),
-                  child: Center(child: trailing),
+                  child: Center(child: widget.trailing),
                 ),
             ],
           ),

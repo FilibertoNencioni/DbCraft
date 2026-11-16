@@ -87,6 +87,22 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     super.awakeFromNib()
   }
 
+  /// Height of the Flutter toolbar (`BarHeight.toolbar`): the only band of the
+  /// title bar that should move the window.
+  private static let flutterToolbarHeight: CGFloat = 52
+
+  /// AppKit moves the window on a drag anywhere in its title-bar strip, which
+  /// with the unified toolbar can be taller than the Flutter toolbar (66pt on
+  /// macOS 27): a drag on the top half of the editor tabs or of the sidebar
+  /// tabs moved the window as well. Below the Flutter toolbar the window is
+  /// made unmovable for that click.
+  override func sendEvent(_ event: NSEvent) {
+    if event.type == .leftMouseDown {
+      isMovable = frame.height - event.locationInWindow.y < Self.flutterToolbarHeight
+    }
+    super.sendEvent(event)
+  }
+
   /// In full screen the toolbar would stay pinned and opaque over the top of
   /// the Flutter content; let it slide in with the menu bar instead.
   func window(
