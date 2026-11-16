@@ -17,6 +17,7 @@ import '../../state/editor_zoom.dart';
 import '../widgets/common.dart';
 import 'code_folding.dart';
 import 'drag_autoscroll.dart';
+import 'triple_click.dart';
 
 /// Removes Ctrl/Cmd+Enter from "new line" so it can run the statement.
 class SqlShortcutsActivatorsBuilder extends CodeShortcutsActivatorsBuilder {
@@ -337,6 +338,11 @@ class SqlFindBar extends StatelessWidget implements PreferredSizeWidget {
 
 /// Editor style shared by every SQL surface (editor and read-only views),
 /// so highlighting and colors stay identical everywhere.
+///
+/// Every color is explicit: re_editor imports package:flutter/material.dart,
+/// whose Theme is not the app's (material_ui) since Flutter 3.50, so its
+/// fallbacks would come from a default light ThemeData (black text, blue
+/// cursor).
 CodeEditorStyle sqlCodeEditorStyle(BuildContext context, double fontSize) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   final c = DbColors.of(context);
@@ -344,6 +350,10 @@ CodeEditorStyle sqlCodeEditorStyle(BuildContext context, double fontSize) {
     fontSize: fontSize,
     fontFamily: kMono,
     fontFamilyFallback: kMonoFallback,
+    textColor: c.text,
+    hintTextColor: c.textTertiary,
+    cursorColor: c.accent,
+    highlightColor: c.accent.withValues(alpha: 0.28),
     backgroundColor: c.codeBackground,
     cursorLineColor: c.codeCurrentLine,
     chunkIndicatorColor: c.textTertiary,
@@ -615,7 +625,7 @@ class _SqlCodeEditorState extends State<SqlCodeEditor> {
   Widget _editor(DbColors c, SqlCodeEditor w) => DragSelectAutoScroll(
     controller: w.controller,
     scroll: _scroll,
-    child: _codeEditor(c, w),
+    child: TripleClickLineSelect(controller: w.controller, child: _codeEditor(c, w)),
   );
 
   Widget _codeEditor(DbColors c, SqlCodeEditor w) => CodeEditor(
@@ -676,16 +686,19 @@ class _SqlCodeViewState extends State<SqlCodeView> {
   Widget build(BuildContext context) {
     final c = DbColors.of(context);
     final fontSize = widget.fontSize ?? AppScope.maybeOf(context)?.settings.editorFontSize ?? TypeSize.mono;
-    return CodeEditor(
+    return TripleClickLineSelect(
       controller: _controller,
-      readOnly: true,
-      showCursorWhenReadOnly: false,
-      wordWrap: false,
-      chunkAnalyzer: const SqlChunkAnalyzer(),
-      findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
-      style: sqlCodeEditorStyle(context, fontSize),
-      indicatorBuilder: sqlLineNumbers(fontSize),
-      leadingDivider: Container(width: 0.5, color: c.separator),
+      child: CodeEditor(
+        controller: _controller,
+        readOnly: true,
+        showCursorWhenReadOnly: false,
+        wordWrap: false,
+        chunkAnalyzer: const SqlChunkAnalyzer(),
+        findBuilder: (context, c, readOnly) => SqlFindBar(controller: c, readOnly: readOnly),
+        style: sqlCodeEditorStyle(context, fontSize),
+        indicatorBuilder: sqlLineNumbers(fontSize),
+        leadingDivider: Container(width: 0.5, color: c.separator),
+      ),
     );
   }
 }
