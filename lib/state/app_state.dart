@@ -10,6 +10,7 @@ import '../model/connection_folders.dart';
 import '../model/db_objects.dart';
 import '../services/script_library.dart';
 import '../services/script_session.dart';
+import '../services/sql_variables.dart';
 import '../services/storage.dart';
 import '../services/vault.dart';
 import 'db_connection.dart';
@@ -463,8 +464,8 @@ class AppState extends ChangeNotifier {
     final key = scriptKey(file);
     var c = connection;
     var cat = catalog;
+    final b = scriptSession.bindings[key];
     if (c == null) {
-      final b = scriptSession.bindings[key];
       final bound = b?.connection == null ? null : byId(b!.connection!);
       if (bound != null) {
         c = bound;
@@ -473,7 +474,14 @@ class AppState extends ChangeNotifier {
         c = activeConnection;
       }
     }
-    final tab = SqlEditorTab(settings: settings, connection: c, catalog: cat, file: file, initialText: text);
+    final tab = SqlEditorTab(
+      settings: settings,
+      connection: c,
+      catalog: cat,
+      file: file,
+      initialText: text,
+      variables: [...?b?.variables.map((v) => v.copy())],
+    );
     _attachSql(tab);
     scriptSession.touchRecent(key);
     _open(tab);
@@ -619,12 +627,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The panel variables worth keeping (with a value or a type).
+  static List<ScriptVariable> _variablesOf(SqlEditorTab t) => [
+    for (final v in t.variables)
+      if (v.value != null || v.isNull || v.type != VarType.auto || v.sqlType.isNotEmpty) v.copy(),
+  ];
+
   void _bindingChanged(SqlEditorTab t) {
     final f = t.file;
     if (f != null) {
       scriptSession.bindings[scriptKey(f)] = ScriptBinding(
         connection: t.connection?.config.id,
         catalog: t.explicitCatalog,
+        variables: _variablesOf(t),
       );
     }
     _sessionChanged();
@@ -643,6 +658,7 @@ class AppState extends ChangeNotifier {
         ..folder = t.suggestedFolder
         ..connection = t.connection?.config.id
         ..catalog = t.explicitCatalog
+        ..variables = _variablesOf(t)
         ..closedAt = DateTime.now();
       try {
         scriptSession.writeBufferSync(t.bufferId, text);
@@ -685,6 +701,7 @@ class AppState extends ChangeNotifier {
       bufferId: id,
       draftName: file == null ? meta.name : null,
       suggestedFolder: meta.folder,
+      variables: [...meta.variables.map((v) => v.copy())],
     );
     _attachSql(tab);
     scriptsRevision++;
@@ -812,6 +829,7 @@ class AppState extends ChangeNotifier {
         ..folder = t.suggestedFolder
         ..connection = t.connection?.config.id
         ..catalog = t.explicitCatalog
+        ..variables = _variablesOf(t)
         ..closedAt = null;
       open.add(t.bufferId);
     }
@@ -867,6 +885,7 @@ class AppState extends ChangeNotifier {
         bufferId: id,
         draftName: file == null ? (meta.name ?? s.newDraftName()) : null,
         suggestedFolder: meta.folder,
+        variables: [...meta.variables.map((v) => v.copy())],
       );
       _attachSql(tab);
       tabs.add(tab);

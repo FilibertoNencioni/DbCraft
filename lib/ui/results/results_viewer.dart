@@ -242,7 +242,9 @@ class _ResultsViewerState extends State<ResultsViewer> {
       children: [
         Text(
           '${count == total ? '$total' : '$count di $total'} ${total == 1 ? 'riga' : 'righe'}'
-          '${m.hasMore ? ' · altre disponibili' : ''}  ·  ${m.elapsedMs} ms',
+          '${m.hasMore ? ' · altre disponibili' : ''}'
+          '${m.truncatedAt != null ? ' · le altre righe sono state scartate per completare il batch' : ''}'
+          '  ·  ${m.elapsedMs} ms',
           style: style,
         ),
         if (m.hasNextResultSet) ...[

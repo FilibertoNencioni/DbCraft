@@ -348,6 +348,7 @@ class _HomePageState extends State<HomePage> {
         _MenuAction('Trova e sostituisci…', sqlCmd(SqlCommand.find), _a(LogicalKeyboardKey.keyF)),
         const _MenuDivider(),
         _MenuAction('Mostra/nascondi risultati', sqlCmd(SqlCommand.toggleResults), _a(LogicalKeyboardKey.keyR, shift: true)),
+        _MenuAction('Mostra/nascondi variabili', sqlCmd(SqlCommand.toggleVariables), _a(LogicalKeyboardKey.keyV, alt: true)),
         const _MenuDivider(),
         _MenuAction('Ingrandisci testo', sql == null ? null : app.sqlZoom.zoomIn, SqlZoomKeys.zoomIn),
         _MenuAction('Riduci testo', sql == null ? null : app.sqlZoom.zoomOut, SqlZoomKeys.zoomOut),

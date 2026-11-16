@@ -264,16 +264,7 @@ class ResilientSession implements DbSession {
   ResultPage _page(ResultPage p, int generation) {
     final id = p.cursorId;
     if (id == null || generation == 0) return p;
-    return ResultPage(
-      columns: p.columns,
-      rows: p.rows,
-      hasMore: p.hasMore,
-      cursorId: _wrap(generation, id),
-      rowsAffected: p.rowsAffected,
-      elapsedMs: p.elapsedMs,
-      messages: p.messages,
-      hasNextResultSet: p.hasNextResultSet,
-    );
+    return p.copyWith(cursorId: _wrap(generation, id));
   }
 
   /// The id in the current session, null for a cursor of a lost session.

@@ -27,6 +27,7 @@ abstract final class AppIcons {
   static const IconData erDiagram = IconData(0xeb58, fontFamily: 'PhosphorRegular'); // graph
   static const IconData join = IconData(0xe2d2, fontFamily: 'PhosphorRegular'); // intersect
   static const IconData json = IconData(0xe860, fontFamily: 'PhosphorRegular'); // bracketsCurly
+  static const IconData variables = IconData(0xe860, fontFamily: 'PhosphorRegular'); // bracketsCurly
   static const IconData number = IconData(0xe2a2, fontFamily: 'PhosphorRegular'); // hash
   static const IconData text = IconData(0xe48a, fontFamily: 'PhosphorRegular'); // textT
   static const IconData shortText = IconData(0xe484, fontFamily: 'PhosphorRegular'); // textAlignLeft

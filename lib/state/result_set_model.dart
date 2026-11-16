@@ -29,6 +29,7 @@ class ResultSetModel extends ChangeNotifier {
     this.table,
     this.catalog,
     this.params = const [],
+    this.setup = const [],
     this.dataFilter,
     this.resultSetIndex = 0,
   }) : columns = first.columns,
@@ -43,6 +44,10 @@ class ResultSetModel extends ChangeNotifier {
   final DbConnection connection;
   final String sql;
   final List<Object?> params;
+
+  /// Statements that must run before [sql] on a new session (the SET of
+  /// the panel variables on MySQL / Snowflake).
+  final List<String> setup;
 
   /// WHERE / ORDER BY the table data page loaded these rows with ('' when
   /// unfiltered); null for results that do not come from a table data page.
@@ -60,6 +65,10 @@ class ResultSetModel extends ChangeNotifier {
   int elapsedMs;
   bool loading = false;
   String? error;
+
+  /// Rows left unread so that the rest of a batch could run: the count of
+  /// rows kept, or null.
+  int? truncatedAt;
 
   /// Source table (for editing). Detected from the query or provided by the
   /// table data editor.
@@ -99,6 +108,7 @@ class ResultSetModel extends ChangeNotifier {
       rows.addAll(p.rows.map(ResultRow.new));
       hasMore = p.hasMore;
       hasNextResultSet = p.hasNextResultSet;
+      if (p.errors.isNotEmpty) error = p.errors.join('\n');
       if (p.cursorId == null) _cursorId = null;
       _rebuildView();
     } catch (e) {
@@ -112,6 +122,15 @@ class ResultSetModel extends ChangeNotifier {
   }
 
   Future<void> fetchAll() => fetchNext(count: 0);
+
+  /// The rows still unread are given up (the batch moves on): what was read
+  /// stays, nothing more can be loaded.
+  void markTruncated() {
+    if (!hasMore) return;
+    hasMore = false;
+    truncatedAt = rows.length;
+    notifyListeners();
+  }
 
   /// Returns the next result set produced by the same statement.
   Future<ResultPage?> nextResultSet() async {

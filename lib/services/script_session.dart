@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../model/connection_folders.dart';
+import 'sql_variables.dart';
 
 /// The text of a SQL editor not (yet) written to its file: a draft, or the
 /// unsaved changes of a script. The text lives in `.dbcraft/drafts/<id>.sql`.
@@ -16,7 +17,8 @@ class BufferMeta {
     this.connection,
     this.catalog,
     this.closedAt,
-  });
+    List<ScriptVariable>? variables,
+  }) : variables = variables ?? [];
 
   final String id;
 
@@ -36,6 +38,9 @@ class BufferMeta {
   /// When the editor was closed keeping the text ("Chiuse di recente").
   DateTime? closedAt;
 
+  /// Values of the Variabili panel.
+  List<ScriptVariable> variables;
+
   bool get isDraft => file == null;
 
   /// Name shown in the lists.
@@ -48,6 +53,7 @@ class BufferMeta {
     if (connection != null) 'connection': connection,
     if (catalog != null) 'catalog': catalog,
     if (closedAt != null) 'closedAt': closedAt!.toIso8601String(),
+    if (variables.isNotEmpty) 'variables': [for (final v in variables) v.toJson()],
   };
 
   static BufferMeta fromJson(String id, Map<Object?, Object?> j) => BufferMeta(
@@ -58,22 +64,31 @@ class BufferMeta {
     connection: j['connection'] as String?,
     catalog: j['catalog'] as String?,
     closedAt: DateTime.tryParse(j['closedAt'] as String? ?? ''),
+    variables: ScriptVariable.listFromJson(j['variables']),
   );
 }
 
-/// Connection and database last used with a script.
+/// Connection, database and variable values last used with a script (local,
+/// never in the shared library).
 class ScriptBinding {
-  ScriptBinding({this.connection, this.catalog});
+  ScriptBinding({this.connection, this.catalog, List<ScriptVariable>? variables}) : variables = variables ?? [];
   String? connection;
   String? catalog;
+  List<ScriptVariable> variables;
+
+  bool get isEmpty => connection == null && variables.isEmpty;
 
   Map<String, Object?> toJson() => {
     if (connection != null) 'connection': connection,
     if (catalog != null) 'catalog': catalog,
+    if (variables.isNotEmpty) 'variables': [for (final v in variables) v.toJson()],
   };
 
-  static ScriptBinding fromJson(Map<Object?, Object?> j) =>
-      ScriptBinding(connection: j['connection'] as String?, catalog: j['catalog'] as String?);
+  static ScriptBinding fromJson(Map<Object?, Object?> j) => ScriptBinding(
+    connection: j['connection'] as String?,
+    catalog: j['catalog'] as String?,
+    variables: ScriptVariable.listFromJson(j['variables']),
+  );
 }
 
 enum ScriptSort { name, modified }
@@ -144,7 +159,7 @@ class ScriptSession {
     if (active != null) 'active': active,
     'scripts': {
       for (final e in bindings.entries)
-        if (e.value.connection != null) e.key: e.value.toJson(),
+        if (!e.value.isEmpty) e.key: e.value.toJson(),
     },
     'favorites': favorites,
     'recent': recent,

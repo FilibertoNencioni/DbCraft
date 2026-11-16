@@ -10,6 +10,11 @@ class OdbcDiag {
   final int nativeError;
   final String message;
 
+  /// A real error reported with SQL_SUCCESS_WITH_INFO: a statement of a
+  /// batch failed and the batch went on. Warnings (01xxx: PRINT, RAISERROR
+  /// with low severity, "changed database context") and notices are not.
+  bool get isError => sqlState.isNotEmpty && !sqlState.startsWith('01') && !sqlState.startsWith('00');
+
   @override
   String toString() => '[$sqlState] ($nativeError) $message';
 }
@@ -114,6 +119,7 @@ class ResultPage {
     this.rowsAffected = -1,
     this.elapsedMs = 0,
     this.messages = const [],
+    this.errors = const [],
     this.hasNextResultSet = false,
   });
 
@@ -134,10 +140,26 @@ class ResultPage {
   /// Informational messages (SQL_SUCCESS_WITH_INFO, PRINT, …).
   final List<String> messages;
 
+  /// Errors of statements of a batch that did not stop it (the batch went
+  /// on): met while reaching this page or right after its last row.
+  final List<String> errors;
+
   /// Statement produced further result sets (see OdbcSession.nextResultSet).
   final bool hasNextResultSet;
 
   bool get isResultSet => columns.isNotEmpty;
+
+  ResultPage copyWith({int? cursorId, int? elapsedMs}) => ResultPage(
+    columns: columns,
+    rows: rows,
+    hasMore: hasMore,
+    cursorId: cursorId ?? this.cursorId,
+    rowsAffected: rowsAffected,
+    elapsedMs: elapsedMs ?? this.elapsedMs,
+    messages: messages,
+    errors: errors,
+    hasNextResultSet: hasNextResultSet,
+  );
 }
 
 class OdbcDriverInfo {

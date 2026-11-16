@@ -276,16 +276,7 @@ class DatabaseRouterSession implements DbSession {
   }
 }
 
-ResultPage _withCursor(ResultPage p, int id) => ResultPage(
-  columns: p.columns,
-  rows: p.rows,
-  hasMore: p.hasMore,
-  cursorId: id,
-  rowsAffected: p.rowsAffected,
-  elapsedMs: p.elapsedMs,
-  messages: p.messages,
-  hasNextResultSet: p.hasNextResultSet,
-);
+ResultPage _withCursor(ResultPage p, int id) => p.copyWith(cursorId: id);
 
 /// The router working on one database: [execute] and [catalog] always go to
 /// the session of [database]; cursors and transactions are the router's.

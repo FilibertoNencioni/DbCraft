@@ -223,6 +223,9 @@ Ogni caso ha un ID; nel report l'esito è per coppia *(caso, target)*: ✅ ok, �
 | SQL-15 | **Crea vista dalla query** | Apre il designer della vista con la definizione |
 | SQL-16 | NoSQL: shell Mongo (`find`, `aggregate`, `insertOne`, `updateMany`, `deleteOne`, `countDocuments`…), comandi Redis, CQL, **sottoinsieme SQL** (`SELECT * FROM … WHERE … ORDER BY … LIMIT`) | Risultati in griglia, errori chiari per la sintassi non supportata |
 | SQL-17 | Generazione SQL dal navigator: SELECT, INSERT, UPDATE, DELETE, DDL, CALL, TRUNCATE, DROP, conteggio righe | SQL valido ed eseguibile per il dialetto |
+| SQL-18 | **Batch SQL Server**: `DECLARE` senza `GO` seguito da più SELECT; tabelle `#temp` tra batch; `GO n`; CREATE VIEW/PROCEDURE senza `GO`; errore a metà batch; `PRINT` dopo un result set; result set oltre 10.000 righe seguito da altre istruzioni | Un batch per invio come in SSMS; risultati, errori e output tutti visibili; il batch arriva in fondo. Limite ODBC: un errore prima del primo risultato ferma la lettura del resto |
+| SQL-19 | **Blocchi `DECLARE … BEGIN … END`** (Oracle, Snowflake), `EXECUTE BLOCK` (Firebird), `DO $$` (PostgreSQL), script BigQuery con `DECLARE`/`SET` | Inviati come un'unica istruzione / un unico job |
+| SQL-20 | **Pannello Variabili** (⌥⌘V): `@x` (SQL Server, MySQL, BigQuery), `$x` (Snowflake), `:x` (altri) rilevate mentre si scrive; valori e tipi; valore mancante → esecuzione ferma, pannello aperto sul campo; dichiarate nello script = vale lo script (informativa); scrittura del letterale nello script; istruzione corrente su SQL Server con le dichiarazioni del batch riportate; valori conservati dopo riavvio, rinomina, chiusura e riapertura | Valori consegnati con `DECLARE` (SQL Server), `SET` (MySQL, Snowflake) o parametri; log e cronologia mostrano l'SQL inviato; nulla nella libreria condivisa |
 
 ### GRD — Griglia risultati e modifica dati
 | ID | Caso | Esito atteso |

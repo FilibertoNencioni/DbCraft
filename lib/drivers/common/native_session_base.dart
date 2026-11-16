@@ -159,16 +159,7 @@ abstract class NativeSessionBase implements DbSession {
     }, timeoutSec: queryTimeoutSec);
   }
 
-  ResultPage _withElapsed(ResultPage p, int ms) => ResultPage(
-    columns: p.columns,
-    rows: p.rows,
-    hasMore: p.hasMore,
-    cursorId: p.cursorId,
-    rowsAffected: p.rowsAffected,
-    messages: p.messages,
-    hasNextResultSet: p.hasNextResultSet,
-    elapsedMs: ms,
-  );
+  ResultPage _withElapsed(ResultPage p, int ms) => p.copyWith(elapsedMs: ms);
 
   Future<ResultPage> _firstPage(List<StatementOutcome> outcomes, int fetchSize) async {
     final messages = <String>[];

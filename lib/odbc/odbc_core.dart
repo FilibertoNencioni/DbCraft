@@ -124,6 +124,15 @@ class _Cursor {
   List<_Fetch> fetchModes;
   bool exhausted = false;
   bool positionedOnNextResult = false;
+
+  /// Diagnostics of the look-ahead SQLMoreResults, handed to the next
+  /// result.
+  final List<String> pendingMessages = [];
+  final List<OdbcDiag> pendingErrors = [];
+
+  /// Error that ended the rows of this result (a statement of a batch that
+  /// failed while sending them, e.g. a division by zero).
+  List<OdbcDiag>? fetchError;
 }
 
 /// SQL Server returns decimals without the leading zero (`.5`, `-.5`).
@@ -406,6 +415,7 @@ class OdbcConnectionCore {
     final sw = Stopwatch()..start();
     final stmt = _allocStmt();
     final messages = <String>[];
+    final errors = <OdbcDiag>[];
     try {
       _publish(stmt);
       if (queryTimeoutSec > 0) {
@@ -426,11 +436,12 @@ class OdbcConnectionCore {
         _bindParams(stmt, params, arena);
         return api.SQLExecute(stmt);
       });
-      if (rc == SQL_SUCCESS_WITH_INFO) {
-        messages.addAll(readDiagnostics(api, SQL_HANDLE_STMT, stmt).map((d) => d.message));
-      }
+      if (rc == SQL_SUCCESS_WITH_INFO) _readInfo(stmt, messages, errors);
+      // A failure of the execution itself ends everything: the Driver
+      // Manager refuses SQLMoreResults afterwards (function sequence error),
+      // even when the server went on with the rest of the batch.
       if (rc != SQL_NO_DATA) _check(rc, 'SQLExecute', SQL_HANDLE_STMT, stmt);
-      return _processResults(stmt, fetchSize, sw, messages);
+      return _processResults(stmt, fetchSize, sw, messages, errors, throwErrors: true);
     } catch (_) {
       _freeStmt(stmt);
       rethrow;
@@ -512,9 +523,62 @@ class OdbcConnectionCore {
     }
   }
 
+  /// Diagnostics of a SQL_SUCCESS_WITH_INFO: informational messages (PRINT,
+  /// warnings) and the errors of batch statements that did not stop the
+  /// batch (ODBC reports them as "with info" when the batch goes on).
+  void _readInfo(SQLHANDLE stmt, List<String> messages, List<OdbcDiag> errors) {
+    for (final d in readDiagnostics(api, SQL_HANDLE_STMT, stmt)) {
+      if (d.isError) {
+        errors.add(d);
+      } else {
+        messages.add(d.message);
+      }
+    }
+  }
+
+  /// Errors after which reading the following results makes no sense: the
+  /// driver's own (function sequence, cancel, timeout, connection).
+  static bool _batchCanGoOn(List<OdbcDiag> diag) =>
+      diag.isNotEmpty &&
+      !diag.any((d) => d.sqlState == 'HY010' || d.sqlState == 'HY008' || d.sqlState.startsWith('HYT') ||
+          d.sqlState.startsWith('08') || d.sqlState.startsWith('IM'));
+
+  /// Moves to the next result of a batch. A statement of the batch that
+  /// failed gives SQL_ERROR while the batch goes on (SQL Server): its errors
+  /// are collected and the move is tried again. Returns SQL_SUCCESS(_WITH_
+  /// INFO) when positioned on a result, SQL_NO_DATA (or the last code) when
+  /// nothing follows.
+  int _moreResults(SQLHANDLE stmt, List<String> messages, List<OdbcDiag> errors) {
+    String? last;
+    for (var guard = 0; guard < 10000; guard++) {
+      final more = api.SQLMoreResults(stmt);
+      if (more == SQL_SUCCESS_WITH_INFO) _readInfo(stmt, messages, errors);
+      if (more != SQL_ERROR) return more;
+      final diag = readDiagnostics(api, SQL_HANDLE_STMT, stmt);
+      final text = diag.join('\n');
+      if (!_batchCanGoOn(diag) || text == last) {
+        // The driver is stuck (or done): report what it said, once.
+        if (text != last) errors.addAll(diag.where((d) => d.sqlState != 'HY010'));
+        return more;
+      }
+      errors.addAll(diag);
+      last = text;
+    }
+    return SQL_NO_DATA;
+  }
+
   /// Walks the results of [stmt] until a result set is found (kept open as a
-  /// cursor) or there are no more results (statement freed).
-  ResultPage _processResults(SQLHANDLE stmt, int fetchSize, Stopwatch sw, List<String> messages) {
+  /// cursor) or there are no more results (statement freed). Errors of the
+  /// batch statements go in the page; with [throwErrors] they are thrown
+  /// when no result set came (callers that only expect success).
+  ResultPage _processResults(
+    SQLHANDLE stmt,
+    int fetchSize,
+    Stopwatch sw,
+    List<String> messages,
+    List<OdbcDiag> errors, {
+    bool throwErrors = false,
+  }) {
     var affected = -1;
     while (true) {
       final cols = _numResultCols(stmt);
@@ -525,7 +589,23 @@ class OdbcConnectionCore {
         _cursors[id] = cursor;
         try {
           final rows = _fetchRows(cursor, fetchSize);
-          return _pageFor(id, cursor, rows, sw, messages);
+          if (cursor.fetchError != null && rows.isEmpty) {
+            // The statement failed before its first row: not a result, an
+            // error; the batch goes on with the next result.
+            errors.addAll(cursor.fetchError!);
+            _cursors.remove(id);
+            if (sqlSucceeded(_moreResults(stmt, messages, errors))) continue;
+            if (throwErrors) throw OdbcException('SQLFetch', errors, SQL_ERROR);
+            _freeStmt(stmt);
+            return ResultPage(
+              columns: const [],
+              rows: const [],
+              elapsedMs: sw.elapsedMilliseconds,
+              messages: messages,
+              errors: [for (final e in errors) e.toString()],
+            );
+          }
+          return _pageFor(id, cursor, rows, sw, messages, errors);
         } catch (_) {
           // The caller frees the statement.
           _cursors.remove(id);
@@ -538,14 +618,11 @@ class OdbcConnectionCore {
         return sqlSucceeded(r) ? cnt.value : -1;
       });
       if (rc >= 0) affected = (affected < 0 ? 0 : affected) + rc;
-      final more = api.SQLMoreResults(stmt);
-      if (more == SQL_SUCCESS_WITH_INFO) {
-        messages.addAll(readDiagnostics(api, SQL_HANDLE_STMT, stmt).map((d) => d.message));
-      }
-      if (more == SQL_NO_DATA || !sqlSucceeded(more)) {
-        if (more == SQL_ERROR) {
+      final more = _moreResults(stmt, messages, errors);
+      if (!sqlSucceeded(more)) {
+        if (throwErrors && errors.isNotEmpty) {
           // The caller frees the statement.
-          throw OdbcException('SQLMoreResults', readDiagnostics(api, SQL_HANDLE_STMT, stmt), more);
+          throw OdbcException('SQLMoreResults', errors, SQL_ERROR);
         }
         _freeStmt(stmt);
         return ResultPage(
@@ -554,20 +631,36 @@ class OdbcConnectionCore {
           rowsAffected: affected,
           elapsedMs: sw.elapsedMilliseconds,
           messages: messages,
+          errors: [for (final e in errors) e.toString()],
         );
       }
     }
   }
 
-  ResultPage _pageFor(int id, _Cursor cursor, List<List<Object?>> rows, Stopwatch sw, List<String> messages) {
+  ResultPage _pageFor(
+    int id,
+    _Cursor cursor,
+    List<List<Object?>> rows,
+    Stopwatch sw,
+    List<String> messages,
+    List<OdbcDiag> errors,
+  ) {
     var hasNext = false;
+    final pageErrors = [for (final e in errors) e.toString()];
+    if (cursor.fetchError != null) {
+      pageErrors.addAll(cursor.fetchError!.map((e) => e.toString()));
+      cursor.fetchError = null;
+    }
     if (cursor.exhausted) {
       // Look ahead for further result sets so the UI can offer them.
-      final more = api.SQLMoreResults(cursor.stmt);
+      final more = _moreResults(cursor.stmt, cursor.pendingMessages, cursor.pendingErrors);
       if (sqlSucceeded(more)) {
         cursor.positionedOnNextResult = true;
         hasNext = true;
       } else {
+        // Nothing follows: the errors met on the way belong to this page.
+        pageErrors.addAll(cursor.pendingErrors.map((e) => e.toString()));
+        messages = [...messages, ...cursor.pendingMessages];
         _cursors.remove(id);
         _freeStmt(cursor.stmt);
       }
@@ -580,6 +673,7 @@ class OdbcConnectionCore {
       cursorId: open ? id : null,
       elapsedMs: sw.elapsedMilliseconds,
       messages: messages,
+      errors: pageErrors,
       hasNextResultSet: hasNext,
     );
   }
@@ -593,7 +687,7 @@ class OdbcConnectionCore {
     _publish(cursor.stmt);
     try {
       final rows = _fetchRows(cursor, count);
-      return _pageFor(cursorId, cursor, rows, sw, const []);
+      return _pageFor(cursorId, cursor, rows, sw, const [], const []);
     } catch (_) {
       closeCursor(cursorId);
       rethrow;
@@ -604,15 +698,25 @@ class OdbcConnectionCore {
     final cursor = _cursors.remove(cursorId);
     if (cursor == null) return null;
     final sw = Stopwatch()..start();
+    final messages = [...cursor.pendingMessages];
+    final errors = [...cursor.pendingErrors];
     if (!cursor.positionedOnNextResult) {
-      final more = api.SQLMoreResults(cursor.stmt);
+      final more = _moreResults(cursor.stmt, messages, errors);
       if (!sqlSucceeded(more)) {
         _freeStmt(cursor.stmt);
-        return null;
+        // Failed statements after the last result: reported, not lost.
+        if (errors.isEmpty && messages.isEmpty) return null;
+        return ResultPage(
+          columns: const [],
+          rows: const [],
+          elapsedMs: sw.elapsedMilliseconds,
+          messages: messages,
+          errors: [for (final e in errors) e.toString()],
+        );
       }
     }
     try {
-      return _processResults(cursor.stmt, fetchSize, sw, []);
+      return _processResults(cursor.stmt, fetchSize, sw, messages, errors);
     } catch (_) {
       _freeStmt(cursor.stmt);
       rethrow;
@@ -720,6 +824,16 @@ class OdbcConnectionCore {
         final rc = api.SQLFetch(stmt);
         if (rc == SQL_NO_DATA) {
           cursor.exhausted = true;
+          break;
+        }
+        if (rc == SQL_ERROR) {
+          // A failed statement of a batch ends its rows; the results after
+          // it are still read (see _pageFor).
+          final diag = readDiagnostics(api, SQL_HANDLE_STMT, stmt);
+          if (!_batchCanGoOn(diag)) throw OdbcException('SQLFetch', diag, rc);
+          cursor
+            ..fetchError = diag
+            ..exhausted = true;
           break;
         }
         _check(rc, 'SQLFetch', SQL_HANDLE_STMT, stmt);

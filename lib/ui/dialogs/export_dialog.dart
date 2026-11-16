@@ -65,9 +65,13 @@ Stream<List<List<Object?>>> streamQuery(
   int pageSize = 2000,
   String? catalog,
   int resultSetIndex = 0,
+  List<String> setup = const [],
 }) async* {
   final session = await dc.openSession(readOnly: true, catalog: catalog);
   try {
+    for (final st in setup) {
+      await session.execute(st);
+    }
     var page = await session.execute(sql, params: params, fetchSize: pageSize);
     for (var i = 0; i < resultSetIndex; i++) {
       final id = page.cursorId;
@@ -98,6 +102,7 @@ class _ExportSource {
     required this.hasMore,
     required this.sql,
     required this.params,
+    this.setup = const [],
     this.catalog,
     this.resultSetIndex = 0,
     this.dataFilter,
@@ -114,6 +119,7 @@ class _ExportSource {
       hasMore: m.hasMore,
       sql: m.sql,
       params: m.params,
+      setup: m.setup,
       catalog: table?.catalog ?? m.catalog,
       resultSetIndex: m.resultSetIndex,
       dataFilter: m.dataFilter,
@@ -134,6 +140,9 @@ class _ExportSource {
   final List<Object?> params;
   final String? catalog;
   final int resultSetIndex;
+
+  /// Statements to run before [sql] (session variables).
+  final List<String> setup;
 
   /// WHERE / ORDER BY of the table data page, shown so it is clear which
   /// rows are exported.
@@ -197,6 +206,7 @@ class _ExportDialogState extends State<_ExportDialog> {
       s.params,
       catalog: s.catalog,
       resultSetIndex: s.resultSetIndex,
+      setup: s.setup,
     ).map((p) {
       _exported += p.length;
       if (mounted) setState(() {});

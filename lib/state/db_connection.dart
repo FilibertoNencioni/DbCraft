@@ -206,6 +206,14 @@ class DbConnection extends ChangeNotifier {
   bool get isConnected => status == ConnectionStatus.connected;
   SqlDialect get dialect => metadata?.dialect ?? SqlDialect(dbmsName: '');
 
+  /// Family of the database, also before connecting (from the driver
+  /// template or the native driver).
+  DbFamily get family {
+    final m = metadata;
+    if (m != null) return m.dialect.family;
+    return SqlDialect(dbmsName: config.isNative ? config.nativeDriver : config.template.label).family;
+  }
+
   String get serverLabel {
     final n = info['dbmsName'] as String? ?? '';
     final v = info['dbmsVersion'] as String? ?? '';

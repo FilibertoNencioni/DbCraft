@@ -24,6 +24,7 @@ import '../scripts/script_actions.dart';
 import '../widgets/common.dart';
 import '../widgets/split_view.dart';
 import 'sql_code_editor.dart';
+import 'sql_variables_panel.dart';
 
 /// Commands that the native / window menu can send to a SQL editor.
 enum SqlCommand {
@@ -35,6 +36,7 @@ enum SqlCommand {
   format,
   find,
   toggleResults,
+  toggleVariables,
   saveAs,
   aiExplain,
   aiFix,
@@ -140,8 +142,13 @@ class _SqlEditorViewState extends State<SqlEditorView> {
 
   ExecutionUi get _ui => DialogExecutionUi(context);
 
+  /// The last run asked (Invio in the Variabili panel repeats it once the
+  /// missing values are given).
+  Future<void> Function()? _lastRun;
+
   /// Runs the selection or, without one, the whole script.
   Future<void> _execute({bool newTab = false}) async {
+    _lastRun = () => _execute(newTab: newTab);
     if (!await _checkConnection()) return;
     setState(() {
       _showResults = true;
@@ -151,6 +158,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
   }
 
   Future<void> _executeCurrent() async {
+    _lastRun = _executeCurrent;
     if (!await _checkConnection()) return;
     setState(() {
       _showResults = true;
@@ -160,6 +168,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
   }
 
   Future<void> _explain() async {
+    _lastRun = _explain;
     if (!await _checkConnection()) return;
     setState(() => _showResults = true);
     await tab.explain(_ui);
@@ -191,6 +200,13 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       choose: 'Esegui',
     );
   }
+
+  void _toggleVariables() => tab.showVariables = !tab.showVariables;
+
+  /// ⌥⌘V: the Variabili panel.
+  static SingleActivator get variablesKey => Platform.isMacOS
+      ? const SingleActivator(LogicalKeyboardKey.keyV, meta: true, alt: true)
+      : const SingleActivator(LogicalKeyboardKey.keyV, control: true, alt: true);
 
   void _format() {
     final app = AppScope.read(context);
@@ -237,6 +253,8 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         _find.findMode();
       case SqlCommand.toggleResults:
         setState(() => _showResults = !_showResults);
+      case SqlCommand.toggleVariables:
+        _toggleVariables();
       case SqlCommand.saveAs:
         _saveAs();
       case SqlCommand.aiExplain:
@@ -342,6 +360,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         if (tab.running) tab.cancel();
       },
       a(LogicalKeyboardKey.keyR, shift: true): () => setState(() => _showResults = !_showResults),
+      variablesKey: _toggleVariables,
       const SingleActivator(LogicalKeyboardKey.f5): _execute,
       ...SqlZoomKeys.bindings(AppScope.read(context).sqlZoom),
     };
@@ -361,14 +380,27 @@ class _SqlEditorViewState extends State<SqlEditorView> {
             minFirst: 80,
             minSecond: 140,
             collapsedSecond: !_showResults,
-            first: SqlCodeEditor(
-              controller: tab.controller,
-              findController: _find,
-              promptsBuilder: _prompts,
-              fontSize: app.settings.editorFontSize,
-              zoom: app.sqlZoom,
-              focusNode: _editorFocus,
-              blankLineDelimiter: app.settings.blankLineDelimiter,
+            first: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: SqlCodeEditor(
+                    controller: tab.controller,
+                    findController: _find,
+                    promptsBuilder: _prompts,
+                    fontSize: app.settings.editorFontSize,
+                    zoom: app.sqlZoom,
+                    focusNode: _editorFocus,
+                    blankLineDelimiter: app.settings.blankLineDelimiter,
+                  ),
+                ),
+                ValueListenableBuilder<int>(
+                  valueListenable: tab.variablesTick,
+                  builder: (context, _, _) => tab.showVariables
+                      ? SqlVariablesPanel(tab: tab, onRun: () => tab.running ? null : (_lastRun ?? _execute)())
+                      : const SizedBox.shrink(),
+                ),
+              ],
             ),
             second: _resultsPanel(app),
           ),
@@ -440,6 +472,7 @@ class _SqlEditorViewState extends State<SqlEditorView> {
             : () => app.openFeatureTab(QueryBuilderTab(conn)),
       ),
       ToolButton(icon: AppIcons.search, tooltip: 'Trova e sostituisci (${sc(LogicalKeyboardKey.keyF)})', onPressed: _find.findMode),
+      _variablesButton(),
       PulldownButton(
         icon: AppIcons.more,
         tooltip: 'Altre azioni',
@@ -481,6 +514,31 @@ class _SqlEditorViewState extends State<SqlEditorView> {
       ),
     ]);
   }
+
+  /// Opens the Variabili panel; shows how many variables the script has and,
+  /// in amber, that some still need a value.
+  Widget _variablesButton() => ValueListenableBuilder<int>(
+        valueListenable: tab.variablesTick,
+        builder: (context, _, _) {
+          final c = DbColors.of(context);
+          final syntax = tab.varSyntax;
+          final rows = syntax == null ? const [] : tab.variableRows;
+          final missing = rows.where((r) => r.needsValue).length;
+          final key = shortcutLabel(variablesKey);
+          return ToolButton(
+            icon: AppIcons.variables,
+            label: rows.isEmpty ? null : '${rows.length}',
+            color: missing > 0 ? c.warning : null,
+            active: tab.showVariables,
+            tooltip: syntax == null
+                ? 'Variabili: non disponibili per questo database'
+                : missing > 0
+                ? 'Variabili: $missing da valorizzare ($key)'
+                : 'Variabili dello script ($key)',
+            onPressed: syntax == null ? null : _toggleVariables,
+          );
+        },
+      );
 
   /// Current text zoom, shown only when it is not 100%; a click resets it.
   Widget _zoomBadge(EditorZoom zoom) => ValueListenableBuilder<double>(
@@ -595,7 +653,9 @@ class _SqlEditorViewState extends State<SqlEditorView> {
         body = ResultsViewer(
           key: ObjectKey(r.model),
           model: r.model!,
-          onRefresh: tab.running ? null : () => tab.executeRaw(_ui, r.sql ?? '', newTab: false),
+          onRefresh: tab.running || !r.refreshable
+              ? null
+              : () => tab.executeRaw(_ui, r.sql ?? '', newTab: false, params: r.params, setup: r.setup),
         );
       } else if (r.error != null) {
         body = _errorView(r);

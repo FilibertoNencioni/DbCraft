@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:dbcraft/model/connection_config.dart';
+import 'package:dbcraft/services/sql_variables.dart';
 import 'package:dbcraft/state/app_state.dart';
+import 'package:dbcraft/state/editor_tabs.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -138,5 +140,31 @@ void main() {
     await app.deleteConnection(dc);
     expect(app.tabs, [t]);
     expect(t.connection, isNull);
+  });
+
+  test('panel variables are kept locally, per draft and per script', () async {
+    final app = await AppState.load(workspaceDir: ws);
+    final d = await app.openSqlEditor(null, initialSql: 'SELECT :id');
+    d.variableFor('id').value = '7';
+    d.variablesChanged();
+    final f = app.library.fileOf('r.sql')..createSync(recursive: true);
+    f.writeAsStringSync('SELECT :da');
+    final s = await app.openScript(f);
+    s.variableFor('da')
+      ..type = VarType.date
+      ..value = '2026-01-01';
+    s.variablesChanged();
+    await app.shutdown();
+
+    final again = await AppState.load(workspaceDir: ws);
+    final tabs = again.tabs.whereType<SqlEditorTab>().toList();
+    expect(tabs.first.variable('id')!.value, '7');
+    expect(tabs.last.variable('da')!.type, VarType.date);
+    // Closed and reopened, the script finds its values again.
+    again.closeTab(tabs.last);
+    final reopened = await again.openScript(f);
+    expect(reopened.variable('da')!.value, '2026-01-01');
+    // Never in the shared library.
+    expect(scriptFiles(), ['r.sql']);
   });
 }

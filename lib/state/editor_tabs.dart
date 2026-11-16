@@ -10,7 +10,9 @@ import '../features/design/view_design.dart';
 import '../model/db_objects.dart';
 import '../odbc/odbc_types.dart';
 import '../services/script_session.dart';
+import '../services/sql_dialect.dart';
 import '../services/sql_splitter.dart';
+import '../services/sql_variables.dart';
 import '../services/storage.dart';
 import 'db_connection.dart';
 import 'result_set_model.dart';
@@ -66,13 +68,33 @@ class LogEntry {
 
 /// A tab in the results area of a SQL editor.
 class ResultTab {
-  ResultTab({required this.title, this.model, this.message, this.error, this.sql, this.stats});
+  ResultTab({
+    required this.title,
+    this.model,
+    this.message,
+    this.error,
+    this.sql,
+    this.stats,
+    this.params = const [],
+    this.setup = const [],
+    this.refreshable = true,
+  });
   String title;
   final ResultSetModel? model;
   final String? message;
   final String? error;
+
+  /// The text sent to the server (panel DECLAREs included).
   final String? sql;
   final Map<String, String>? stats;
+
+  /// Values bound to [sql] and statements run before it: "Aggiorna" runs
+  /// exactly the same again.
+  final List<Object?> params;
+  final List<String> setup;
+
+  /// Running [sql] again only reads (false for a batch that changes data).
+  final bool refreshable;
 }
 
 /// Callbacks used by the executor to interact with the UI.
@@ -99,9 +121,11 @@ class SqlEditorTab extends EditorTab {
     String? bufferId,
     this.draftName,
     this.suggestedFolder,
+    List<ScriptVariable>? variables,
   }) : _connection = connection, // ignore: prefer_initializing_formals
        _catalog = catalog, // ignore: prefer_initializing_formals
        bufferId = bufferId ?? ScriptSession.newId(),
+       variables = variables ?? [],
        controller = CodeLineEditingController.fromText(initialText) {
     _savedText = savedText ?? initialText;
     _bufferedText = initialText;
@@ -149,6 +173,112 @@ class SqlEditorTab extends EditorTab {
   final Map<String, Object?> lastParams = {};
   bool _cancelRequested = false;
 
+  // -------------------------------------------------------------------------
+  // Variables
+  // -------------------------------------------------------------------------
+
+  /// Values of the Variabili panel (saved locally with the script).
+  final List<ScriptVariable> variables;
+
+  /// Changes of the variables, of their rows or of the panel visibility.
+  final ValueNotifier<int> variablesTick = ValueNotifier(0);
+
+  bool _showVariables = false;
+
+  /// The Variabili panel is open.
+  bool get showVariables => _showVariables;
+  set showVariables(bool v) {
+    if (v == _showVariables) return;
+    _showVariables = v;
+    variablesTick.value++;
+  }
+
+  /// Keys of the variables that stopped the last run (no or bad value).
+  Set<String> blockedVariables = {};
+
+  /// The last run was stopped by the variables: once they are all filled,
+  /// Invio in the panel runs it.
+  bool stoppedByVariables = false;
+
+  /// Asks the panel to focus the first variable in [blockedVariables].
+  int focusRequest = 0;
+
+  Timer? _scanTimer;
+  VariableScan _scan = VariableScan.empty;
+  String? _scannedText;
+  DbFamily? _scannedFamily;
+
+  /// Family the variables follow (the connection's, also when offline).
+  DbFamily? get family => _connection?.family;
+
+  /// Variable syntax of the connection; null where there is none.
+  VarSyntax? get varSyntax => _connection == null ? const VarSyntax() : VarSyntax.of(family);
+
+  VariableScan get variableScan {
+    _rescan();
+    return _scan;
+  }
+
+  void _rescan() {
+    final text = controller.text;
+    final f = family;
+    if (text == _scannedText && f == _scannedFamily) return;
+    _scannedText = text;
+    _scannedFamily = f;
+    _scan = scanVariables(text, f, splitter: SqlSplitter(family: f));
+  }
+
+  /// The rows of the Variabili panel.
+  List<VariableInfo> get variableRows {
+    final syntax = varSyntax;
+    if (syntax == null) return const [];
+    return buildVariableRows(variableScan, variables, syntax);
+  }
+
+  /// Variables referenced without a value (badge of the toolbar button).
+  int get variablesNeedingValue => variableRows.where((r) => r.needsValue).length;
+
+  ScriptVariable? variable(String key) => variables.where((v) => v.key == key).firstOrNull;
+
+  /// The panel variable [name], created when missing.
+  ScriptVariable variableFor(String name) {
+    final key = name.toLowerCase();
+    final v = variable(key);
+    if (v != null) return v;
+    final n = ScriptVariable(name);
+    variables.add(n);
+    return n;
+  }
+
+  /// A panel variable changed: saved with the script.
+  void variablesChanged() {
+    blockedVariables.removeWhere((k) => variable(k)?.isUsable ?? false);
+    variablesTick.value++;
+    onBindingChanged?.call(this);
+  }
+
+  void removeVariable(String key) {
+    variables.removeWhere((v) => v.key == key);
+    variablesChanged();
+  }
+
+  /// Drops the panel variables the script no longer uses.
+  void removeUnusedVariables() {
+    final used = {for (final r in variableScan.refs) r.key};
+    variables.removeWhere((v) => !used.contains(v.key));
+    variablesChanged();
+  }
+
+  /// Writes [literal] as the initial value of the declaration [d] in the
+  /// script (undoable; the script becomes modified).
+  void writeDeclaredValue(VarDecl d, String literal) {
+    final a = d.initStart, b = d.initEnd;
+    if (a == null || b == null || !d.editable) return;
+    final hasInit = d.init != null;
+    highlight(SqlStatement('', a, b));
+    controller.replaceSelection(hasInit ? literal : ' = $literal');
+  }
+
   @override
   DbConnection? get connection => _connection;
 
@@ -156,6 +286,7 @@ class SqlEditorTab extends EditorTab {
     if (c != _connection) _catalog = null;
     _connection = c;
     notifyListeners();
+    variablesTick.value++;
     onBindingChanged?.call(this);
   }
 
@@ -216,6 +347,10 @@ class SqlEditorTab extends EditorTab {
       _autosave?.cancel();
       _autosave = Timer(const Duration(seconds: 2), () => onBuffer?.call(this));
     }
+    if (t != _scannedText) {
+      _scanTimer?.cancel();
+      _scanTimer = Timer(const Duration(milliseconds: 350), () => variablesTick.value++);
+    }
   }
 
   /// Writes the text to the file. A draft has no file: save it with
@@ -252,6 +387,8 @@ class SqlEditorTab extends EditorTab {
   @override
   void dispose() {
     _autosave?.cancel();
+    _scanTimer?.cancel();
+    variablesTick.dispose();
     for (final r in results) {
       r.model?.close();
     }
@@ -265,7 +402,7 @@ class SqlEditorTab extends EditorTab {
   /// Caret offset in the whole text (collapsed lines included).
   int get caretOffset => controller.scriptOffset(controller.selection.extentIndex, controller.selection.extentOffset);
 
-  SqlSplitter get _splitter => SqlSplitter(blankLineDelimiter: settings.blankLineDelimiter);
+  SqlSplitter get _splitter => SqlSplitter(blankLineDelimiter: settings.blankLineDelimiter, family: family);
 
   /// Statement under the caret, or the selection.
   SqlStatement? currentStatement() {
@@ -276,12 +413,22 @@ class SqlEditorTab extends EditorTab {
     return _splitter.statementAt(controller.text, caretOffset);
   }
 
-  /// Statements to run: those of the selection, or of the whole editor.
-  List<String> statementsToRun() {
-    final sel = controller.selectedText;
-    final src = sel.trim().isNotEmpty ? sel : controller.text;
-    return _splitter.split(src).map((e) => e.text).toList();
+  /// Offset in the script where the selection starts.
+  int get _selectionStart {
+    final st = controller.selection.start;
+    return controller.scriptOffset(st.index, st.offset);
   }
+
+  /// Units to run (statements, or batches on SQL Server): those of the
+  /// selection, or of the whole editor; with the offset of the selection.
+  (List<SqlUnit>, int) unitsToRun() {
+    final sel = controller.selectedText;
+    if (sel.trim().isNotEmpty) return (_splitter.units(sel), _selectionStart);
+    return (_splitter.units(controller.text), 0);
+  }
+
+  /// Texts of the [unitsToRun].
+  List<String> statementsToRun() => unitsToRun().$1.map((e) => e.text).toList();
 
   /// Selects the given statement in the editor (visual feedback).
   void highlight(SqlStatement s) {
@@ -342,17 +489,20 @@ class SqlEditorTab extends EditorTab {
 
   /// Runs the selection or, without one, the whole editor.
   Future<void> execute(ExecutionUi ui, {bool newTab = false}) async {
-    final stmts = statementsToRun();
-    if (stmts.isEmpty) return;
-    await _run(ui, stmts, script: stmts.length > 1, newTab: newTab);
+    final (units, base) = unitsToRun();
+    if (units.isEmpty) return;
+    await _run(ui, units, base: base, script: units.length > 1, newTab: newTab);
   }
 
-  /// Runs only the statement under the caret.
+  /// Runs only the statement under the caret (on SQL Server with the
+  /// declarations of its batch it needs).
   Future<void> executeCurrent(ExecutionUi ui, {bool newTab = false}) async {
     final s = currentStatement();
     if (s == null) return;
-    if (controller.selectedText.trim().isEmpty) highlight(s);
-    await _run(ui, [s.text], script: false, newTab: newTab);
+    final selected = controller.selectedText.trim().isNotEmpty;
+    if (!selected) highlight(s);
+    final base = selected ? _selectionStart : 0;
+    await _run(ui, [SqlUnit(s.text, s.start, s.end, [s])], base: base, script: false, newTab: newTab);
   }
 
   Future<void> explain(ExecutionUi ui) async {
@@ -360,29 +510,83 @@ class SqlEditorTab extends EditorTab {
     final c = _connection;
     if (s == null || c == null) return;
     if (!await ui.ensureConnected(c)) return;
-    final stmts = c.dialect.explainStatements(s.text);
-    await _run(ui, stmts, script: true, newTab: false, titlePrefix: 'Piano');
+    final base = controller.selectedText.trim().isNotEmpty ? _selectionStart : 0;
+    final units = [
+      for (final t in c.dialect.explainStatements(s.text)) SqlUnit(t, s.start, s.end, [SqlStatement(t, s.start, s.end)]),
+    ];
+    await _run(ui, units, base: base, script: true, newTab: false, titlePrefix: 'Piano');
   }
 
-  Future<void> executeRaw(ExecutionUi ui, String sql, {bool newTab = true}) =>
-      _run(ui, [sql], script: false, newTab: newTab);
+  /// Runs [sql] as it is (no variables): refresh of a result.
+  Future<void> executeRaw(
+    ExecutionUi ui,
+    String sql, {
+    bool newTab = true,
+    List<Object?> params = const [],
+    List<String> setup = const [],
+  }) => _run(ui, [SqlUnit.single(sql)], script: false, newTab: newTab, raw: (params: params, setup: setup));
+
+  /// Rows read from each result set of a batch before moving on to the next
+  /// one (the rest of the batch runs only once the earlier results are
+  /// read).
+  static const batchRowLimit = 10000;
 
   Future<void> _run(
     ExecutionUi ui,
-    List<String> statements, {
+    List<SqlUnit> units, {
+    int base = 0,
     required bool script,
     required bool newTab,
     String? titlePrefix,
+    ({List<Object?> params, List<String> setup})? raw,
   }) async {
     final c = _connection;
     if (c == null || running) return;
     if (!await ui.ensureConnected(c)) return;
     final session = c.main;
     if (session == null) return;
+    final dialect = c.dialect;
+    final allStatements = [for (final u in units) for (final s in u.statements) s.text];
+
+    // Variables: every value must be there before anything runs.
+    final syntax = VarSyntax.of(dialect.family);
+    VariablePlan? plan;
+    if (raw == null && syntax != null) {
+      plan = prepareVariables(
+        script: controller.text,
+        units: units,
+        textOf: (u) => stripLeadingComments(u.text),
+        dialect: dialect,
+        variables: variables,
+        odbc: !c.config.isNative,
+        scriptUnits: dialect.family == DbFamily.sqlServer ? _splitter.units(controller.text) : const [],
+        base: base,
+      );
+      if (!plan.ready) {
+        final rows = {for (final r in variableRows) r.key: r.display};
+        String names(List<String> keys) => keys.map((k) => rows[k] ?? k).join(', ');
+        blockedVariables = {...plan.missing, ...plan.invalid};
+        stoppedByVariables = true;
+        addLog(
+          LogLevel.warning,
+          [
+            if (plan.missing.isNotEmpty) 'Variabili senza valore: ${names(plan.missing)}',
+            if (plan.invalid.isNotEmpty) 'Valori non validi: ${names(plan.invalid)}',
+          ].join(' · '),
+        );
+        _showVariables = true;
+        focusRequest++;
+        variablesTick.value++;
+        notifyListeners();
+        return;
+      }
+      blockedVariables = {};
+    }
+    stoppedByVariables = false;
 
     // ODBC read-only mode is only a hint that many drivers ignore.
     if (c.config.readOnly) {
-      final blocked = statements.where(isModifyingSql).toList();
+      final blocked = allStatements.where(isModifyingSql).toList();
       if (blocked.isNotEmpty) {
         final msg =
             'La connessione "${c.config.name}" è in sola lettura: '
@@ -397,7 +601,7 @@ class SqlEditorTab extends EditorTab {
     }
 
     // Safety confirmations
-    if (c.config.type.confirmExecute && statements.any(isModifyingSql)) {
+    if (c.config.type.confirmExecute && allStatements.any(isModifyingSql)) {
       final ok = await ui.confirm(
         'Connessione di produzione',
         'Stai per eseguire istruzioni che modificano i dati su "${c.config.name}" (${c.config.type.label}). Continuare?',
@@ -405,7 +609,7 @@ class SqlEditorTab extends EditorTab {
       if (!ok) return;
     }
     if (settings.confirmDangerous) {
-      final d = statements.where(isDangerousSql).toList();
+      final d = allStatements.where(isDangerousSql).toList();
       if (d.isNotEmpty) {
         final ok = await ui.confirm(
           'Istruzione pericolosa',
@@ -439,99 +643,152 @@ class SqlEditorTab extends EditorTab {
 
     final sw = Stopwatch()..start();
     var executed = 0, updated = 0, fetched = 0, errors = 0;
+    final setup = raw?.setup ?? plan?.setup ?? const <String>[];
     try {
-      for (var i = 0; i < statements.length; i++) {
+      if (plan != null && plan.used.isNotEmpty) {
+        addLog(LogLevel.info, 'Variabili dal pannello: ${plan.used.join(', ')}');
+      }
+      if (plan != null && plan.carried.isNotEmpty) {
+        addLog(LogLevel.info, 'Dichiarazioni riportate dal batch: ${plan.carried.join(', ')}');
+      }
+      // Session variables of the panel (MySQL, Snowflake).
+      for (final st in setup) {
+        try {
+          await session.execute(st, queryTimeoutSec: c.config.queryTimeout);
+          addLog(LogLevel.info, 'Variabili impostate', sql: st);
+        } catch (e) {
+          final msg = e is OdbcException ? e.message : e.toString();
+          addLog(LogLevel.error, msg, sql: st);
+          results.add(ResultTab(title: 'Errore', error: msg, sql: st));
+          selectedResult = results.length - 1;
+          errors++;
+          return;
+        }
+      }
+      for (var i = 0; i < units.length; i++) {
         if (_cancelRequested) break;
-        var sql = stripLeadingComments(statements[i]);
+        final u = units[i];
+        var sql = plan?.units[i].sql ?? stripLeadingComments(u.text);
         if (sql.isEmpty) continue;
-        // Parameters
-        var params = <Object?>[];
-        final refs = findParameters(sql);
-        if (refs.isNotEmpty && !sql.trimLeft().startsWith('{')) {
-          final names = <String>[];
-          for (final r in refs) {
-            if (!names.contains(r.name)) names.add(r.name);
+        var params = <Object?>[...?plan?.units[i].params];
+        if (raw != null) params = [...raw.params];
+        // `?` markers: asked to the user (the stores without variables also
+        // keep their `:name`).
+        final asked = plan == null ? (raw == null ? _legacyParameters(sql) : null) : _positionalNames(plan.units[i]);
+        if (asked != null && asked.names.isNotEmpty && sql.trimLeft().startsWith('{')) {
+          // ODBC escapes ({? = CALL …}): their markers are not asked.
+          if (plan != null) {
+            final pos = plan.units[i].positional.toSet();
+            params = [for (var k = 0; k < params.length; k++) if (!pos.contains(k)) params[k]];
           }
-          final values = await ui.askParameters(names, lastParams);
+        } else if (asked != null && asked.names.isNotEmpty) {
+          final values = await ui.askParameters(asked.names, lastParams);
           if (values == null) break;
           lastParams.addAll(values);
-          final (positional, order) = toPositional(sql, refs);
-          sql = positional;
-          params = order.map((n) => values[n]).toList();
-        }
-        runningSql = sql;
-        notifyListeners();
-        final t0 = sw.elapsedMilliseconds;
-        try {
-          final page = await session.execute(
-            sql,
-            params: params,
-            fetchSize: settings.fetchSize,
-            queryTimeoutSec: c.config.queryTimeout,
-          );
-          executed++;
-          final dur = sw.elapsedMilliseconds - t0;
-          if (page.messages.isNotEmpty) {
-            serverOutput.addAll(page.messages);
-            for (final m in page.messages) {
-              addLog(LogLevel.info, m);
-            }
-          }
-          c.statementExecuted(modifying: isModifyingSql(sql));
-          if (page.isResultSet) {
-            fetched += page.rows.length;
-            await _addResultSets(c, page, sql, params, titlePrefix);
-            addLog(
-              LogLevel.success,
-              '${page.rows.length}${page.hasMore ? '+' : ''} righe lette in $dur ms',
-              sql: sql,
-              durationMs: dur,
-            );
+          if (plan == null) {
+            final (positional, order) = toPositional(sql, asked.refs!);
+            sql = positional;
+            params = order.map((n) => values[n]).toList();
           } else {
-            final n = page.rowsAffected;
-            if (n > 0) updated += n;
-            final msg = n >= 0 ? 'Righe modificate: $n' : 'Istruzione eseguita';
-            addLog(LogLevel.success, '$msg ($dur ms)', sql: sql, durationMs: dur);
-            if (!script) {
-              results.add(
-                ResultTab(
-                  title: 'Statistiche',
-                  message: msg,
-                  sql: sql,
-                  stats: {
-                    'Righe modificate': n >= 0 ? '$n' : '-',
-                    'Durata': '$dur ms',
-                    'Query': sql,
-                    'Data': DateTime.now().toString(),
-                  },
-                ),
-              );
-              selectedResult = results.length - 1;
+            final pos = plan.units[i].positional;
+            for (var k = 0; k < pos.length; k++) {
+              params[pos[k]] = values['?${k + 1}'];
             }
           }
-        } catch (e) {
-          errors++;
-          final dur = sw.elapsedMilliseconds - t0;
-          final msg = e is OdbcException ? e.message : e.toString();
-          addLog(LogLevel.error, msg, sql: sql, durationMs: dur);
-          results.add(ResultTab(title: 'Errore', error: msg, sql: sql));
-          selectedResult = results.length - 1;
-          if (script && i < statements.length - 1) {
-            final cont = await ui.confirm(
-              'Errore nello script',
-              '$msg\n\nContinuare con le istruzioni successive?',
+        }
+        final modifying = u.statements.any((s) => isModifyingSql(s.text)) || isModifyingSql(sql);
+        final drain = u.isBatch || u.repeat > 1;
+        for (var rep = 0; rep < u.repeat && !_cancelRequested; rep++) {
+          runningSql = sql;
+          notifyListeners();
+          final t0 = sw.elapsedMilliseconds;
+          try {
+            final page = await session.execute(
+              sql,
+              params: params,
+              fetchSize: settings.fetchSize,
+              queryTimeoutSec: c.config.queryTimeout,
             );
-            if (!cont) break;
+            executed++;
+            final dur = sw.elapsedMilliseconds - t0;
+            if (!page.isResultSet) {
+              _pageMessages(page);
+              _pageErrors(page, sql);
+              errors += page.errors.length;
+            }
+            c.statementExecuted(modifying: modifying);
+            if (page.isResultSet) {
+              final tally = await _addResultSets(
+                c,
+                page,
+                sql,
+                params,
+                titlePrefix,
+                drain: drain,
+                setup: setup,
+                refreshable: !drain || !modifying,
+              );
+              fetched += tally.rows;
+              errors += tally.errors;
+              if (tally.affected > 0) updated += tally.affected;
+              addLog(
+                LogLevel.success,
+                '${tally.rows}${tally.more ? '+' : ''} righe lette in $dur ms'
+                '${tally.sets > 1 ? ' (${tally.sets} result set)' : ''}',
+                sql: sql,
+                durationMs: dur,
+              );
+            } else if (page.errors.isEmpty || page.rowsAffected >= 0) {
+              final n = page.rowsAffected;
+              if (n > 0) updated += n;
+              final msg = n >= 0 ? 'Righe modificate: $n' : 'Istruzione eseguita';
+              addLog(LogLevel.success, '$msg ($dur ms)', sql: sql, durationMs: dur);
+              if (!script && page.errors.isEmpty) {
+                results.add(
+                  ResultTab(
+                    title: 'Statistiche',
+                    message: msg,
+                    sql: sql,
+                    stats: {
+                      'Righe modificate': n >= 0 ? '$n' : '-',
+                      'Durata': '$dur ms',
+                      'Query': sql,
+                      'Data': DateTime.now().toString(),
+                    },
+                  ),
+                );
+                selectedResult = results.length - 1;
+              }
+            }
+          } catch (e) {
+            errors++;
+            final dur = sw.elapsedMilliseconds - t0;
+            final msg = e is OdbcException ? e.message : e.toString();
+            addLog(LogLevel.error, msg, sql: sql, durationMs: dur);
+            results.add(ResultTab(title: 'Errore', error: msg, sql: sql));
+            selectedResult = results.length - 1;
+            if (script && i < units.length - 1) {
+              final cont = await ui.confirm(
+                'Errore nello script',
+                '$msg\n\nContinuare con le istruzioni successive?',
+              );
+              if (!cont) {
+                _cancelRequested = true;
+                break;
+              }
+            }
+            break; // the repetitions of a failed batch
           }
+          notifyListeners();
         }
         notifyListeners();
       }
-      if (script && statements.length > 1) {
+      if (script && units.length > 1) {
         results.add(
           ResultTab(
             title: 'Statistiche',
             stats: {
-              'Query eseguite': '$executed / ${statements.length}',
+              'Query eseguite': '$executed / ${units.length}',
               'Righe modificate': '$updated',
               'Righe lette': '$fetched',
               'Errori': '$errors',
@@ -556,38 +813,119 @@ class SqlEditorTab extends EditorTab {
     }
   }
 
-  Future<void> _addResultSets(
+  /// `:name` and `?` of [sql] asked with the dialog (stores without
+  /// variables: MongoDB, Redis).
+  static ({List<String> names, List<SqlParameterRef>? refs}) _legacyParameters(String sql) {
+    final refs = findParameters(sql);
+    final names = <String>[];
+    for (final r in refs) {
+      if (!names.contains(r.name)) names.add(r.name);
+    }
+    return (names: names, refs: refs);
+  }
+
+  /// The user's own `?` markers of a prepared unit.
+  static ({List<String> names, List<SqlParameterRef>? refs}) _positionalNames(PreparedUnit u) =>
+      (names: [for (var k = 0; k < u.positional.length; k++) '?${k + 1}'], refs: null);
+
+  /// Server messages that came with [page] (PRINT, notices).
+  void _pageMessages(ResultPage page) {
+    if (page.messages.isEmpty) return;
+    serverOutput.addAll(page.messages);
+    for (final m in page.messages) {
+      addLog(LogLevel.info, m);
+    }
+  }
+
+  /// Errors that came with [page]: statements of a batch that failed without
+  /// stopping it.
+  void _pageErrors(ResultPage page, String sql) {
+    for (final e in page.errors) {
+      addLog(LogLevel.error, e, sql: sql);
+      results.add(ResultTab(title: 'Errore', error: e, sql: sql));
+      selectedResult = results.length - 1;
+    }
+  }
+
+  /// Adds a tab for [page] and for each result set that follows it. In a
+  /// batch ([drain]) every result set is read (up to [batchRowLimit] rows)
+  /// so that the statements after it run too.
+  Future<({int rows, bool more, int sets, int errors, int affected})> _addResultSets(
     DbConnection c,
     ResultPage page,
     String sql,
     List<Object?> params,
-    String? titlePrefix,
-  ) async {
+    String? titlePrefix, {
+    bool drain = false,
+    List<String> setup = const [],
+    bool refreshable = true,
+  }) async {
     ResultPage? p = page;
-    var n = 0;
-    while (p != null && p.isResultSet) {
+    var n = 0, rows = 0, errors = 0, affected = 0;
+    var more = false;
+    while (p != null) {
+      _pageMessages(p);
+      errors += p.errors.length;
+      if (!p.isResultSet) {
+        // What the batch did after its last result set.
+        _pageErrors(p, sql);
+        if (p.rowsAffected > 0) affected += p.rowsAffected;
+        break;
+      }
       final model = ResultSetModel(
         connection: c,
         first: p,
         sql: sql,
         fetchSize: settings.fetchSize,
         params: params,
+        setup: setup,
         catalog: c.mainCatalog,
         resultSetIndex: n,
       );
       final tables = p.columns.map((e) => e.baseTable).toSet();
       final single = tables.length == 1 && tables.first != null ? tables.first : null;
       final base = titlePrefix ?? single ?? 'Risultati';
-      results.add(ResultTab(title: n == 0 ? base : '$base (${n + 1})', model: model, sql: sql));
+      results.add(
+        ResultTab(
+          title: n == 0 ? base : '$base (${n + 1})',
+          model: model,
+          sql: sql,
+          params: params,
+          setup: setup,
+          refreshable: refreshable,
+        ),
+      );
       selectedResult = results.length - 1;
+      _pageErrors(p, sql);
       unawaited(model.detectEditTarget());
       n++;
-      if (p.hasNextResultSet) {
+      if (drain && model.hasMore) {
+        await model.fetchNext(count: batchRowLimit - model.rows.length);
+        model.markTruncated();
+        // A statement after these rows failed (or the fetch did).
+        final e = model.error;
+        if (e != null) {
+          addLog(LogLevel.error, e, sql: sql);
+          results.add(ResultTab(title: 'Errore', error: e, sql: sql));
+          selectedResult = results.length - 1;
+          errors++;
+        }
+      }
+      rows += model.rows.length;
+      more = more || model.hasMore;
+      if (model.cursorId == null || (!drain && !model.hasNextResultSet)) break;
+      try {
         p = await model.nextResultSet();
-      } else {
-        p = null;
+      } catch (e) {
+        final msg = e is OdbcException ? e.message : e.toString();
+        addLog(LogLevel.error, msg, sql: sql);
+        results.add(ResultTab(title: 'Errore', error: msg, sql: sql));
+        selectedResult = results.length - 1;
+        errors++;
+        break;
       }
     }
+    return (rows: rows, more: more, sets: n, errors: errors, affected: affected);
   }
 }
 
