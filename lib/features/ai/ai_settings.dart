@@ -1,6 +1,6 @@
 // "Assistente AI" settings page and the setup sheet shown when the
 // assistant is used before being configured.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../state/app_state.dart';
 import '../../ui/widgets/common.dart';

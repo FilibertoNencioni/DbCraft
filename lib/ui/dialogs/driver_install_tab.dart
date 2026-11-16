@@ -2,7 +2,7 @@
 // Homebrew and shows its output live.
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../model/connection_config.dart';
 import '../../odbc/driver_installer.dart';

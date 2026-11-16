@@ -3,7 +3,7 @@
 // Privilegi di sistema, DDL). Edits stay pending until Salva, which runs
 // the script through the script sheet; passwords travel as secrets.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../../services/sql_dialect.dart';

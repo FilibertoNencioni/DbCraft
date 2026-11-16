@@ -2,7 +2,7 @@
 // properties, columns, pending changes. The constraint and index pages are
 // in constraints_page.dart (with a TableDesign they edit the design).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../services/sql_dialect.dart';
 import '../../../state/db_connection.dart';

@@ -1,7 +1,7 @@
 // Full-size browser of one bucket / container (editor tab): breadcrumbs,
 // table with name / size / modified / class, multi-selection and the same
 // actions as the Storage panel.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../cloud/cloud_common.dart';

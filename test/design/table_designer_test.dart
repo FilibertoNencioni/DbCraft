@@ -9,7 +9,7 @@ import 'package:dbcraft/state/app_state.dart';
 import 'package:dbcraft/state/editor_tabs.dart';
 import 'package:dbcraft/ui/editors/table_editor_view.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'dart:ui' show Tristate;
 

@@ -2,7 +2,7 @@
 // enum types, domains, policies, exclusion constraints, synonyms, packages,
 // events, warehouses, stages, file formats).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../../model/db_objects.dart';

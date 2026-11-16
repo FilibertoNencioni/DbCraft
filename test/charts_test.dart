@@ -3,7 +3,7 @@ import 'package:dbcraft/features/charts/chart_view.dart';
 import 'package:dbcraft/odbc/odbc_types.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _cols = [

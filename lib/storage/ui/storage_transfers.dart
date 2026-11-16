@@ -1,7 +1,7 @@
 // Upload / download queue of the Storage panel with progress and cancel.
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../cloud/cloud_common.dart';
 import '../../ui/widgets/common.dart';

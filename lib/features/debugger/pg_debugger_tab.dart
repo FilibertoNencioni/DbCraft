@@ -2,7 +2,7 @@
 // variables, breakpoints and output panes.
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../model/db_objects.dart';

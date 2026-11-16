@@ -3,7 +3,7 @@
 // warehouses, stages and file formats. Each returns the edited definition;
 // the caller turns it into a script (ExtraDdl).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../services/sql_dialect.dart';
 import '../../../ui/widgets/common.dart';

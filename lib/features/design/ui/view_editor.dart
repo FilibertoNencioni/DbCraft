@@ -2,7 +2,7 @@
 // DBMS, the query in a SQL editor with completion, and "Verifica" that runs
 // it on a few rows.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:re_editor/re_editor.dart';
 
 import '../../../model/db_objects.dart';

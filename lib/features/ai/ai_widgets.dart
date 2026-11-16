@@ -1,5 +1,5 @@
 // Widgets shared by the assistant dialogs and the chat.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../state/app_state.dart';
 import '../../state/db_connection.dart';

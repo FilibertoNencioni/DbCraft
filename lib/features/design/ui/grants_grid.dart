@@ -2,7 +2,7 @@
 // (per object type, database and schema) and the list of system
 // privileges. Both edit a PrincipalDesign; nothing runs until Salva.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../services/sql_dialect.dart';
 import '../../../state/db_connection.dart';

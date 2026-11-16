@@ -1,7 +1,7 @@
 // Navigator menu entries of the design tools: "Crea ▸ …" on tables and
 // table parts, and the actions on a key, constraint or index.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../../model/db_objects.dart';

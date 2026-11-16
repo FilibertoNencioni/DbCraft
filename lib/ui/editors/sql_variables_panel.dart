@@ -1,6 +1,6 @@
 // The Variabili panel of a SQL editor: the variables the script references,
 // the ones it declares and the values kept for the others.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../services/sql_dialect.dart';
 import '../../services/sql_splitter.dart';

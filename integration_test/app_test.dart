@@ -19,7 +19,7 @@ import 'package:dbcraft/ui/editors/sql_code_editor.dart';
 import 'package:dbcraft/ui/home_page.dart';
 import 'package:dbcraft/ui/widgets/sheets.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:flutter/rendering.dart';

@@ -2,7 +2,7 @@
 // saved together through the script sheet; compilation errors are read
 // back from ALL_ERRORS.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:re_editor/re_editor.dart';
 

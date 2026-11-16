@@ -1,7 +1,7 @@
 // Table definition dialog of the ER diagram editor (relationships use
 // showForeignKeyDialog of the design tools).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../services/sql_dialect.dart';
 import '../../ui/widgets/common.dart';

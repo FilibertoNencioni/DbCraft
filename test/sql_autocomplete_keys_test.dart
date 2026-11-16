@@ -6,7 +6,7 @@ import 'package:dbcraft/services/metadata_service.dart';
 import 'package:dbcraft/state/db_connection.dart';
 import 'package:dbcraft/ui/editors/sql_code_editor.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:re_editor/re_editor.dart';

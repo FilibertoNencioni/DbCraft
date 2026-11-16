@@ -1,6 +1,6 @@
 import 'package:dbcraft/ui/theme/app_theme.dart';
 import 'package:dbcraft/ui/widgets/split_view.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 

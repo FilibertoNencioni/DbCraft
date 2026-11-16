@@ -13,7 +13,7 @@ import 'package:dbcraft/model/connection_config.dart';
 import 'package:dbcraft/state/editor_tabs.dart';
 import 'package:dbcraft/ui/editors/table_editor_view.dart';
 import 'package:dbcraft/ui/home_page.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

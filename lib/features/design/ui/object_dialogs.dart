@@ -1,6 +1,6 @@
 // Sheets of databases and schemas, and the confirmation sheet of every DROP.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../services/sql_dialect.dart';
 import '../../../ui/widgets/common.dart';

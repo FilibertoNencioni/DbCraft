@@ -2,7 +2,7 @@
 // table or view, editable. One row per grantee; "Salva" runs the GRANT and
 // REVOKE through the script sheet.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../model/db_objects.dart';
 import '../../../services/sql_dialect.dart';

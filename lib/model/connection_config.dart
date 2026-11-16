@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../drivers/native_registry.dart';
 import 'auth_methods.dart';

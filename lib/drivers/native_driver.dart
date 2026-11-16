@@ -1,6 +1,6 @@
 // Built-in ("native") drivers that do not need an ODBC driver: they speak the
 // database wire protocol or REST API directly from Dart.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'db_session.dart';
 

@@ -1,7 +1,7 @@
 // Small Markdown renderer for the assistant answers: headings, paragraphs,
 // bullet / numbered lists, quotes, rules, pipe tables, inline code, bold,
 // italic and fenced code blocks. Tolerant of partial (streaming) input.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../ui/widgets/common.dart';
 

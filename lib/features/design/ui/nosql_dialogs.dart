@@ -3,7 +3,7 @@
 // materialized views. Each returns the edited definition; the caller turns
 // it into a script (MongoDdl / CassandraDdl).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../drivers/mongodb/bson.dart';
 import '../../../services/sql_dialect.dart';

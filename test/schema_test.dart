@@ -17,7 +17,7 @@ import 'package:dbcraft/ui/editors/er_diagram_view.dart';
 import 'package:dbcraft/ui/editors/sql_code_editor.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final pg = SqlDialect(dbmsName: 'PostgreSQL');

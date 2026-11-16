@@ -3,7 +3,7 @@
 // caller turns it into DDL (design_actions.dart runs it at once, the table
 // designer collects it in its pending changes).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../model/db_objects.dart';
 import '../../../services/sql_dialect.dart';

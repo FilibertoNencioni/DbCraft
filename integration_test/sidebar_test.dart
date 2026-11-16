@@ -15,7 +15,7 @@ import 'package:dbcraft/ui/scripts/scripts_panel.dart';
 import 'package:dbcraft/ui/widgets/fields.dart';
 import 'package:dbcraft/ui/widgets/navigation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

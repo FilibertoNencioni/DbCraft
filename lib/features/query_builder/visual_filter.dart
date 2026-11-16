@@ -2,7 +2,7 @@
 // "column operator value" chips combined with AND plus a sort chooser. The
 // WHERE / ORDER BY strings are generated with the dialect quoting.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/sql_dialect.dart';

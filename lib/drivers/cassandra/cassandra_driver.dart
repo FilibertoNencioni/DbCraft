@@ -1,5 +1,5 @@
 // Built-in Apache Cassandra driver (CQL native protocol v4/v3, pure Dart).
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../db_session.dart';
 import '../native_driver.dart';

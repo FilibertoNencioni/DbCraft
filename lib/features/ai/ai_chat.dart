@@ -6,7 +6,7 @@
 // whole prefix stays cached.
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../state/app_state.dart';

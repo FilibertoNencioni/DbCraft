@@ -2,7 +2,7 @@
 // collections, indexes and views; Cassandra keyspaces, tables, indexes and
 // materialized views (user defined types are an ExtraKind folder).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../../model/db_objects.dart';

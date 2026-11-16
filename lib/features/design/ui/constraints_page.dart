@@ -1,7 +1,7 @@
 // "Vincoli" and "Indici" pages of the table editor: the keys, constraints
 // and indexes read from the DBMS catalog, with create / edit / drop actions.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../model/db_objects.dart';
 import '../../../state/db_connection.dart';

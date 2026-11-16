@@ -18,7 +18,7 @@ import 'package:dbcraft/features/design/ui/code_editor.dart';
 import 'package:dbcraft/features/design/model/object_defs.dart';
 import 'package:flutter/services.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:dbcraft/features/schema/ddl_builder.dart';
 import 'package:dbcraft/odbc/odbc_types.dart';
 import 'package:dbcraft/services/sql_dialect.dart';

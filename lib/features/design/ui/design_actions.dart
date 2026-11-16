@@ -4,7 +4,7 @@
 // statements and the foreign keys of other tables referencing a changed key
 // are handled in one place.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../model/db_objects.dart';
 import '../../../state/db_connection.dart';

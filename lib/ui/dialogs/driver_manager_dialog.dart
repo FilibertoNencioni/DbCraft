@@ -1,7 +1,7 @@
 // Driver Manager: registered ODBC drivers, DSNs and (macOS) driver install.
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../model/connection_config.dart';
 import '../../odbc/odbc_session.dart';

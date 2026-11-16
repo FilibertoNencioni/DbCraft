@@ -1,5 +1,5 @@
 // Built-in MongoDB driver (wire protocol OP_MSG over TCP/TLS, pure Dart).
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../db_session.dart';
 import '../native_driver.dart';

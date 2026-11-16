@@ -15,7 +15,7 @@ import 'package:dbcraft/features/design/model/security_defs.dart';
 import 'package:dbcraft/features/design/ui/security_tab.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
 import 'package:dbcraft/ui/home_page.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

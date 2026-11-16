@@ -2,7 +2,7 @@
 // the source in a SQL editor, saved through the script sheet. Oracle
 // compilation errors are read back and shown under the editor.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:re_editor/re_editor.dart';
 
 import '../../../model/db_objects.dart';

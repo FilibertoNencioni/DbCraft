@@ -6,7 +6,7 @@ import 'package:dbcraft/state/result_set_model.dart';
 import 'package:dbcraft/ui/results/result_grid.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

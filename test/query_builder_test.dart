@@ -3,7 +3,7 @@ import 'package:dbcraft/features/query_builder/visual_filter.dart';
 import 'package:dbcraft/model/db_objects.dart';
 import 'package:dbcraft/services/sql_dialect.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 DbTable _t(String name, {String? schema}) => DbTable(catalog: null, schema: schema, name: name, type: 'TABLE');

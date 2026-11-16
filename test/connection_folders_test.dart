@@ -9,7 +9,7 @@ import 'package:dbcraft/state/db_connection.dart';
 import 'package:dbcraft/ui/navigator/nav_nodes.dart';
 import 'package:dbcraft/ui/navigator/navigator_panel.dart';
 import 'package:dbcraft/ui/widgets/common.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'design/helpers.dart';
