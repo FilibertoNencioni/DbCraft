@@ -137,6 +137,22 @@ class SqlDialect {
 
   String tableName(DbTable t) => qualified(t.catalog, t.schema, t.name);
 
+  /// Schema that resolves unqualified names for every user (SQL Server falls
+  /// back to dbo, PostgreSQL search_path ends with public); null when it
+  /// depends on the user (Oracle, DB2: the user's own schema).
+  String? get implicitSchema => switch (family) {
+    DbFamily.sqlServer => 'dbo',
+    DbFamily.postgres || DbFamily.snowflake => 'public',
+    _ => null,
+  };
+
+  /// [name] as written in a query on the current database: qualified with
+  /// [schema] unless that is the [implicitSchema].
+  String schemaQualified(String? schema, String name) {
+    if (schema == null || schema.isEmpty || schema.toLowerCase() == implicitSchema) return quoteIdent(name);
+    return '${quoteIdent(schema)}.${quoteIdent(name)}';
+  }
+
   String stringLiteral(String s) => "'${s.replaceAll("'", "''")}'";
 
   String literal(Object? v) {

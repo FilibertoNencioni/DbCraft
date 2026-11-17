@@ -31,6 +31,10 @@ abstract class SqlCompletionCatalog {
 
   /// Identifier as it must be written (quoted when needed).
   String quote(String identifier);
+
+  /// Table [name] of [schema] as it must be written in a query: qualified
+  /// unless the schema is the one the database resolves unqualified names to.
+  String tableRef(String? schema, String name);
 }
 
 /// No database: names only come from the script (CTEs, words).
@@ -52,6 +56,8 @@ class EmptyCompletionCatalog implements SqlCompletionCatalog {
   bool get loading => false;
   @override
   String quote(String identifier) => identifier;
+  @override
+  String tableRef(String? schema, String name) => name;
 }
 
 class _NoChanges implements Listenable {
@@ -106,6 +112,9 @@ class MetadataCompletionCatalog extends ChangeNotifier implements SqlCompletionC
 
   @override
   String quote(String identifier) => connection()?.dialect.quoteIdent(identifier) ?? identifier;
+
+  @override
+  String tableRef(String? schema, String name) => connection()?.dialect.schemaQualified(schema, name) ?? name;
 
   @override
   List<DbTable> get tables {

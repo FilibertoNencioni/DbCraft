@@ -181,10 +181,10 @@ class SqlCandidates {
       final t = _dbTable(r, scope);
       if (t == null) continue;
       final ref = _refText(r);
-      void add(String other, List<(String, String)> pairs, String? fkName) {
+      void add(String? schema, String other, List<(String, String)> pairs, String? fkName) {
         final alias = _alias(other, {...used});
         final on = pairs.map((p) => '$alias.${catalog.quote(p.$1)} = $ref.${catalog.quote(p.$2)}').join(' AND ');
-        final insert = '${catalog.quote(other)} $alias ON $on';
+        final insert = '${catalog.tableRef(schema, other)} $alias ON $on';
         if (out.any((o) => o.insert == insert)) return;
         out.add(
           SqlCompletionItem(
@@ -199,11 +199,13 @@ class SqlCandidates {
 
       // r is the child: join its parents.
       for (final fk in _fks(t, outgoing: true)) {
-        add(fk.pkTable, [for (var i = 0; i < fk.columns.length; i++) (fk.refColumns[i], fk.columns[i])], fk.name);
+        add(fk.pkSchema, fk.pkTable, [
+          for (var i = 0; i < fk.columns.length; i++) (fk.refColumns[i], fk.columns[i]),
+        ], fk.name);
       }
       // r is the parent: join its children.
       for (final fk in _fks(t, outgoing: false)) {
-        add(fk.fkTable, [for (var i = 0; i < fk.columns.length; i++) (fk.columns[i], fk.refColumns[i])], fk.name);
+        add(fk.fkSchema, fk.fkTable, [for (var i = 0; i < fk.columns.length; i++) (fk.columns[i], fk.refColumns[i])], fk.name);
       }
     }
     return out;
@@ -296,10 +298,13 @@ class SqlCandidates {
       for (final t in _tablesList)
         if (s == null || t.schema?.toLowerCase() == s || t.catalog?.toLowerCase() == s)
           SqlCompletionItem(
-            catalog.quote(t.name),
+            // Without a typed `schema.` prefix the name must carry its schema,
+            // or the query fails outside the default one.
+            s == null ? catalog.tableRef(t.schema, t.name) : catalog.quote(t.name),
             t.isView ? SqlItemKind.view : SqlItemKind.table,
             detail: t.schema ?? t.catalog,
             prio: t.isView ? 0 : 1,
+            matchText: catalog.quote(t.name),
           ),
     ];
   }

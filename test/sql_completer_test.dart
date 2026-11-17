@@ -7,13 +7,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// In-memory catalog: Customers(Id, Name), Orders(OrderId, CustomerId, Total),
 /// Order_Lines(Line_Id, Order_Id, Qty) with foreign keys Orders -> Customers
-/// and Order_Lines -> Orders.
+/// and Order_Lines -> Orders; sales.Invoices(InvoiceId, CustomerId) and the
+/// view sales.Open_Invoices outside the default schema, Invoices -> Customers.
 class FakeCatalog extends ChangeNotifier implements SqlCompletionCatalog {
-  static DbTable _t(String name) => DbTable(catalog: 'shop', schema: 'dbo', name: name, type: 'TABLE');
+  static DbTable _t(String name, [String schema = 'dbo', String type = 'TABLE']) =>
+      DbTable(catalog: 'shop', schema: schema, name: name, type: type);
   static DbColumn _c(String name, [String type = 'int']) =>
       DbColumn(name: name, dataType: 4, typeName: type, size: 10, decimals: 0, nullable: true, position: 0);
 
   final customers = _t('Customers'), orders = _t('Orders'), lines = _t('Order_Lines');
+  final invoices = _t('Invoices', 'sales'), openInvoices = _t('Open_Invoices', 'sales', 'VIEW');
 
   /// Columns not "loaded" yet (null until [finishLoading]).
   final Set<String> slow = {};
@@ -22,11 +25,14 @@ class FakeCatalog extends ChangeNotifier implements SqlCompletionCatalog {
     'Customers': [_c('Id'), _c('Name', 'varchar')],
     'Orders': [_c('OrderId'), _c('CustomerId'), _c('Total', 'decimal')],
     'Order_Lines': [_c('Line_Id'), _c('Order_Id'), _c('Qty')],
+    'Invoices': [_c('InvoiceId'), _c('CustomerId')],
+    'Open_Invoices': [_c('InvoiceId')],
   };
 
   late final List<DbForeignKey> fks = [
     _fk('FK_Orders_Customers', orders, ['CustomerId'], customers, ['Id']),
     _fk('FK_Lines_Orders', lines, ['Order_Id'], orders, ['OrderId']),
+    _fk('FK_Invoices_Customers', invoices, ['CustomerId'], customers, ['Id']),
   ];
 
   static DbForeignKey _fk(String name, DbTable child, List<String> c, DbTable parent, List<String> p) => DbForeignKey(
@@ -51,10 +57,11 @@ class FakeCatalog extends ChangeNotifier implements SqlCompletionCatalog {
   @override
   bool get loading => slow.isNotEmpty;
   @override
-  List<DbTable> get tables => [customers, lines, orders];
+  List<DbTable> get tables => [customers, lines, orders, invoices, openInvoices];
   @override
   DbTable? table(String name, {String? schema}) {
     for (final t in tables) {
+      if (schema != null && t.schema!.toLowerCase() != schema.toLowerCase()) continue;
       if (t.name.toLowerCase() == name.toLowerCase()) return t;
     }
     return null;
@@ -74,6 +81,8 @@ class FakeCatalog extends ChangeNotifier implements SqlCompletionCatalog {
   ];
   @override
   String quote(String identifier) => RegExp(r'^[A-Za-z_]\w*$').hasMatch(identifier) ? identifier : '[$identifier]';
+  @override
+  String tableRef(String? schema, String name) => schema == null || schema == 'dbo' ? quote(name) : '$schema.${quote(name)}';
 }
 
 void main() {
@@ -162,6 +171,9 @@ void main() {
       expect(l.first, 'Order_Lines ol ON ol.Order_Id = o.OrderId');
       expect(l, contains('Orders'));
     });
+    test('related tables outside the default schema are qualified', () {
+      expect(complete('SELECT * FROM Customers c JOIN Inv|').first, 'sales.Invoices i ON i.CustomerId = c.Id');
+    });
     test('generated alias does not clash with the ones in use', () {
       expect(complete('SELECT * FROM Orders c JOIN Cu|').first, 'Customers c2 ON c2.Id = c.CustomerId');
     });
@@ -170,6 +182,23 @@ void main() {
       expect(p.first, 'c.Id = o.CustomerId');
       final l = complete('SELECT * FROM Order_Lines l JOIN Orders o ON o|');
       expect(l.first, 'o.OrderId = l.Order_Id');
+    });
+  });
+
+  group('schemas', () {
+    test('tables and views outside the default schema are inserted qualified', () {
+      expect(complete('SELECT * FROM Inv|'), contains('sales.Invoices'));
+      expect(complete('SELECT * FROM open|'), contains('sales.Open_Invoices'));
+      expect(complete('SELECT * FROM Cust|'), contains('Customers'));
+    });
+    test('after a typed schema only the name is inserted', () {
+      final p = complete('SELECT * FROM sales.Inv|');
+      expect(p, contains('Invoices'));
+      expect(p, isNot(contains('sales.Invoices')));
+      expect(complete('SELECT * FROM sales.Cust|'), isNot(contains('Customers')));
+    });
+    test('columns of a qualified table', () {
+      expect(complete('SELECT inv| FROM sales.Invoices'), contains('InvoiceId'));
     });
   });
 
